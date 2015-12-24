@@ -833,12 +833,21 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
 
     cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
 
+    // handlers是一个数组，该数组按阶段顺序的保存了所有http模块的所有checker和handler方法
+    // 其中cheker方法是http核心模块定义的方法，用来检查并调用各http模块自定义的handler方法
     ph = cmcf->phase_engine.handlers;
 
-    while (ph[r->phase_handler].checker) {
+    // 循环调用当前请求上的所有阶段的handler回调方法
+    // r->phase_handler代表当前请求应该调用那一个阶段的那个方法
+    // r->phase_handler指定的就是ph中的数组下标
+    while (ph[r->phase_handler].checker) { // 首先检查是否存在checker方法
 
+    	// 调用cheker方法，并将模块自定义的handler方法传入其中
         rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
 
+        // 成功则直接反回，这一步会将控制权限交给nginx事件框架
+        // 一般在content以上的阶段,各个阶段的checker方法不会返回NGX_OK,因为如果直接返回，
+        // 那么后续阶段就不会执行了
         if (rc == NGX_OK) {
             return;
         }
@@ -1358,8 +1367,15 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     ngx_int_t  rc;
     ngx_str_t  path;
 
+    // 对于该阶段有两种绑定handler的方式，一种就是通过http核心配置模块的ngx_http_core_locl_conf_t
+    // 结构体中的handler字段进行绑定,这种方式最终会在初始化请求的时候将handler放入到r->content_handler中
+    // 这种绑定方式只对某个location起作用
+    // 检查r->content_handler中是否绑定了自定义的handler方法
     if (r->content_handler) {
+    	// 先将写事件暂时设置为ngx_http_request_empty_handler方法,表示不再需要执行当前阶段的后续方法
         r->write_event_handler = ngx_http_request_empty_handler;
+
+        // 调用该方法去结束该请求，具体是不是可以关闭该请求需要看我们的handler回调方法的返回值
         ngx_http_finalize_request(r, r->content_handler(r));
         return NGX_OK;
     }
@@ -1367,8 +1383,16 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "content phase: %ui", r->phase_handler);
 
+    // 走到这里说明是使用一般的方式绑定的handler
+    // 就是ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers); 这种方式绑定的
+    // 这种绑定方式是全局性质的,对所有的location都会起作用
     rc = ph->handler(r);
 
+
+    // 返回非NGX_DECLINED就去正常结束请求
+    // 这时候所有过滤器都已经执行一遍了
+    // 如果一次发送完毕则rc == NGX_OK
+    // 没有一次发送完毕则返回NGX_AGAIN
     if (rc != NGX_DECLINED) {
         ngx_http_finalize_request(r, rc);
         return NGX_OK;

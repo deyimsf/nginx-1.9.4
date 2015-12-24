@@ -44,6 +44,7 @@ ngx_module_t  ngx_http_write_filter_module = {
 };
 
 
+// 这个是所有过滤器最后一个模块
 ngx_int_t
 ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
@@ -64,10 +65,13 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     flush = 0;
     sync = 0;
     last = 0;
+
+    // 存储这未发送完的数据
     ll = &r->out;
 
     /* find the size, the flush point and the last link of the saved chain */
 
+    // 计算出r->out中未发送的数据大小
     for (cl = r->out; cl; cl = cl->next) {
         ll = &cl->next;
 
@@ -117,6 +121,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
     /* add the new chain to the existent one */
 
+    // 将in中的数据追加到r->out中
     for (ln = in; ln; ln = ln->next) {
         cl = ngx_alloc_chain_link(r->pool);
         if (cl == NULL) {
@@ -171,6 +176,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
         }
     }
 
+    // 将out中最后一个chain_t的next指向NULL
     *ll = NULL;
 
     ngx_log_debug3(NGX_LOG_DEBUG_HTTP, c->log, 0,
@@ -184,11 +190,14 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
      * is smaller than "postpone_output" directive
      */
 
+    // 如果即没有last标记又没有flush标记，同时未发送的数据又小于postpone_output指令指定的大小
+    // 则直接返回NGX_OK, 这个时候当前的cheker方法会调用ngx_http_finalize_request(r, rc);去结束请求
     if (!last && !flush && in && size < (off_t) clcf->postpone_output) {
         return NGX_OK;
     }
 
     if (c->write->delayed) {
+    	// 告诉http框架out缓冲回区中还有数据响应等待发送
         c->buffered |= NGX_HTTP_WRITE_BUFFERED;
         return NGX_AGAIN;
     }
@@ -227,7 +236,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
                 - (c->sent - r->limit_rate_after);
 
         if (limit <= 0) {
-            c->write->delayed = 1;
+            c->write->delayed = 1; // 需要限速
             delay = (ngx_msec_t) (- limit * 1000 / r->limit_rate + 1);
             ngx_add_timer(c->write, delay);
 
@@ -251,6 +260,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http write filter limit %O", limit);
 
+    // 发送数据
     chain = c->send_chain(c, r->out, limit);
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,

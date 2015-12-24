@@ -1823,6 +1823,7 @@ ngx_http_process_request_header(ngx_http_request_t *r)
 }
 
 
+// 解析完所有的请求头后才开始执行此方法
 void
 ngx_http_process_request(ngx_http_request_t *r)
 {
@@ -1895,6 +1896,9 @@ ngx_http_process_request(ngx_http_request_t *r)
     r->stat_writing = 1;
 #endif
 
+    // 设置链接中的读写事件handler
+    // ngx_http_request_handler方法很简单，就是从事件中取出链接c，然后再从链接c中
+    // 取出请求r,然后回调请求中的[write|read]_event_handler方法
     c->read->handler = ngx_http_request_handler;
     c->write->handler = ngx_http_request_handler;
     r->read_event_handler = ngx_http_block_reading;
@@ -2583,6 +2587,10 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
         ngx_add_timer(wev, clcf->send_timeout);
     }
 
+    // ??为什么要把这个写事件重新加入到事件框架中
+    // ??现在这个事件不是已经在事件框架中了吗
+    // ??难道每次事件发生后,在该连接上的该事件就被移除了？所以要再加？
+    // ??还是说因为epoll的边沿触发的原因
     if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
         ngx_http_close_request(r, 0);
         return NGX_ERROR;
