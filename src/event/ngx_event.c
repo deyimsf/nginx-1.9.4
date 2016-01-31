@@ -260,6 +260,9 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 }
 
 
+/**
+ * 向事件框架添加读事件
+ */
 ngx_int_t
 ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)
 {
@@ -565,6 +568,7 @@ ngx_timer_signal_handler(int signo)
 #endif
 
 
+// 子进程worker被fork出之后调用
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
 {
@@ -579,6 +583,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
     ecf = ngx_event_get_conf(cycle->conf_ctx, ngx_event_core_module);
 
+    // 检查是否需要打开负载均衡锁
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
         ngx_use_accept_mutex = 1;
         ngx_accept_mutex_held = 0;
@@ -617,6 +622,8 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
         module = ngx_modules[m]->ctx;
 
+        // 调用每个事件模块的init方法(对于ngx_epoll_module模块来说就是ngx_epoll_init方法)
+        // 在ngx_epoll_init方法中会调用epoll_create方法创建epoll对象
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
             /* fatal */
             exit(2);
@@ -672,6 +679,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
+    // 分配ngx_connection_t连接池
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL) {
@@ -680,6 +688,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     c = cycle->connections;
 
+    // 分配读事件池
     cycle->read_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                    cycle->log);
     if (cycle->read_events == NULL) {
@@ -706,6 +715,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     i = cycle->connection_n;
     next = NULL;
 
+    // 将读事件和写事件结构体关联到连接池中每一个连接
     do {
         i--;
 
@@ -731,6 +741,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 #endif
 
+        // 真正获取连接的时候，才会把该连接放入到对应的读写事件结构体中
         c = ngx_get_connection(ls[i].fd, cycle->log);
 
         if (c == NULL) {
@@ -866,7 +877,7 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
     return NGX_OK;
 }
 
-
+//  rv = (*cf->handler)(cf, NULL, cf->handler_conf);
 static char *
 ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -901,6 +912,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    // 为什么做这个事???
     *(void **) conf = ctx;
 
     for (i = 0; ngx_modules[i]; i++) {
@@ -911,6 +923,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         m = ngx_modules[i]->ctx;
 
         if (m->create_conf) {
+        	// 第三层指针存放的是各个事件模块的配置项结构体
             (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);
             if ((*ctx)[ngx_modules[i]->ctx_index] == NULL) {
                 return NGX_CONF_ERROR;

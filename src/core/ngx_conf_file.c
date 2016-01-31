@@ -315,7 +315,10 @@ done:
     return NGX_CONF_OK;
 }
 
-
+/*
+ * 为解析到的指令匹配所有模块的commands
+ * 如果匹配到则执行相关命令的cmd->set方法
+ */
 static ngx_int_t
 ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 {
@@ -715,6 +718,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
                 found = 1;
             }
 
+            // 解析出一个单词?
             if (found) {
                 word = ngx_array_push(cf->args);
                 if (word == NULL) {

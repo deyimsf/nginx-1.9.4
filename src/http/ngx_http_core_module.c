@@ -1052,6 +1052,8 @@ ngx_http_core_post_rewrite_phase(ngx_http_request_t *r,
     r->phase_handler = ph->next;
 
     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
+    // 确定要重新匹配location,所以r->loc_conf变更为所有http模块在server{}块下产生的自定义配置项
+    // (这里自然包块http核心模块在server{}块下创建的ngx_http_core_loc_conf_t结构体)
     r->loc_conf = cscf->ctx->loc_conf;
 
     return NGX_AGAIN;
@@ -1530,8 +1532,10 @@ ngx_http_core_find_location(ngx_http_request_t *r)
     noregex = 0;
 #endif
 
+    // 此时拿到的是server{}下的ngx_http_core_loc_conf_t或者location{}块下的
     pclcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
+    // 该方法会根据不同的情况,更改r->loc_conf的值
     rc = ngx_http_core_find_static_location(r, pclcf->static_locations);
 
     if (rc == NGX_AGAIN) {
@@ -2440,6 +2444,9 @@ ngx_http_gzip_quantity(u_char *p, u_char *last)
 #endif
 
 
+/**
+ * 启动子请求的方法
+ */
 ngx_int_t
 ngx_http_subrequest(ngx_http_request_t *r,
     ngx_str_t *uri, ngx_str_t *args, ngx_http_request_t **psr,
@@ -2453,6 +2460,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     r->main->subrequests--;
 
+    // 与原始请求关联的子请求数超过200个，则直接返回错误
     if (r->main->subrequests == 0) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "subrequests cycle while processing \"%V\"", uri);
@@ -2460,6 +2468,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
         return NGX_ERROR;
     }
 
+    // 为sub_request分配空间
     sr = ngx_pcalloc(r->pool, sizeof(ngx_http_request_t));
     if (sr == NULL) {
         return NGX_ERROR;
@@ -2467,6 +2476,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     sr->signature = NGX_HTTP_MODULE;
 
+    // 子请求与下游(客户端)的connection和父请求一样
     c = r->connection;
     sr->connection = c;
 
@@ -2504,9 +2514,11 @@ ngx_http_subrequest(ngx_http_request_t *r,
     sr->method = NGX_HTTP_GET;
     sr->http_version = r->http_version;
 
+    // 父请求的请求行赋值给子请求?,但是uri且是子请求的
     sr->request_line = r->request_line;
     sr->uri = *uri;
 
+    // 子请求的qureystring
     if (args) {
         sr->args = *args;
     }
@@ -2523,13 +2535,20 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     ngx_http_set_exten(sr);
 
-    sr->main = r->main;
-    sr->parent = r;
-    sr->post_subrequest = ps;
+    sr->main = r->main;			// 原始请求
+    sr->parent = r;				// 父请求
+    sr->post_subrequest = ps;	// ngx_http_post_subrequest_t结构体中放置着子请求结束后的回调方法
     sr->read_event_handler = ngx_http_request_empty_handler;
+
+    /*
+     * 设置子请求的write_event_handler方法为ngx_http_handler,该方法最终会调用:
+     * 		r->write_event_handler = ngx_http_core_run_phases;
+     * 		ngx_http_core_run_phases(r);
+     */
     sr->write_event_handler = ngx_http_handler;
 
     if (c->data == r && r->postponed == NULL) {
+    	// 指定下次可以向客户端输出数据的子请求
         c->data = sr;
     }
 
@@ -2546,6 +2565,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
     pr->out = NULL;
     pr->next = NULL;
 
+    // 将该子请求放入到父请求的postponed链表尾部
     if (r->postponed) {
         for (p = r->postponed; p->next; p = p->next) { /* void */ }
         p->next = pr;
@@ -2570,6 +2590,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     *psr = sr;
 
+    // 将该子请求放入到原始请求的post_requests链表尾部
     return ngx_http_post_request(sr, NULL);
 }
 
@@ -2678,6 +2699,8 @@ ngx_http_named_location(ngx_http_request_t *r, ngx_str_t *name)
             r->internal = 1;
             r->content_handler = NULL;
             r->uri_changed = 0;
+            // 此时r->loc_conf中的存放着所有http模块在server{}中创建的loc_conf配置项
+            // (每个ngx_http_core_loc_conf_t代表一个location{}块)
             r->loc_conf = (*clcfp)->loc_conf;
 
             /* clear the modules contexts */
@@ -2991,6 +3014,12 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         return NGX_CONF_ERROR;
     }
 
+    /*
+     * 这里和在/ngx_http.c/ngx_http_block方法类似
+     * 回调所有HTTP模块的create_srv|loc_conf方法
+     *
+     * 这里的操作只是在为server{}块的每个http模块创建各自的自定义的配置项
+     */
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_HTTP_MODULE) {
             continue;
@@ -3040,6 +3069,13 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     cf->ctx = ctx;
     cf->cmd_type = NGX_HTTP_SRV_CONF;
 
+    /*
+     * 当每个模块在server{}块的自定义配置项创建完毕之后,解析server{}块下的所有指令
+     * 每解析到一个指令就调用每个指令的handler方法
+     * 当然在server{}呢也会遇到location指令,location指令绑定的handler是ngx_http_core_location方法
+     *
+     * 当这个方法执行完毕后，所有server{}块下的指令就都被解析完毕了。(包括location{}s)
+     */
     rv = ngx_conf_parse(cf, NULL);
 
     *cf = pcf;

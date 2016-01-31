@@ -190,6 +190,14 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * of the all http modules
      */
 
+    /*
+     * 回调所有HTTP模块的 create_main|srv|loc_conf 方法
+     * 这时候只是在http{}块，为每个模块创建了各自的自定义配置项
+     *
+     * 每个模块在server{}块的自定义配置项还没有创建,在后续调用的ngx_conf_parse()方法中
+     * 如果解析到server指令,就会先回调server指令的ngx_http_core_module.c/ngx_http_core_server回调方法来处理server指令
+     * ngx_http_core_server会调用所有HTTP模块create_srv|loc_conf方法，为每个模块在server{}块创建各自的自定义配置项
+     */
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -241,6 +249,15 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     cf->module_type = NGX_HTTP_MODULE;
     cf->cmd_type = NGX_HTTP_MAIN_CONF;
+
+    /*
+     * 解析htto{}内的所有指令
+     * 每解析到一个指令就会调用该指令的handler方法
+     * 每个指令的handler方法一般负责为该指令赋值
+     * 指令的handler方法可以是自定义的,也可以使用nginx提供的预设方法
+     *
+     * 当该方法执行完后,所有的http{}块内的指令都被执行完了. (包块server{}s,location{}s)
+     */
     rv = ngx_conf_parse(cf, NULL);
 
     if (rv != NGX_CONF_OK) {
@@ -252,9 +269,13 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * and its location{}s' loc_conf's
      */
 
+    /*
+     *
+     */
     cmcf = ctx->main_conf[ngx_http_core_module.ctx_index];
     cscfp = cmcf->servers.elts;
 
+    // 初始化和merge所有http模块在http{},server{}s,location{}s块的配置项
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -264,7 +285,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         mi = ngx_modules[m]->ctx_index;
 
         /* init http{} main_conf's */
-
+        // 调用该模块在http{}块的初始化方法
         if (module->init_main_conf) {
             rv = module->init_main_conf(cf, ctx->main_conf[mi]);
             if (rv != NGX_CONF_OK) {
@@ -272,6 +293,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             }
         }
 
+        // 调用该http模块在所有server{}s的merge_srv_conf方法和merge_loc_conf方法
         rv = ngx_http_merge_servers(cf, cmcf, module, mi);
         if (rv != NGX_CONF_OK) {
             goto failed;
@@ -336,6 +358,30 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
     /* optimize the lists of ports, addresses and server names */
+
+    /*
+     * 这个方法是http模块将自己的方法注册到事件模块的入口
+
+       这个方法会调用ngx_http_init_listening方法，去初始化从server{}中解析到的监听地址和端口
+       ngx_http_init_listening方法实际上去调用ngx_http_add_listening方法创建ngx_listening_t结构体
+
+       然后ngx_http_add_listening方法会把创建好的ngx_listening_t结构体，通过ngx_create_listening方法放入到
+       ngx_cycle_t->listening数组中。
+       接下来再设置ngx_listening_t->handler = ngx_http_init_connection
+       (nginx事件框架使用ngx_event_accept来获取新连接,并在获取完新连接后回调ngx_listening_t->handler方法)
+       (ngx_cycle_t->listening数组中所代表的连接被放入到epoll之前,他们的读事件会通过事件模块的ngx_event_process_init
+        方法设置为c->read->handler = ngx_event_accept)
+
+       初始化连接时(ngx_http_init_connection方法)会设置
+       	 c->read->handler = ngx_http_wait_request_handler;
+    	 c->write->handler = ngx_http_empty_handler;
+
+       一旦有请求过来后ngx_http_wait_request_handler方法会首先创建ngx_http_request_t结构体,然后设置回调函数
+		 c->data = ngx_http_create_request(c);
+		 rev->handler = ngx_http_process_request_line;
+    	 ngx_http_process_request_line(rev);
+
+    */
 
     if (ngx_http_optimize_servers(cf, cmcf, cmcf->ports) != NGX_OK) {
         return NGX_CONF_ERROR;
@@ -585,6 +631,7 @@ ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 
         ctx->srv_conf = cscfp[s]->ctx->srv_conf;
 
+        // 调用该http模块在server{}块的merge_srv_conf方法
         if (module->merge_srv_conf) {
             rv = module->merge_srv_conf(cf, saved.srv_conf[ctx_index],
                                         cscfp[s]->ctx->srv_conf[ctx_index]);
@@ -593,6 +640,7 @@ ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
             }
         }
 
+        // 调用该http模块在server{}块的merge_loc_conf方法
         if (module->merge_loc_conf) {
 
             /* merge the server{}'s loc_conf */
@@ -609,6 +657,7 @@ ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 
             clcf = cscfp[s]->ctx->loc_conf[ngx_http_core_module.ctx_index];
 
+            // 去调用该http模块在所有location{}s块的merge_loc_conf方法
             rv = ngx_http_merge_locations(cf, clcf->locations,
                                           cscfp[s]->ctx->loc_conf,
                                           module, ctx_index);
@@ -652,12 +701,14 @@ ngx_http_merge_locations(ngx_conf_t *cf, ngx_queue_t *locations,
         clcf = lq->exact ? lq->exact : lq->inclusive;
         ctx->loc_conf = clcf->loc_conf;
 
+        // 调用该http模块在location{}块的merge_loc_conf方法
         rv = module->merge_loc_conf(cf, loc_conf[ctx_index],
                                     clcf->loc_conf[ctx_index]);
         if (rv != NGX_CONF_OK) {
             return rv;
         }
 
+        // 如果location{}块有嵌套,那么递归调用
         rv = ngx_http_merge_locations(cf, clcf->locations, clcf->loc_conf,
                                       module, ctx_index);
         if (rv != NGX_CONF_OK) {

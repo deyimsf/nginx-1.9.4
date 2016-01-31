@@ -15,6 +15,9 @@ static ngx_int_t ngx_disable_accept_events(ngx_cycle_t *cycle, ngx_uint_t all);
 static void ngx_close_accepted_connection(ngx_connection_t *c);
 
 
+/**
+ * 处理新连接
+ */
 void
 ngx_event_accept(ngx_event_t *ev)
 {
@@ -359,6 +362,7 @@ ngx_event_accept(ngx_event_t *ev)
             ev->available--;
         }
 
+        // ev->available标志位为1时，表示尽量多的建立TCP连接
     } while (ev->available);
 }
 

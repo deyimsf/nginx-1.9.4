@@ -185,6 +185,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_queue_init(&cycle->reusable_connections_queue);
 
 
+    // 这里貌似是为每一个模块都分配了一个指针空间
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
         ngx_destroy_pool(pool);
@@ -212,13 +213,16 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_strlow(cycle->hostname.data, (u_char *) hostname, cycle->hostname.len);
 
 
+    // 调用所有核心模块的create_conf方法
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
         }
 
+        // 每个核心模块的接口,比如事件核心模块接口ngx_events_module_ctx、http核心模块接口ngx_http_module_ctx
         module = ngx_modules[i]->ctx;
 
+        // 核心HTTP模块没有实现create_conf
         if (module->create_conf) {
             rv = module->create_conf(cycle);
             if (rv == NULL) {
@@ -265,6 +269,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
+    // 解析nginx.conf配置文件
+    // 该方法执行完后,所有的模块指令就都被解析完了
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
@@ -276,6 +282,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                        cycle->conf_file.data);
     }
 
+    // 调用所有核心模块的init_conf方法
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
@@ -612,6 +619,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     pool->log = cycle->log;
 
+    // 调用每个模块的init_module回调方法
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->init_module) {
             if (ngx_modules[i]->init_module(cycle) != NGX_OK) {

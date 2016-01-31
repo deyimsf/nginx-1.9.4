@@ -489,12 +489,15 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
 
     ngx_reusable_connection(c, 0);
 
+    // 创建请求(原始请求)
+    // 此时c->data存放的是ngx_http_request_t结构体
     c->data = ngx_http_create_request(c);
     if (c->data == NULL) {
         ngx_http_close_connection(c);
         return;
     }
 
+    // 接收事件的handler设置为ngx_http_process_request_line
     rev->handler = ngx_http_process_request_line;
     ngx_http_process_request_line(rev);
 }
@@ -1903,8 +1906,10 @@ ngx_http_process_request(ngx_http_request_t *r)
     c->write->handler = ngx_http_request_handler;
     r->read_event_handler = ngx_http_block_reading;
 
+    // 执行原始请求的 ngx_http_core_run_phases(r);
     ngx_http_handler(r);
 
+    // 执行子请求
     ngx_http_run_posted_requests(c);
 }
 
@@ -2169,6 +2174,9 @@ ngx_http_find_virtual_server(ngx_connection_t *c,
 }
 
 
+/**
+ * 负责执行原始请求的_event_handler()方法，并执行原始请求下的子请求
+ */
 static void
 ngx_http_request_handler(ngx_event_t *ev)
 {
@@ -2200,6 +2208,7 @@ ngx_http_run_posted_requests(ngx_connection_t *c)
     ngx_http_request_t         *r;
     ngx_http_posted_request_t  *pr;
 
+    // 执行原始请求posted_requests链表下的所有子请求
     for ( ;; ) {
 
         if (c->destroyed) {
@@ -2362,6 +2371,8 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 
             r->done = 1;
 
+            // 当前子请求的数据已经输出完毕
+            // 检查子请求的父请求下，是否还有子请求,如果有则说明，下一个可以输出数据的就是存在的这个子请求(pr->postponed->next)
             if (pr->postponed && pr->postponed->request == r) {
                 pr->postponed = pr->postponed->next;
             }

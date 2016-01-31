@@ -60,6 +60,7 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug3(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http postpone filter \"%V?%V\" %p", &r->uri, &r->args, in);
 
+    // 当前不应该r请求输出数据，只是把获取的数据暂存起来
     if (r != c->data) {
 
         if (in) {
@@ -76,8 +77,12 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
         return NGX_OK;
     }
 
+    // 走到这里说明该r请求输出数据了,并且r下面也没有其他子请求了
     if (r->postponed == NULL) {
+    	// 如果r请求的父请求pr下面还有要执行的子请求,那么c->data=pr->postponed->next
+    	// 否则c->data = pr,也就是说当前可以输出数据的请求是pr
 
+    	// 上面的逻辑体现在ngx_http_finalize_request方法的 "if (r != r->main) {" 块中
         if (in || c->buffered) {
             return ngx_http_next_body_filter(r->main, in);
         }
@@ -85,6 +90,8 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
         return NGX_OK;
     }
 
+    // 走到这里说明该r请求输出数据了,但是r下面又存在子请求(为什么会产生这种情况?)
+    // 先将r产生的数据暂存起来
     if (in) {
         ngx_http_postpone_filter_add(r, in);
     }
@@ -102,6 +109,8 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
             c->data = pr->request;
 
+            // 不会和ngx_http_subrequest方法冲突吗????
+            //
             return ngx_http_post_request(pr->request, NULL);
         }
 

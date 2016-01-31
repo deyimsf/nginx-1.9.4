@@ -942,7 +942,9 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
     cycle->listening.nelts = 0;
 }
 
-
+/**
+ * 真正获取连接的时候，才会把该连接放入到对应的读写事件结构体中
+ */
 ngx_connection_t *
 ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 {
@@ -975,6 +977,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
         return NULL;
     }
 
+    // 连接(ngx_connection_t)未被使用时 c->data 指向的是空闲链表的next指针
     ngx_cycle->free_connections = c->data;
     ngx_cycle->free_connection_n--;
 
@@ -985,6 +988,8 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     rev = c->read;
     wev = c->write;
 
+    // 将连接(ngx_connection_t)中的数据清零
+    // 相当于初始化从空闲链表中取出的ngx_connection_t结构体
     ngx_memzero(c, sizeof(ngx_connection_t));
 
     c->read = rev;

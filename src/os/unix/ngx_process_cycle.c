@@ -722,7 +722,9 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
     exit(0);
 }
 
-
+/**
+ * worker工作循环方法 
+ */
 static void
 ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 {

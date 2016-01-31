@@ -133,6 +133,7 @@ struct ngx_connection_s {
     ngx_recv_chain_pt   recv_chain;
     ngx_send_chain_pt   send_chain;
 
+    // 该连接对应的监听对象?
     ngx_listening_t    *listening;
 
     off_t               sent;

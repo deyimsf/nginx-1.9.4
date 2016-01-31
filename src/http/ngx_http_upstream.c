@@ -5566,7 +5566,9 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     ngx_http_upstream_main_conf_t  *umcf;
 
     if (!(flags & NGX_HTTP_UPSTREAM_CREATE)) {
-
+    	//TODO 打个断点，看看当proxy_pass http://channel时，u是如何被解析的
+    	//proxy_pass在调用ngx_http_upstream_add方法时会把http://和https://去掉
+    	//所以如果配置的是http://channel，那么实际过来的u->url.是channel字符串
         if (ngx_parse_url(cf->pool, u) != NGX_OK) {
             if (u->err) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,

@@ -318,6 +318,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 
     epcf = ngx_event_get_conf(cycle->conf_ctx, ngx_epoll_module);
 
+    // 调用epoll_create创建epoll对象
     if (ep == -1) {
         ep = epoll_create(cycle->connection_n / 2);
 
@@ -345,6 +346,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
             ngx_free(event_list);
         }
 
+        // 创建用于从epoll_wait方法中返回的事件数组
         event_list = ngx_alloc(sizeof(struct epoll_event) * epcf->events,
                                cycle->log);
         if (event_list == NULL) {
@@ -756,7 +758,9 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     	// 取出这个事件对应的链接
         c = event_list[i].data.ptr;
 
+        // 取出是否过期标记位
         instance = (uintptr_t) c & 1;
+        // 还原c连接(将c的最后一位置为0)
         c = (ngx_connection_t *) ((uintptr_t) c & (uintptr_t) ~1);
 
         // 取出该链接的读事件
@@ -825,7 +829,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                 ngx_post_event(rev, queue);
 
             } else {
-            	// 调用读事件的回调方法
+            	// 调用读事件的回调方法(读事件包括新建立连接事件;ngx_event_accept)
                 rev->handler(rev);
             }
         }

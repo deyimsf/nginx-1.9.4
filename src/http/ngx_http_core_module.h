@@ -162,6 +162,8 @@ typedef struct {
 
 
 typedef struct {
+	// 存储http{}块下的所有server{}块配置项结构体(ngx_http_core_srv_conf_t)
+	// 当前http{}下有几个server{},就有几个ngx_http_core_srv_conf_t配置项结构体
     ngx_array_t                servers;         /* ngx_http_core_srv_conf_t */
 
     ngx_http_phase_engine_t    phase_engine;
@@ -194,6 +196,7 @@ typedef struct {
     ngx_array_t                 server_names;
 
     /* server ctx */
+    // 主要用来存储所有http模块，在server{}块的配置项结构体(各个自定义模块的srv_conf和loc_conf结构体)
     ngx_http_conf_ctx_t        *ctx;
 
     ngx_str_t                   server_name;
@@ -320,7 +323,7 @@ typedef struct {
     unsigned                   test_dir:1;
 } ngx_http_try_file_t;
 
-
+// 可以认为该结构体代表一个location{}块
 struct ngx_http_core_loc_conf_s {
     ngx_str_t     name;          /* location name */
 
@@ -349,11 +352,14 @@ struct ngx_http_core_loc_conf_s {
 #endif
 
     /* pointer to the modules' loc_conf */
+    // 在某个location{}块内的所有http模块的loc_conf配置项结构体
+    // locl_conf[module.ctx_index]
     void        **loc_conf;
 
     uint32_t      limit_except;
     void        **limit_except_loc_conf;
 
+    // CONTENT_PHASE阶段的handler回调函数
     ngx_http_handler_pt  handler;
 
     /* location name length for inclusive location with inherited alias */
