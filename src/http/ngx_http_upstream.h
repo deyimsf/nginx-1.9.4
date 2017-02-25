@@ -73,6 +73,9 @@ typedef struct {
                                              /* ngx_http_upstream_srv_conf_t */
 } ngx_http_upstream_main_conf_t;
 
+/*
+ * 对应一个upstream
+ */
 typedef struct ngx_http_upstream_srv_conf_s  ngx_http_upstream_srv_conf_t;
 
 typedef ngx_int_t (*ngx_http_upstream_init_pt)(ngx_conf_t *cf,
@@ -84,19 +87,30 @@ typedef ngx_int_t (*ngx_http_upstream_init_peer_pt)(ngx_http_request_t *r,
 typedef struct {
     ngx_http_upstream_init_pt        init_upstream;
     ngx_http_upstream_init_peer_pt   init;
+    // 有上面两个方法构造的peers (如，ngx_http_upstream_rr_peers_t)
     void                            *data;
 } ngx_http_upstream_peer_t;
 
-
+/*
+ * 对应upstream中的一个server
+ */
 typedef struct {
+	// 字符串形式的套接字地址,包括端口
     ngx_str_t                        name;
+    // 套接字地址,包括端口
     ngx_addr_t                      *addrs;
+    // ?
     ngx_uint_t                       naddrs;
+    // 该server的权重
     ngx_uint_t                       weight;
+    // 最大失败次数
     ngx_uint_t                       max_fails;
+    // 失败后多长时间不可用
     time_t                           fail_timeout;
 
+    // server是否可用
     unsigned                         down:1;
+    // 是否是备份server
     unsigned                         backup:1;
 } ngx_http_upstream_server_t;
 
@@ -109,18 +123,30 @@ typedef struct {
 #define NGX_HTTP_UPSTREAM_BACKUP        0x0020
 
 
+/**
+ * 对应一个upstream
+ */
 struct ngx_http_upstream_srv_conf_s {
+	// 用于构造负载均衡方法?
     ngx_http_upstream_peer_t         peer;
+    // ngx_http_conf_ctx_t->srv_conf
+    // 用来存储ngx_http_upstream_srv_conf_t
     void                           **srv_conf;
 
+    // 该upstream下所有的server
     ngx_array_t                     *servers;  /* ngx_http_upstream_server_t */
 
+    // 标志位,是否支持NGX_HTTP_UPSTREAM_CREATE、NGX_HTTP_UPSTREAM_WEIGHT、NGX_HTTP_UPSTREAM_MAX_FAILS等
     ngx_uint_t                       flags;
+    // upstream的名字
     ngx_str_t                        host;
+    // 该upstream所在的文件
     u_char                          *file_name;
     ngx_uint_t                       line;
+    // upstream端口号
     in_port_t                        port;
     in_port_t                        default_port;
+    // 是否存在端口号
     ngx_uint_t                       no_port;  /* unsigned no_port:1 */
 
 #if (NGX_HTTP_UPSTREAM_ZONE)

@@ -16,6 +16,9 @@
 
 typedef struct ngx_http_upstream_rr_peer_s   ngx_http_upstream_rr_peer_t;
 
+/**
+ * 一个peer,代表一个上游地址
+ */
 struct ngx_http_upstream_rr_peer_s {
     struct sockaddr                *sockaddr;
     socklen_t                       socklen;
@@ -52,6 +55,9 @@ struct ngx_http_upstream_rr_peer_s {
 
 typedef struct ngx_http_upstream_rr_peers_s  ngx_http_upstream_rr_peers_t;
 
+/**
+ * 代表upstream中的一组peer
+ */
 struct ngx_http_upstream_rr_peers_s {
     ngx_uint_t                      number;
 
@@ -68,8 +74,10 @@ struct ngx_http_upstream_rr_peers_s {
 
     ngx_str_t                      *name;
 
+    // upsteam中的另一组peer(比如所有的backup)
     ngx_http_upstream_rr_peers_t   *next;
 
+    // 每组peer中的第一个peer,下一个是peer.next
     ngx_http_upstream_rr_peer_t    *peer;
 };
 
@@ -119,9 +127,13 @@ struct ngx_http_upstream_rr_peers_s {
 
 
 typedef struct {
+	// upsteam中的一组peer
     ngx_http_upstream_rr_peers_t   *peers;
+    // 当前使用的peer(upstream中的server)
     ngx_http_upstream_rr_peer_t    *current;
+    // 当前server重试了几次
     uintptr_t                      *tried;
+    // ?
     uintptr_t                       data;
 } ngx_http_upstream_rr_peer_data_t;
 

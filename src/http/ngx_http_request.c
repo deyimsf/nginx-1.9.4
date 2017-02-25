@@ -1256,6 +1256,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
         rc = ngx_http_parse_header_line(r, r->header_in,
                                         cscf->underscores_in_headers);
 
+        // 解析完一个头
         if (rc == NGX_OK) {
 
             r->request_length += r->header_in->pos - r->header_name_start;
@@ -1316,6 +1317,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
             continue;
         }
 
+        // 解析完整个头
         if (rc == NGX_HTTP_PARSE_HEADER_DONE) {
 
             /* a whole header has been parsed successfully */
@@ -1436,6 +1438,7 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
         return NGX_OK;
     }
 
+    // r->header_name_start 每个头的开始位置
     old = request_line ? r->request_start : r->header_name_start;
 
     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
@@ -1449,6 +1452,7 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
 
     hc = r->http_connection;
 
+    // ?如果hc->nfree值为1,为什么不使用hc->nfree[1]这个位置的缓存?
     if (hc->nfree) {
         b = hc->free[--hc->nfree];
 
@@ -1480,6 +1484,7 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
         return NGX_DECLINED;
     }
 
+    // 假设large_client_header_buffers.num值等于4,那么最终hc->nbusy会等于4,但是第四个位置没有值
     hc->busy[hc->nbusy++] = b;
 
     if (r->state == 0) {
@@ -1546,6 +1551,7 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
         }
 
     } else {
+    	// 解析请求头时创建的lager buffer,重新设置未成功解析完的头指针位置
         r->header_name_start = new;
         r->header_name_end = new + (r->header_name_end - old);
         r->header_start = new + (r->header_start - old);
@@ -1905,6 +1911,8 @@ ngx_http_process_request(ngx_http_request_t *r)
     c->read->handler = ngx_http_request_handler;
     c->write->handler = ngx_http_request_handler;
     r->read_event_handler = ngx_http_block_reading;
+
+    ////ngx_http_read_client_request_body
 
     // 执行原始请求的 ngx_http_core_run_phases(r);
     ngx_http_handler(r);
@@ -2281,6 +2289,8 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         c->error = 1;
     }
 
+    // 继续按11阶段的方式处理
+    // 这种方式肯定要配合r->phase_handler一块使用
     if (rc == NGX_DECLINED) {
         r->content_handler = NULL;
         r->write_event_handler = ngx_http_core_run_phases;
@@ -2392,6 +2402,9 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             }
         }
 
+        // 将父请求pr添加到r->main->posted_requests中
+        // 下次事件到来的时候,注册在连接上的写事件,会调用ngx_http_run_posted_requests方法
+        // 这个方法会执行在r->main->posted_requests链中的所有请求的r->write_event_handler(r)方法
         if (ngx_http_post_request(pr, NULL) != NGX_OK) {
             r->main->count++;
             ngx_http_terminate_request(r, 0);
@@ -2682,10 +2695,12 @@ ngx_http_writer(ngx_http_request_t *r)
         }
 #endif
 
+        // 如果不延迟发送数据,则更新该事件的超时事件
         if (!wev->delayed) {
             ngx_add_timer(wev, clcf->send_timeout);
         }
 
+        // 将该事件更新到epoll中
         if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
             ngx_http_close_request(r, 0);
         }
@@ -2902,6 +2917,9 @@ ngx_http_set_keepalive(ngx_http_request_t *r)
                 }
             }
 
+            // 假设现在hc->nbusy值是4,但是第四个位置没有值
+            // 最终会释放3个buffer到hc->free中,分别是[0],[1],[2]
+            // ?为什么不把第四个位置的buffer释放到hc->free[3]中?
             for (i = 0; i < hc->nbusy - 1; i++) {
                 f = hc->busy[i];
                 hc->free[hc->nfree++] = f;

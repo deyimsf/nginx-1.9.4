@@ -2445,7 +2445,7 @@ ngx_http_gzip_quantity(u_char *p, u_char *last)
 
 
 /**
- * 启动子请求的方法
+ * 发起子请求的方法
  */
 ngx_int_t
 ngx_http_subrequest(ngx_http_request_t *r,
@@ -2591,6 +2591,8 @@ ngx_http_subrequest(ngx_http_request_t *r,
     *psr = sr;
 
     // 将该子请求放入到原始请求的post_requests链表尾部
+    // 这是当前请求关联的连接的读写事件是ngx_http_request_handler方法，
+    // 这个方法在最后会执行ngx_http_run_posted_request方法来激活在r->main->posted_requests上的子请求
     return ngx_http_post_request(sr, NULL);
 }
 

@@ -44,8 +44,10 @@ struct ngx_peer_connection_s {
     ngx_uint_t                       tries;
     ngx_msec_t                       start_time;
 
+    // 获取一个上游地址的方法
     ngx_event_get_peer_pt            get;
     ngx_event_free_peer_pt           free;
+    // 如果是默认轮询负载就是 ngx_http_upstream_rr_peer_data_t
     void                            *data;
 
 #if (NGX_SSL)

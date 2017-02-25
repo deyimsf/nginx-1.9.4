@@ -36,6 +36,9 @@ struct ngx_shm_zone_s {
 
 
 struct ngx_cycle_s {
+	// 所有(核心?)模块的配置结构体指针
+	// 在二级指针的第7个位置是http核心模块的配置结构体指针ngx_http_conf_ctx_t
+	// ngx_http_conf_ctx_t中的main_conf的第二级指针存放的是所有http模块的main级别的自定义结构体
     void                  ****conf_ctx;
     ngx_pool_t               *pool;
 

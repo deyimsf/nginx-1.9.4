@@ -820,6 +820,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             }
 #endif
 
+            // 将这个事件设置为可读(已经读到了数据)
             rev->ready = 1;
 
             if (flags & NGX_POST_EVENTS) {

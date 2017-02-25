@@ -79,6 +79,7 @@ ngx_event_expire_timers(void)
                        "event timer del: %d: %M",
                        ngx_event_ident(ev->data), ev->timer.key);
 
+        // 事件超时，将其从定时器红黑树中删除,随后会回调该事件的handler方法
         ngx_rbtree_delete(&ngx_event_timer_rbtree, &ev->timer);
 
 #if (NGX_DEBUG)

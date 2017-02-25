@@ -328,10 +328,12 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
     ngx_str_t      *name;
     ngx_command_t  *cmd;
 
+    // 指令名字
     name = cf->args->elts;
 
     found = 0;
 
+    // 遍历所有模块
     for (i = 0; ngx_modules[i]; i++) {
 
         cmd = ngx_modules[i]->commands;
@@ -339,26 +341,39 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             continue;
         }
 
+        // 遍历某个模块的所有指令
         for ( /* void */ ; cmd->name.len; cmd++) {
 
+        	// 比较指令名字的长度是否一致
             if (name->len != cmd->name.len) {
                 continue;
             }
 
+            // 比较指令名字是否一样
             if (ngx_strcmp(name->data, cmd->name.data) != 0) {
                 continue;
             }
 
+            // 在某个模块ngx_modules[i]中发现和当前指令同名的指令
             found = 1;
 
             if (ngx_modules[i]->type != NGX_CONF_MODULE
+            		// 判断当前指令的所属模块是否和某个模块一致
+            		// 该判断用来区分不同模块有相同指令明情况
+            		//
+            		// 假设在NGX_HTTP_MODULE和NGX_EVENT_MODULE中都有"mycmd"指令
+            		// 此时cf->module_type=NGX_EVENT_MODULE,但是ngx_modules[i]->type=NGX_HTTP_MODULE
+            		// 则需要等到ngx_modules[i]->type=NGX_EVENT_MODULE时才往下执行
                 && ngx_modules[i]->type != cf->module_type)
             {
                 continue;
             }
 
             /* is the directive's location right ? */
+            // 走到这里说明在模块ngx_modules[i]中,有和当前指令同名的指令
 
+            // 这里是在检查这个同名的指令,是否可以出现在当前所在的区域(http{}、server{}等)
+            // 其中cmd->type代表指令可以出现的区域,cf->cmd_type代表当前指令在哪里解析到的
             if (!(cmd->type & cf->cmd_type)) {
                 continue;
             }
@@ -416,10 +431,24 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             if (cmd->type & NGX_DIRECT_CONF) {
                 conf = ((void **) cf->ctx)[ngx_modules[i]->index];
 
+            // cmd->type命令类型,比如http指令的type就是NGX_MAIN_CONF
+            // 从ngx_cycle.c/ngx_init_cycle方法中可以看到,此时的cf->ctx就是cycle->conf_ctx
+            // 此时conf就是某个核心模块的结构体指针地址,对于核心模块http来说就是ngx_http_conf_ctx_t结构体指针地址
+            // 注意此时cf->ctx[ngx_modules[i]->index]是NULL值,这里实际是吧这个NULL值的地址赋值给了conf
             } else if (cmd->type & NGX_MAIN_CONF) {
                 conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
 
             } else if (cf->ctx) {
+            	// 如果当前解析的指令是http模块的指令,那么cf->ctx就是某个块(http{}、server{}、location{}等)
+            	// 下的ngx_http_conf_ctx_t结构体
+            	// cmd->conf是ngx_http_conf_ctx_t中main|srv|loc_conf的偏移量
+            	// (offsetof(ngx_http_conf_ctx_t, main_conf)、offsetof(ngx_http_conf_ctx_t, srv_conf)、offsetof(ngx_http_conf_ctx_t, loc_conf))
+            	// confp就是某个 **main|srv|loc_conf
+
+            	// 如果当前解析的是upstream指令那么cf->ctx就是代表upstream{}的ngx_http_conf_ctx_t结构体
+            	// cmd->conf就是offsetof(ngx_http_conf_ctx_t, srv_conf)
+            	// 所以cf->ctx的地址加上cmd->conf就是,当前upstream中ngx_http_conf_ctx_t结构体的srv_conf地址
+            	// 那么此时从srv_conf[ngx_http_upstream_module.ctx_index]取出的就是ngx_http_upstream_srv_conf_t结构体
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
 
                 if (confp) {
@@ -427,6 +456,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 }
             }
 
+            // 回调指令的set方法
             rv = cmd->set(cf, cmd, conf);
 
             if (rv == NGX_CONF_OK) {
@@ -444,6 +474,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
         }
     }
 
+    // 匹配到指令name,但没有出现在正确的位置
     if (found) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "\"%s\" directive is not allowed here", name->data);
@@ -451,6 +482,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
         return NGX_ERROR;
     }
 
+    // 没有匹配到指令name
     ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                        "unknown directive \"%s\"", name->data);
 

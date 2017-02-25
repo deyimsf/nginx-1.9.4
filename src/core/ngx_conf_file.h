@@ -77,8 +77,13 @@
 
 struct ngx_command_s {
     ngx_str_t             name;
+    // 命令类型,可以指定当前指令所属的区块(如main、http{}、server{}、upstream{}、server_if{}、location_if{}等)
+    // 还可以指定命令的参数个数(NGX_CONF_NOARGS、NGX_CONF_TAKE1)等
     ngx_uint_t            type;
     char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+    // 使用的是哪个方法(create_main|server|loc_conf)创建的结构体
+    // 该值可以是NGX_HTTP_MAIN_CONF_OFFSET、NGX_HTTP_SRV_CONF_OFFSET、NGX_HTTP_LOC_CONF_OFFSET
+    // 对应的值是 offsetof(ngx_http_conf_ctx_t, main|srv|loc_conf)
     ngx_uint_t            conf;
     ngx_uint_t            offset;
     void                 *post;
@@ -163,16 +168,36 @@ typedef char *(*ngx_conf_handler_pt)(ngx_conf_t *cf,
 
 struct ngx_conf_s {
     char                 *name;
+    // 指令参数值
     ngx_array_t          *args;
 
+    // 当前worker对应的ngx_cycle_t结构体
     ngx_cycle_t          *cycle;
+    // ngx_cycle_t中的pool
     ngx_pool_t           *pool;
     ngx_pool_t           *temp_pool;
+    // 当前解析的配置文件路径(如/path/nginx.conf、/path/domains/test.conf)
     ngx_conf_file_t      *conf_file;
+    // ngx_cycle_t中的log
     ngx_log_t            *log;
 
+    // 一般在调用ngx_conf_parse方法前,会设置
+    // 当解析http{}内指令时,ctx是http{}块内的ngx_http_conf_ctx_t
     void                 *ctx;
+    // 模块类型(如NGX_CORE_MODULE、NGX_HTTP_MODULE等)
     ngx_uint_t            module_type;
+    // 一般在调用ngx_conf_parse方法前,会设置
+    // 命令类型(如NGX_MAIN_CONF、NGX_HTTP_MAIN_CONF、NGX_HTTP_SRV_CONF、NGX_HTTP_SIF_CONF等)
+    // NGX_MAIN_CONF:
+    //		代表当前正在main块下解析指令
+    // NGX_HTTP_MAIN_CONF:
+    //		代表当前正在http{}块下解析指令
+    // NGX_HTTP_SRV_CONF:
+    //		代表当前正在server{}块下解析指令
+    // NGX_HTTP_SIF_CONF:
+    //		代表当前正在server{}块下的if{}中解析指令
+    // NGX_HTTP_LIF_CONF
+    //		代表当前正在loction{}块下的if{}中解析指令
     ngx_uint_t            cmd_type;
 
     ngx_conf_handler_pt   handler;

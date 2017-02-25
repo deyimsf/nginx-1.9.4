@@ -66,13 +66,16 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     sync = 0;
     last = 0;
 
-    // 存储这未发送完的数据
+    // ll用来记录r->out链中的最后一个chain的next的变量的地址
+    // 最后一个chain的next是个指针,并且值是空,ll就是这个空指针的地址
+    // 如果要为这个空指针next赋值,只需要 *ll=   就可以
     ll = &r->out;
 
     /* find the size, the flush point and the last link of the saved chain */
 
     // 计算出r->out中未发送的数据大小
     for (cl = r->out; cl; cl = cl->next) {
+    	//
         ll = &cl->next;
 
         ngx_log_debug7(NGX_LOG_DEBUG_EVENT, c->log, 0,

@@ -614,6 +614,7 @@ ngx_http_memcached_create_loc_conf(ngx_conf_t *cf)
     conf->upstream.busy_buffers_size = 0;
     conf->upstream.max_temp_file_size = 0;
     conf->upstream.temp_file_write_size = 0;
+    // ngx_http_upstream_intercept_errors
     conf->upstream.intercept_errors = 1;
     conf->upstream.intercept_404 = 1;
     conf->upstream.pass_request_headers = 0;

@@ -115,7 +115,9 @@ ngx_module_t  ngx_http_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/**
+ * conf 是一个NULL值的地址,实际值是 &cycle->conf_ctx[ngx_http_module.index]
+ */
 static char *
 ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -139,6 +141,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    // 为cycle->conf_ctx[ngx_http_module.index]赋值ctx
     *(ngx_http_conf_ctx_t **) conf = ctx;
 
 

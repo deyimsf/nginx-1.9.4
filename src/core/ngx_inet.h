@@ -68,19 +68,26 @@ typedef struct {
 
 
 typedef struct {
+	// 套接字地址,包括端口号
     struct sockaddr          *sockaddr;
     socklen_t                 socklen;
+    // 字符串形式的IP地址(如 192.168.1.1:8001)
     ngx_str_t                 name;
 } ngx_addr_t;
 
 
 typedef struct {
     ngx_str_t                 url;
+    // host名字,可以是upstream名字和 ip地址加端口号
+    // 在解析server的时候url和host相同(如192.168.1.1:8001)
     ngx_str_t                 host;
+    // 字符串形式的端口号
     ngx_str_t                 port_text;
     ngx_str_t                 uri;
 
+    // 端口号
     in_port_t                 port;
+    // 默认端口号
     in_port_t                 default_port;
     int                       family;
 
@@ -95,6 +102,7 @@ typedef struct {
     socklen_t                 socklen;
     u_char                    sockaddr[NGX_SOCKADDRLEN];
 
+    // 套接字地址,包括端口
     ngx_addr_t               *addrs;
     ngx_uint_t                naddrs;
 

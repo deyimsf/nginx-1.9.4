@@ -49,6 +49,10 @@ typedef struct {
 } ngx_hash_combined_t;
 
 
+/*
+ * 只是在构造hash结构是使用
+ * 当构造完*hash后就不需要了
+ */
 typedef struct {
     ngx_hash_t       *hash;
     ngx_hash_key_pt   key;

@@ -482,6 +482,7 @@ ngx_http_upstream_init(ngx_http_request_t *r)
     }
 #endif
 
+    // 删除nginx与下游客户端的超时限制
     if (c->read->timer_set) {
         ngx_del_timer(c->read);
     }
@@ -567,6 +568,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
         return;
     }
 
+    // nginx与上游服务器连接用的本地地址
     u->peer.local = ngx_http_upstream_get_local(r, u->conf->local);
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
@@ -2093,7 +2095,7 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 #endif
 
             // 读数据后返回NGX_AGAIN,说明有未读完的数据
-            // 将当前读时间重新放入到nginx主事件循环中
+            // 将当前读事件重新放入到nginx主事件循环中
             if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
                 ngx_http_upstream_finalize_request(r, u,
                                                NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -2188,7 +2190,7 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
     // 不使用upstream的转发响应机制
 
     /* subrequest content in memory */
-    // r->subrequest_in_memory = 1 表示不需要upstream转发响应体到客户端？客户自己转发?
+    // r->subrequest_in_memory = 1 表示不需要upstream转发响应体到客户端？我们自己转发?
 
     // 检查用户是否实现了input_filter回调函数,如果没有则使用nginx默认的方法
     if (u->input_filter == NULL) {
@@ -2643,6 +2645,7 @@ ngx_http_upstream_process_body_in_memory(ngx_http_request_t *r,
 
         u->state->response_length += n;
 
+        // 默认是ngx_http_upstream_non_buffered_filter方法
         if (u->input_filter(u->input_filter_ctx, n) == NGX_ERROR) {
             ngx_http_upstream_finalize_request(r, u, NGX_ERROR);
             return;
@@ -2653,6 +2656,10 @@ ngx_http_upstream_process_body_in_memory(ngx_http_request_t *r,
         }
     }
 
+    // 不使用转发功能 就需要依据u->length来确定何时结束该upstream?
+    // 如果使用转发功能则使用u->out_bufs来确定?
+    // ?什么时候，谁负责把u->out_bufs中的数据发送给下游客户端呢?
+    // ?我们自己在input_filter方法中转发?
     if (u->length == 0) {
         ngx_http_upstream_finalize_request(r, u, 0);
         return;
@@ -2682,9 +2689,7 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
     ngx_connection_t          *c;
     ngx_http_core_loc_conf_t  *clcf;
 
-    // 发送响应头?此时响应头已经发送？
-    // 从u->buffer解析出来的协议头回通过该方法发出
-    // 在自定义的回调函数u->input_filter中(前题是设置了该方法,如果过没有nginx会用自己默认的方法)会发送响应体
+    // 从u->buffer解析出来的协议头回通过该方法触发
     // 在u->input_filter中我们需要将解析到的协议头过滤掉,就是移动u->buffer->pos指针,以此过滤掉协议头
     rc = ngx_http_send_header(r);
 
@@ -3358,6 +3363,7 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
         if (do_write) {
 
             if (u->out_bufs || u->busy_bufs) {
+            	// 对于没有发送完的数据会使用r->out链接起来
                 rc = ngx_http_output_filter(r, u->out_bufs);
 
                 if (rc == NGX_ERROR) {
@@ -3365,9 +3371,12 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
                     return;
                 }
 
+                // 回收已经发送完数据的chain结构体,并且对于未发送完的数据放到u->busy_bufs链的末尾
+                // 此时r->out和u->busy_bufs各自拥有的chain指向的内存地址是一样的
                 ngx_chain_update_chains(r->pool, &u->free_bufs, &u->busy_bufs,
                                         &u->out_bufs, u->output.tag);
             }
+
 
             if (u->busy_bufs == NULL) {
 
@@ -5301,7 +5310,10 @@ ngx_http_upstream_cache_etag(ngx_http_request_t *r,
 
 #endif
 
-
+/*
+ * cf: 解析到的当前指令的一些基本信息
+ * cmd: 当前指令在ngx_http_upstream_commands[]数组中对应的ngx_command_t
+ */
 static char *
 ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 {
@@ -5318,10 +5330,11 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ngx_memzero(&u, sizeof(ngx_url_t));
 
     value = cf->args->elts;
-    u.host = value[1];
+    u.host = value[1]; //upstream的名字,比如redis
     u.no_resolve = 1;
-    u.no_port = 1;
+    u.no_port = 1;  //没有端口
 
+    // 将解析到的upstream添加到ngx_http_upstream_main_conf_t->upstreams数组中
     uscf = ngx_http_upstream_add(cf, &u, NGX_HTTP_UPSTREAM_CREATE
                                          |NGX_HTTP_UPSTREAM_WEIGHT
                                          |NGX_HTTP_UPSTREAM_MAX_FAILS
@@ -5333,6 +5346,7 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     }
 
 
+    // 为该upstream{}块创建一个ngx_http_conf_ctx_t结构体
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
@@ -5348,6 +5362,9 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         return NGX_CONF_ERROR;
     }
 
+    // 存放代表某个upstream的ngx_http_upstream_srv_conf_t结构体
+    // 只是临时用于存放ngx_http_upstream_srv_conf_t结构体的,这样在解析某个upstream{}块内的指令时
+    // ctx->srv_conf[ngx_http_upstream_module.ctx_index]就一直是代表该upstream的ngx_http_upstream_srv_conf_t结构体了
     ctx->srv_conf[ngx_http_upstream_module.ctx_index] = uscf;
 
     uscf->srv_conf = ctx->srv_conf;
@@ -5360,6 +5377,7 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         return NGX_CONF_ERROR;
     }
 
+    // 在upsteam{}块,为所有http模块创建各自在srv_conf和loc_conf级别的自定义结构体？ 有啥用呢?
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -5367,6 +5385,8 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
         module = ngx_modules[m]->ctx;
 
+        // ngx_http_upstream_module模块并没有实现create_srv_conf方法
+        // 所以不会覆盖上面的ctx->srv_conf[ngx_http_upstream_module.ctx_index] = uscf
         if (module->create_srv_conf) {
             mconf = module->create_srv_conf(cf);
             if (mconf == NULL) {
@@ -5386,6 +5406,7 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         }
     }
 
+    // 创建用于存放upstream中server的数据,初始化数组大小为4
     uscf->servers = ngx_array_create(cf->pool, 4,
                                      sizeof(ngx_http_upstream_server_t));
     if (uscf->servers == NULL) {
@@ -5395,6 +5416,8 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
     /* parse inside upstream{} */
 
+    // 解析upstream{}块内的指令
+    // copy一份当前ngx_conf_t结构体,因为在解析的过程中ngx_conf_t中的值会改变
     pcf = *cf;
     cf->ctx = ctx;
     cf->cmd_type = NGX_HTTP_UPS_CONF;
@@ -5416,10 +5439,16 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     return rv;
 }
 
-
+/*
+ * conf : ngx_http_upstream_srv_conf_t,代表某个upstream
+ *
+ * see ngx_conf_file.c/ngx_conf_handler方法
+ *
+ */
 static char *
 ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
+
     ngx_http_upstream_srv_conf_t  *uscf = conf;
 
     time_t                       fail_timeout;
@@ -5429,6 +5458,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_uint_t                   i;
     ngx_http_upstream_server_t  *us;
 
+    // 将解析到的server放入到upstream中
     us = ngx_array_push(uscf->servers);
     if (us == NULL) {
         return NGX_CONF_ERROR;
@@ -5436,14 +5466,17 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ngx_memzero(us, sizeof(ngx_http_upstream_server_t));
 
+    // 取出指令及其参数 server 192.168.1.1:8001 weight=1  max_fails=3 fail_timeout=5;
     value = cf->args->elts;
 
     weight = 1;
     max_fails = 1;
     fail_timeout = 10;
 
+    // 直接检查server的一些标志位
     for (i = 2; i < cf->args->nelts; i++) {
 
+    	// 是否支持权重 weight
         if (ngx_strncmp(value[i].data, "weight=", 7) == 0) {
 
             if (!(uscf->flags & NGX_HTTP_UPSTREAM_WEIGHT)) {
@@ -5459,6 +5492,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        // 是否支持max_fails
         if (ngx_strncmp(value[i].data, "max_fails=", 10) == 0) {
 
             if (!(uscf->flags & NGX_HTTP_UPSTREAM_MAX_FAILS)) {
@@ -5474,6 +5508,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        // 是否支持fail_timeout
         if (ngx_strncmp(value[i].data, "fail_timeout=", 13) == 0) {
 
             if (!(uscf->flags & NGX_HTTP_UPSTREAM_FAIL_TIMEOUT)) {
@@ -5492,6 +5527,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        // 是否支持backup
         if (ngx_strcmp(value[i].data, "backup") == 0) {
 
             if (!(uscf->flags & NGX_HTTP_UPSTREAM_BACKUP)) {
@@ -5503,6 +5539,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        // 是否支持down
         if (ngx_strcmp(value[i].data, "down") == 0) {
 
             if (!(uscf->flags & NGX_HTTP_UPSTREAM_DOWN)) {
@@ -5519,6 +5556,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ngx_memzero(&u, sizeof(ngx_url_t));
 
+    //192.168.1.1:8001
     u.url = value[1];
     u.default_port = 80;
 
@@ -5533,7 +5571,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     us->name = u.url;
     us->addrs = u.addrs;
-    us->naddrs = u.naddrs;
+    us->naddrs = u.naddrs;//?
     us->weight = weight;
     us->max_fails = max_fails;
     us->fail_timeout = fail_timeout;
@@ -5557,6 +5595,10 @@ not_supported:
 }
 
 
+/*
+ * 把已经解析到的upstream添加到ngx_http_upstream_main_conf_t->upstreams数组中并返回
+ * 如果upstreams数组中已经存在解析到的upstream则直接返回
+ */
 ngx_http_upstream_srv_conf_t *
 ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
 {
@@ -5565,10 +5607,14 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     ngx_http_upstream_srv_conf_t   *uscf, **uscfp;
     ngx_http_upstream_main_conf_t  *umcf;
 
+    // 如果flags中没有NGX_HTTP_UPSTREAM_CREATE标记，则直接解析这个url
+    // redis:8001(错误)  192.168.123.4:8002(正确)
     if (!(flags & NGX_HTTP_UPSTREAM_CREATE)) {
-    	//TODO 打个断点，看看当proxy_pass http://channel时，u是如何被解析的
-    	//proxy_pass在调用ngx_http_upstream_add方法时会把http://和https://去掉
-    	//所以如果配置的是http://channel，那么实际过来的u->url.是channel字符串
+    	// proxy_pass在调用ngx_http_upstream_add方法时会把http://和https://去掉
+    	// 所以如果配置的是http://channel，那么实际过来的u->host是channel字符串
+    	// 后续会用channel和umcf->upstreams数组中的upstream进行对比,如果数组中存在该upstre则直接返回
+    	// 如果不存在则会在umcf->upstreams数组中创建一个名字是"channel"的upstream，并且其中有一个server channel
+    	// 这种请情况可以使用吗? 后续会有一个警告
         if (ngx_parse_url(cf->pool, u) != NGX_OK) {
             if (u->err) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
@@ -5581,10 +5627,19 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
 
     umcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_upstream_module);
 
+    // 对umcf->upstreams进行遍历，检查当前解析到的upstream是否可以添加到umcf->upstreams数组中
+    // 因为upstreams数组中存放的不是ngx_http_upstream_srv_conf_t结构体,而是指向这个结构体的指针
+    // 所以对于upstreams.elts变量,它是一个指针变量,它的值是一个指针,这个指针有指向另一个指针,所以这里用了两个**
+    // 如果想用一个星号可以这样使用:
+    //		ngx_http_upstream_srv_conf_t   *uscfp;
+    //		uscfp = *(umcf->upstreams.elts);
+    //
     uscfp = umcf->upstreams.elts;
 
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
+    	// 检查是否有一样名字的upstream,如果都不一样说明可以添加到umcf->upstreams数组中
+    	// *(uscfp+i) 和 uscfp[i] 一样
         if (uscfp[i]->host.len != u->host.len
             || ngx_strncasecmp(uscfp[i]->host.data, u->host.data, u->host.len)
                != 0)
@@ -5592,6 +5647,9 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
             continue;
         }
 
+        // 走到这里说明当前解析到的upsteam和umcf->upstreams数组中有名字一样的upstream
+        // 如果当前方法传入的flags没有NGX_HTTP_UPSTREAM_CREATE标志,说明当前方法不是在向umcf->upstreams数组中添加该upstream?
+        // uscfp[i]->flags & NGX_HTTP_UPSTREAM_CREATE又是在做什么
         if ((flags & NGX_HTTP_UPSTREAM_CREATE)
              && (uscfp[i]->flags & NGX_HTTP_UPSTREAM_CREATE))
         {
@@ -5615,6 +5673,11 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
             return NULL;
         }
 
+        // 如果upstream名字一样,但是端口不一样
+        // 下面的配置会出现这种情况
+        //   upstream "192.168.1.1:80" { server ...}
+        //   proxy_pass http://192.168.1.1:80
+        // nginx在解析完配置文件后会出现两个upsteam,它们的名字(u->host)都是"192.168.1.1:80" 但是端口一个是0，一个是80
         if (uscfp[i]->port && u->port
             && uscfp[i]->port != u->port)
         {
@@ -5647,6 +5710,7 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     uscf->default_port = u->default_port;
     uscf->no_port = u->no_port;
 
+    // u->naddrs是什么意思？
     if (u->naddrs == 1 && (u->port || u->family == AF_UNIX)) {
         uscf->servers = ngx_array_create(cf->pool, 1,
                                          sizeof(ngx_http_upstream_server_t));
@@ -5662,9 +5726,11 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
         ngx_memzero(us, sizeof(ngx_http_upstream_server_t));
 
         us->addrs = u->addrs;
-        us->naddrs = 1;
+        us->naddrs = 1; // ?没有地址?
     }
 
+    // 新增一个upstream
+    // 新增的upstream有可能是 "192.168.1.2:80",那么该upstream下有一个server:192.168.1.2:80
     uscfp = ngx_array_push(&umcf->upstreams);
     if (uscfp == NULL) {
         return NULL;
@@ -5965,6 +6031,10 @@ ngx_http_upstream_create_main_conf(ngx_conf_t *cf)
         return NULL;
     }
 
+    // 数组里面放的是ngx_http_upstream_srv_conf_t类型的指针
+    // void *value = upstreams->elts 是数组的首地址
+    // 所以*value的值仍然是一个指针,且这个指针指向ngx_http_upstream_srv_conf_t结构体
+    // 所以 *(*value) 才是代表ngx_http_upstream_srv_conf_t结构体
     if (ngx_array_init(&umcf->upstreams, cf->pool, 4,
                        sizeof(ngx_http_upstream_srv_conf_t *))
         != NGX_OK)
@@ -5993,6 +6063,7 @@ ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
 
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
+    	// 为每个upstream设置负载均衡方法? 可以在什么地方改动吗?
         init = uscfp[i]->peer.init_upstream ? uscfp[i]->peer.init_upstream:
                                             ngx_http_upstream_init_round_robin;
 
@@ -6029,6 +6100,7 @@ ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
     hash.pool = cf->pool;
     hash.temp_pool = NULL;
 
+    // ngx_hash_init_t hash; 这个结构体只是在构造hash结构是使用
     if (ngx_hash_init(&hash, headers_in.elts, headers_in.nelts) != NGX_OK) {
         return NGX_CONF_ERROR;
     }

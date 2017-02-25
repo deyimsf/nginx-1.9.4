@@ -185,7 +185,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_queue_init(&cycle->reusable_connections_queue);
 
 
-    // 这里貌似是为每一个模块都分配了一个指针空间
+    // 这里是为每一个模块都分配了一个指针空间
+    // 刚开始的时候 ****conf_ctx的一级指针的值都是NULL
+    // 执行这句之后相当于为一级指针分配了一个ngx_max_module个(void *)大小的空间
+    // 实际上相当与为每个二级指针分配了一个空间,且这个空间的值是NULL
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
         ngx_destroy_pool(pool);

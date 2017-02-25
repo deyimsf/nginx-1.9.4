@@ -14,9 +14,13 @@
 
 
 typedef struct {
+	// 数组元素的起始地址
     void        *elts;
+    // 已经有多少元素了
     ngx_uint_t   nelts;
+    // 每个元素所占字节大小
     size_t       size;
+    // 数组大小
     ngx_uint_t   nalloc;
     ngx_pool_t  *pool;
 } ngx_array_t;
