@@ -13,6 +13,13 @@ static void *ngx_palloc_block(ngx_pool_t *pool, size_t size);
 static void *ngx_palloc_large(ngx_pool_t *pool, size_t size);
 
 
+/**
+ * 创建一个ngx_pool_t对象
+ *
+ * size: 初始内存池大小
+ * 		 不要小于sizeof(ngx_pool_t),否则会使用未分配的内存 TODO
+ * log: 日志对象
+ */
 ngx_pool_t *
 ngx_create_pool(size_t size, ngx_log_t *log)
 {
@@ -66,7 +73,7 @@ ngx_destroy_pool(ngx_pool_t *pool)
         }
     }
 
-    //销毁large中的内存; large是什么? TODO
+    //销毁large中的内存
     for (l = pool->large; l; l = l->next) {
 
         ngx_log_debug1(NGX_LOG_DEBUG_ALLOC, pool->log, 0, "free: %p", l->alloc);
@@ -133,6 +140,8 @@ ngx_reset_pool(ngx_pool_t *pool)
 
 /**
  * 从*pool中分配size个字节,并对齐其内存地址
+ * pool: 内存池
+ * size: 分配size个字节
  */
 void *
 ngx_palloc(ngx_pool_t *pool, size_t size)
@@ -146,7 +155,7 @@ ngx_palloc(ngx_pool_t *pool, size_t size)
         p = pool->current;
 
         do {
-        	//对d.last地址对齐,也就是说 m - p->d.last 的结果会大于等于零
+        	//对d.last地址对齐,也就是说 m - p->d.last 的结果会大于等于零,因为地址对齐肯定会大于等于原来的地址
             m = ngx_align_ptr(p->d.last, NGX_ALIGNMENT);
 
             //如果地址对齐后,在当前pool_data中剩余的内存大小,大于等于这次要分配的内存size,
@@ -154,6 +163,8 @@ ngx_palloc(ngx_pool_t *pool, size_t size)
             if ((size_t) (p->d.end - m) >= size) {
             	//最后未分配内存的首地址后移 m+size 个字节
                 p->d.last = m + size;
+
+                printf("从pool链中分配; pool地址是:%p; pool->current地址是:%p \n",pool,pool->current);
 
                 return m;
             }
@@ -178,6 +189,8 @@ ngx_palloc(ngx_pool_t *pool, size_t size)
 
 /**
  * 从*pool中分配size大小的字节,但不会对齐内存地址
+ * pool: 内存池
+ * size: 分配字节大小
  */
 void *
 ngx_pnalloc(ngx_pool_t *pool, size_t size)
@@ -210,8 +223,10 @@ ngx_pnalloc(ngx_pool_t *pool, size_t size)
 
 
 /**
- *新创建一个new_pool,并将其放入*pool链的末端
- *从new_pool中分配size大小的字节
+ * 新创建一个new_pool,并将其放入*pool链的末端
+ * 从new_pool中分配size大小的字节
+ * pool: 内存池
+ * size: 内存大小
  */
 static void *
 ngx_palloc_block(ngx_pool_t *pool, size_t size)
@@ -261,6 +276,15 @@ ngx_palloc_block(ngx_pool_t *pool, size_t size)
 }
 
 
+/**
+ * 用来分配超过pool->ngx_pool_data_t容量的内存
+ *
+ * 新分配的内存使用ngx_pool_large_t对象引用,并且该对象会放入pool->large链表顶部
+ *
+ * pool: 内存池
+ * size: 内存大小
+ *
+ */
 static void *
 ngx_palloc_large(ngx_pool_t *pool, size_t size)
 {
