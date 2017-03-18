@@ -5,6 +5,14 @@
  */
 
 
+/**
+ * 涉及自动扩容和内存拷贝，效率不高
+ *
+ * 小数据量可以考虑,大数据量不建议
+ *
+ */
+
+
 #ifndef _NGX_ARRAY_H_INCLUDED_
 #define _NGX_ARRAY_H_INCLUDED_
 
@@ -66,10 +74,3 @@ ngx_array_init(ngx_array_t *array, ngx_pool_t *pool, ngx_uint_t n, size_t size)
 
 #endif /* _NGX_ARRAY_H_INCLUDED_ */
 
-
-/**
- * 涉及自动扩容和内存拷贝，效率不高
- *
- * 小数据量可以考虑,大数据量不建议
- *
- */

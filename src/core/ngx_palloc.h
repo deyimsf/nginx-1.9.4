@@ -99,7 +99,7 @@ void *ngx_calloc(size_t size, ngx_log_t *log);
 ngx_pool_t *ngx_create_pool(size_t size, ngx_log_t *log);
 //销毁pool这个结构体
 void ngx_destroy_pool(ngx_pool_t *pool);
-//重置pool,相当于请清空pool中的所有数据
+//重置pool,相当于清空pool中的所有数据
 void ngx_reset_pool(ngx_pool_t *pool);
 
 //从*pool中分配size大小的字节,并对齐地址

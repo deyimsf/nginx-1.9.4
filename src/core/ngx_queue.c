@@ -12,8 +12,14 @@
 /*
  * find the middle queue element if the queue has odd number of elements
  * or the first element of the queue's second part otherwise
+ *
+ * 如果队列中元素为奇数,则返回中间元素。
+ *
+ * 否则返回队列第二部分的第一个元素;
+ * 比如有4个元素,则返回第三个元素作为middle值。
+ *
+ * *queue: 容器本身指针
  */
-
 ngx_queue_t *
 ngx_queue_middle(ngx_queue_t *queue)
 {
@@ -46,7 +52,12 @@ ngx_queue_middle(ngx_queue_t *queue)
 
 
 /* the stable insertion sort */
-
+/**
+ * 对容器中的元素排序
+ *
+ *	*queue: 容器本身指针
+ *	*cmp: 比较方法
+ */
 void
 ngx_queue_sort(ngx_queue_t *queue,
     ngx_int_t (*cmp)(const ngx_queue_t *, const ngx_queue_t *))

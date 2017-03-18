@@ -55,6 +55,10 @@ ngx_create_pool(size_t size, ngx_log_t *log)
 }
 
 
+/**
+ * 销毁 *pool
+ *
+ */
 void
 ngx_destroy_pool(ngx_pool_t *pool)
 {
@@ -113,6 +117,11 @@ ngx_destroy_pool(ngx_pool_t *pool)
 }
 
 
+/**
+ * 重置pool,相当于清空pool中的所有数据
+ *
+ * *pool: 内存池
+ */
 void
 ngx_reset_pool(ngx_pool_t *pool)
 {
@@ -189,6 +198,7 @@ ngx_palloc(ngx_pool_t *pool, size_t size)
 
 /**
  * 从*pool中分配size大小的字节,但不会对齐内存地址
+ *
  * pool: 内存池
  * size: 分配字节大小
  */
@@ -225,6 +235,7 @@ ngx_pnalloc(ngx_pool_t *pool, size_t size)
 /**
  * 新创建一个new_pool,并将其放入*pool链的末端
  * 从new_pool中分配size大小的字节
+ *
  * pool: 内存池
  * size: 内存大小
  */
