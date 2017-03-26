@@ -9,6 +9,14 @@
 #include <ngx_core.h>
 
 
+/**
+ * 从hash表中查找一个元素
+ *
+ * *hash: 散列表
+ * key: 键值对中键的hash值
+ * *name: 键值对中键的名字
+ * len: 键名字的长度
+ */
 void *
 ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
 {
@@ -19,6 +27,7 @@ ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
     ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0, "hf:\"%*s\"", len, name);
 #endif
 
+    // 计算所在桶的其实地址
     elt = hash->buckets[key % hash->size];
 
     if (elt == NULL) {
@@ -26,20 +35,25 @@ ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
     }
 
     while (elt->value) {
+    	// 比较键的长度是否相同
         if (len != (size_t) elt->len) {
             goto next;
         }
 
+        // 比较键的名字是否相同
         for (i = 0; i < len; i++) {
             if (name[i] != elt->name[i]) {
                 goto next;
             }
         }
 
+        // 返回找到的元素
         return elt->value;
 
     next:
 
+		// 当前元素键的名字的首地址 加上 当前元素键的名字的长度,按4字节对齐内存,
+		// 之后得出的结果就是下一个元素的首地址
         elt = (ngx_hash_elt_t *) ngx_align_ptr(&elt->name[0] + elt->len,
                                                sizeof(void *));
         continue;
@@ -207,6 +221,16 @@ ngx_hash_find_wc_tail(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 }
 
 
+/**
+ * 从联合散列表中查找元素
+ *
+ * 联合散列表ngx_hash_combined_t包含三个基本散列表:精确匹配的散列表、匹配前置通配符的散列表、匹配后置通配符的散列表
+ *
+ * *hash: 散列表
+ * key: 键值对中键的hash值
+ * *name: 键值对中键的名字
+ * len: 键名字的长度
+ */
 void *
 ngx_hash_find_combined(ngx_hash_combined_t *hash, ngx_uint_t key, u_char *name,
     size_t len)
@@ -245,9 +269,21 @@ ngx_hash_find_combined(ngx_hash_combined_t *hash, ngx_uint_t key, u_char *name,
 }
 
 
+/**
+ * 计算ngx_hash_key_t结构中key的长度
+ *
+ * name: ngx_hash_key_t结构指针
+ */
 #define NGX_HASH_ELT_SIZE(name)                                               \
     (sizeof(void *) + ngx_align((name)->key.len + 2, sizeof(void *)))
 
+/**
+ * 初始化散列表,创建散列表并将names的数据赋值给散列表
+ *
+ * *hinit: 用于构造hash结构的临时结构体
+ * *names: hash机构中要存入的键值对,该入参是个键值对数组
+ * nelts: 键值对个数,也就是names的个数
+ */
 ngx_int_t
 ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
 {
@@ -257,6 +293,7 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
     ngx_uint_t       i, n, key, size, start, bucket_size;
     ngx_hash_elt_t  *elt, **buckets;
 
+    // 如果指定的桶数为0则直接返回错误,桶个数为0则根本无法保存数据
     if (hinit->max_size == 0) {
         ngx_log_error(NGX_LOG_EMERG, hinit->pool->log, 0,
                       "could not build %s, you should "
@@ -265,6 +302,8 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         return NGX_ERROR;
     }
 
+    // 遍历所有要放入散列表的元素大小(近似于键的大小),对于给定的桶的大小(bucket_size),如果小于某一个要加入的元素大小,
+    // 那么说明分配的通的容量无法满足元素的存储,则返回错误(NGX_ERROR)
     for (n = 0; n < nelts; n++) {
         if (hinit->bucket_size < NGX_HASH_ELT_SIZE(&names[n]) + sizeof(void *))
         {
@@ -276,30 +315,43 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         }
     }
 
+    // 分配一个u_short数组,数组个数为桶的最大个数
     test = ngx_alloc(hinit->max_size * sizeof(u_short), hinit->pool->log);
     if (test == NULL) {
         return NGX_ERROR;
     }
 
+    // 指定的桶的大小减去4
+    // TODO 桶的实际大小为什么要减去4
     bucket_size = hinit->bucket_size - sizeof(void *);
 
-    start = nelts / (bucket_size / (2 * sizeof(void *)));
+    start = nelts / (bucket_size / (2 * sizeof(void *)));//好麻烦的算法
     start = start ? start : 1;
 
+    // 如果指定的桶的个数大于1万，并且指定的桶的个数除以实际元素个数小于100，
+    // 则实际桶的个数要减去1000
     if (hinit->max_size > 10000 && nelts && hinit->max_size / nelts < 100) {
         start = hinit->max_size - 1000;
     }
 
+    // start在这里表示实际桶的个数,是一个尝试值
+    // 这个循环用于计算实际需要的桶的个数，结果肯定小于等于hinit->max_size
     for (size = start; size <= hinit->max_size; size++) {
 
+    	// 初始化数组test前size个元素值为零
         ngx_memzero(test, size * sizeof(u_short));
 
+        // 计算每个元素应该放在哪个桶中
+        // test数组中存放的是每个桶的实际大小
         for (n = 0; n < nelts; n++) {
             if (names[n].key.data == NULL) {
                 continue;
             }
 
+            // 计算该元素可能所在桶的位置
             key = names[n].key_hash % size;
+            // 如果把该元素放入桶中,则该桶此时的大小
+            // 之前元素的大小加上该元素的大小,这个元素的大小不包括元素键值对中的value值的大小
             test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
 
 #if 0
@@ -308,11 +360,13 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
                           size, key, test[key], &names[n].key);
 #endif
 
+            // 如果第key个桶的大小，已经无法满足再放一个该元素,则说明桶的数量分少了,在下一个大循环中多增加一个桶
             if (test[key] > (u_short) bucket_size) {
                 goto next;
             }
         }
 
+        // 计算出了实际需要分配的桶的个数(小于等于指定的桶的数量)
         goto found;
 
     next:
@@ -320,6 +374,8 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         continue;
     }
 
+    // 走到这里说明用户指定的桶的个数也不够大(不够优)
+    // 也就是说，按照ngx的意思，每个桶里面放的元素个数太多了
     size = hinit->max_size;
 
     ngx_log_error(NGX_LOG_WARN, hinit->pool->log, 0,
@@ -331,7 +387,10 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
 
 found:
 
+	// size为计算出的实际的桶的个数
     for (i = 0; i < size; i++) {
+    	// 全部初始化为4
+    	// 因为在302行的时候桶的大小减掉一个4,这里再加上来
         test[i] = sizeof(void *);
     }
 
@@ -340,23 +399,31 @@ found:
             continue;
         }
 
+        // 再次计算第key个桶的大小
         key = names[n].key_hash % size;
+        // 之前元素的大小加上该元素的大小,这个元素的大小不包括元素键值对中的value值的大小
         test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
     }
 
     len = 0;
 
+    // 这个循环下来就会计算出,用于存放所有元素的散列表的大小,后续按这个大小来分配内存
     for (i = 0; i < size; i++) {
+    	// 相等则说明这个位置没有放置任何元素
         if (test[i] == sizeof(void *)) {
             continue;
         }
 
+        // 把第i个桶的实际大小,按照ngx_cacheline_size对齐
         test[i] = (u_short) (ngx_align(test[i], ngx_cacheline_size));
 
+        // 累加各个桶的大小
         len += test[i];
     }
 
     if (hinit->hash == NULL) {
+    	// 为hash结构分配内存
+    	// size为桶的个数
         hinit->hash = ngx_pcalloc(hinit->pool, sizeof(ngx_hash_wildcard_t)
                                              + size * sizeof(ngx_hash_elt_t *));
         if (hinit->hash == NULL) {
@@ -364,10 +431,13 @@ found:
             return NGX_ERROR;
         }
 
+        // 指定所有桶的起始地址
         buckets = (ngx_hash_elt_t **)
                       ((u_char *) hinit->hash + sizeof(ngx_hash_wildcard_t));
 
     } else {
+    	// 为桶分配内存
+    	// size为桶的个数
         buckets = ngx_pcalloc(hinit->pool, size * sizeof(ngx_hash_elt_t *));
         if (buckets == NULL) {
             ngx_free(test);
@@ -375,44 +445,60 @@ found:
         }
     }
 
+    // 为实际存储元素(ngx_hash_elt_t)的散列表分配内存
+    // len为之前计算出的字节个数
     elts = ngx_palloc(hinit->pool, len + ngx_cacheline_size);
     if (elts == NULL) {
         ngx_free(test);
         return NGX_ERROR;
     }
 
+    // 按ngx_cacheline_size对齐,因为在分配内存时加上了ngx_cacheline_size,
+    // 所以内存对齐后散列表的实际大小不会小于len
     elts = ngx_align_ptr(elts, ngx_cacheline_size);
 
+    // 将每个桶的起始地址，赋值给每个桶的指针变量
     for (i = 0; i < size; i++) {
         if (test[i] == sizeof(void *)) {
             continue;
         }
 
+        // 为第i个桶指针变量赋值起始地址
         buckets[i] = (ngx_hash_elt_t *) elts;
         elts += test[i];
 
     }
 
+    // 重置test的所有值为0
     for (i = 0; i < size; i++) {
         test[i] = 0;
     }
 
+    // 为所有桶中的元素(ngx_hash_elt_t)赋值
     for (n = 0; n < nelts; n++) {
         if (names[n].key.data == NULL) {
             continue;
         }
 
+        // 计算第n个元素应该放入第几个桶中
         key = names[n].key_hash % size;
+        // 该元素应该存放的起始地址
         elt = (ngx_hash_elt_t *) ((u_char *) buckets[key] + test[key]);
 
+        // 元素值
         elt->value = names[n].value;
+        // 元素key的长度
         elt->len = (u_short) names[n].key.len;
 
+        // 将元素的键以小写的形式存放到散列表中
         ngx_strlow(elt->name, names[n].key.data, names[n].key.len);
 
+        // 在第key桶中放入该元素后，第key个桶的实际大小
         test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
     }
 
+    // 如果散列表中存在没有存储任何元素的桶,那么将这些桶中的每个ngx_hash_elt_t结构体的value赋值为NULL
+    // 这样在查找的时候就不会出现脏数据了
     for (i = 0; i < size; i++) {
         if (buckets[i] == NULL) {
             continue;
@@ -425,7 +511,9 @@ found:
 
     ngx_free(test);
 
+    // 桶起始地址
     hinit->hash->buckets = buckets;
+    // 桶的个数
     hinit->hash->size = size;
 
 #if 0
@@ -607,6 +695,12 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 }
 
 
+/**
+ * 一个hash方法
+ *
+ * *data: 要hash的数据的指针
+ * len: 要hash的数据的长度
+ */
 ngx_uint_t
 ngx_hash_key(u_char *data, size_t len)
 {
@@ -622,6 +716,13 @@ ngx_hash_key(u_char *data, size_t len)
 }
 
 
+/**
+ * 一个hash方法，同ngx_hash_key方法
+ * hash之前会将数据转换为小写
+ *
+ * *data: 要hash的数据的指针
+ * len: 要hash的数据的长度
+ */
 ngx_uint_t
 ngx_hash_key_lc(u_char *data, size_t len)
 {
