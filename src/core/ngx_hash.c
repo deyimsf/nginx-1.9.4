@@ -63,6 +63,13 @@ ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
 }
 
 
+/**
+ * 从前置通配符散列表中查找元素
+ *
+ * *hwc: 前置通配符散列表
+ * *name: key的名字
+ * len: key名字的长度
+ */
 void *
 ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 {
@@ -75,6 +82,7 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 
     n = len;
 
+    // www.jd.com
     while (n) {
         if (name[n - 1] == '.') {
             break;
@@ -169,6 +177,7 @@ ngx_hash_find_wc_tail(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 
     key = 0;
 
+    // www.jd.com   www.jd.
     for (i = 0; i < len; i++) {
         if (name[i] == '.') {
             break;
@@ -185,6 +194,7 @@ ngx_hash_find_wc_tail(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
     ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0, "key:\"%ui\"", key);
 #endif
 
+    // name = www.
     value = ngx_hash_find(&hwc->hash, key, name, i);
 
 #if 0
@@ -270,9 +280,24 @@ ngx_hash_find_combined(ngx_hash_combined_t *hash, ngx_uint_t key, u_char *name,
 
 
 /**
- * 计算ngx_hash_key_t结构中key的长度
+ *
+ * 计算实际用于存储hash元素的ngx_hash_elt_t结构体所需字节个数。
  *
  * name: ngx_hash_key_t结构指针
+ * 		入参是ngx_hash_key_t结构体而不是ngx_hash_elt_t,是因为刚开始的时候,数据信息都存放
+ * 		在了ngx_hash_key_t结构体中
+ *
+ * 计算方式如下：
+ * 1. sizeof(void *): 代表结构体ngx_hash_elt_t中的第一个字段 void *value;
+ * 2. (name)->key.len: 代表键值对中的键的长度,也就是ngx_hash_key_t中的key的长度(实际上就是ngx_hash_elt_t结构体中的len的值)
+ * 3. 2: 代表结构体ngx_hash_elt_t中字段 u_short len 本身占用的字节个数,实际上写成 sizeof(u_short)会更好
+ * 4. 因为len这个值的本身已经包含了结构体ngx_hash_elt_t中的name[1],所以不需要加上这个字段的值了
+ *
+ * 如果不考虑内存对齐,正确的计算结果应该是上面的三个相加。
+ * 一个结构体的对齐大小,是按照结构体中最大的那个字段类型的大小来对齐的,所以在ngx_hash_elt_t结构体中,占用字节最多的类型
+ * 显然是 (void *) 这个指针,那么它本身显然满足对其要求。字段len的类型u_short的大小是2,显然不满足,另外key的长度只有在
+ * 运行时才能知道,它是否满足对齐是个未知数,所以需要将两个不满足的值加起来,并按照 (void *)类型大小对齐就可以了。
+ *
  */
 #define NGX_HASH_ELT_SIZE(name)                                               \
     (sizeof(void *) + ngx_align((name)->key.len + 2, sizeof(void *)))
@@ -322,7 +347,7 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
     }
 
     // 指定的桶的大小减去4
-    // TODO 桶的实际大小为什么要减去4
+    // TODO 桶的实际大小为什么要减去4 ?
     bucket_size = hinit->bucket_size - sizeof(void *);
 
     start = nelts / (bucket_size / (2 * sizeof(void *)));//好麻烦的算法
@@ -550,6 +575,17 @@ found:
 }
 
 
+/**
+ * 初始化带统配符的散列表
+ *
+ * *hinit: 用于构造hash结构的临时结构体
+ * *names: hash机构中要存入的键值对,该入参是个键值对数组
+ *		   全是已经去掉通配符的key,如 com.jd.(*.jd.com)、 com.jd(.jd.com)、 www.jd.(www.jd.*)
+ * nelts: 键值对个数,也就是names的个数
+ *
+ * TODO : 大概意思明白了,但细节没看懂,以后再看吧
+ *
+ */
 ngx_int_t
 ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
     ngx_uint_t nelts)
@@ -561,6 +597,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
     ngx_hash_init_t       h;
     ngx_hash_wildcard_t  *wdc;
 
+    // 一个临时数组结构,包含nelts个ngx_hash_key_t结构体
     if (ngx_array_init(&curr_names, hinit->temp_pool, nelts,
                        sizeof(ngx_hash_key_t))
         != NGX_OK)
@@ -568,6 +605,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
         return NGX_ERROR;
     }
 
+    // 一个临时数组结构,包含nelts个ngx_hash_key_t结构体
     if (ngx_array_init(&next_names, hinit->temp_pool, nelts,
                        sizeof(ngx_hash_key_t))
         != NGX_OK)
@@ -575,45 +613,69 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
         return NGX_ERROR;
     }
 
+    //用*names = com. (*.com) 举例
+    //用*names = com.jd. (*.jd.com) 举例
+    //用*names = com.jd.m. (*.m.jd.com) 举例
     for (n = 0; n < nelts; n = i) {
+    	// 这里的n代表第几个元素
 
 #if 0
         ngx_log_error(NGX_LOG_ALERT, hinit->pool->log, 0,
                       "wc0: \"%V\"", &names[n].key);
 #endif
 
+        // 0代表没有发现符号“.”, 1代表发现符号“.”
         dot = 0;
 
+        // 检查第n个元素的键值是否有符号“.”(比如 com. 中的符号“.”)
+        // 检查第n个元素的键值是否有符号“.”(比如 com.jd. 中的第一个符号“.”)
+        // 检查第n个元素的键值是否有符号“.”(比如 com.jd.m. 中的第一个符号“.”)
         for (len = 0; len < names[n].key.len; len++) {
             if (names[n].key.data[len] == '.') {
                 dot = 1;
+
+                // 找到符号“.”之后跳出循环
+                // 第一个.  -->  com.
                 break;
             }
         }
 
+        // 将字符 com.jd.m. 中的 com 放入curr_names数组中
         name = ngx_array_push(&curr_names);
         if (name == NULL) {
             return NGX_ERROR;
         }
 
+        // len = 3
         name->key.len = len;
+        // name->key.data = com
         name->key.data = names[n].key.data;
         name->key_hash = hinit->key(name->key.data, name->key.len);
+        // name->value = 1234
         name->value = names[n].value;
+
+        //com.jd.m.
+        //name->key.len = 3
+        //name->key.data = com
+        //name->value = 1234
 
 #if 0
         ngx_log_error(NGX_LOG_ALERT, hinit->pool->log, 0,
                       "wc1: \"%V\" %ui", &name->key, dot);
 #endif
 
+        // 找到的这个“.”在com.jd.中的位置
         dot_len = len + 1;
 
         if (dot) {
             len++;
         }
 
+        // dot_len = 4     dot = 4
         next_names.nelts = 0;
 
+        // names[n].key.len = 9 (com.jd.m.);     len = 4
+        // 相等说明这个域名目前只有一个名字
         if (names[n].key.len != len) {
             next_name = ngx_array_push(&next_names);
             if (next_name == NULL) {
@@ -624,6 +686,9 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
             next_name->key.data = names[n].key.data + len;
             next_name->key_hash = 0;
             next_name->value = names[n].value;
+            // next_name->key.len = 5
+            // next_name->key.data = jd.m.
+            // next_name->value = 1234
 
 #if 0
             ngx_log_error(NGX_LOG_ALERT, hinit->pool->log, 0,
@@ -631,6 +696,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 #endif
         }
 
+        // n = 0; i = 1; nelts = 1; 所以不走这段逻辑
         for (i = n + 1; i < nelts; i++) {
             if (ngx_strncmp(names[n].key.data, names[i].key.data, len) != 0) {
                 break;
@@ -659,9 +725,11 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 #endif
         }
 
+        // com.jd.m.  next_names.elts = jd.m.
         if (next_names.nelts) {
 
             h = *hinit;
+            // 这一步非常重要,如果一个域名有多个名字组成就会走这个逻辑
             h.hash = NULL;
 
             if (ngx_hash_wildcard_init(&h, (ngx_hash_key_t *) next_names.elts,
@@ -673,13 +741,16 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 
             wdc = (ngx_hash_wildcard_t *) h.hash;
 
-            if (names[n].key.len == len) {
+            if (names[n].key.len == len) {// 感觉永远不会走这段代码呢?
                 wdc->value = names[n].value;
             }
 
+            // 有点是11 没点是10(匹配没有 * 的通配符); 比如*.jd.com这种是11   .jd.com这种是10
             name->value = (void *) ((uintptr_t) wdc | (dot ? 3 : 2));
 
         } else if (dot) {
+        	// 将键值对中,值的地址的最后一位设置成1,然后赋值给name->value这个指针变量
+        	// 为什么?
             name->value = (void *) ((uintptr_t) name->value | 1);
         }
     }
@@ -756,9 +827,17 @@ ngx_hash_strlow(u_char *dst, u_char *src, size_t n)
 }
 
 
+/**
+ * 初始化ngx_hash_keys_arrays_t结构体
+ *
+ * *ha: 要初始化的ngx_hash_keys_arrays_t结构体
+ * type: 决定散列表中桶的个数的类型
+ *
+ */
 ngx_int_t
 ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
 {
+	// 数组初始元素个数
     ngx_uint_t  asize;
 
     if (type == NGX_HASH_SMALL) {
@@ -770,12 +849,14 @@ ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
         ha->hsize = NGX_HASH_LARGE_HSIZE;
     }
 
+    // 存放基本散列表键值对的数组,asize为数组初始化大小
     if (ngx_array_init(&ha->keys, ha->temp_pool, asize, sizeof(ngx_hash_key_t))
         != NGX_OK)
     {
         return NGX_ERROR;
     }
 
+    // 存放前置通配符散列表键值对的数组,asize为数组初始化大小
     if (ngx_array_init(&ha->dns_wc_head, ha->temp_pool, asize,
                        sizeof(ngx_hash_key_t))
         != NGX_OK)
@@ -783,6 +864,7 @@ ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
         return NGX_ERROR;
     }
 
+    // 存放后置通配符散列表键值对的数组,asize为数组初始化大小
     if (ngx_array_init(&ha->dns_wc_tail, ha->temp_pool, asize,
                        sizeof(ngx_hash_key_t))
         != NGX_OK)
@@ -790,17 +872,20 @@ ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
         return NGX_ERROR;
     }
 
+    // 为散列表中的桶分配内存,共ha->hsize个桶
     ha->keys_hash = ngx_pcalloc(ha->temp_pool, sizeof(ngx_array_t) * ha->hsize);
     if (ha->keys_hash == NULL) {
         return NGX_ERROR;
     }
 
+    // 为散列表中的桶分配内存,共ha->hsize个桶
     ha->dns_wc_head_hash = ngx_pcalloc(ha->temp_pool,
                                        sizeof(ngx_array_t) * ha->hsize);
     if (ha->dns_wc_head_hash == NULL) {
         return NGX_ERROR;
     }
 
+    // 为散列表中的桶分配内存,共ha->hsize个桶
     ha->dns_wc_tail_hash = ngx_pcalloc(ha->temp_pool,
                                        sizeof(ngx_array_t) * ha->hsize);
     if (ha->dns_wc_tail_hash == NULL) {
@@ -811,6 +896,22 @@ ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
 }
 
 
+/**
+ * 向ngx_hash_keys_arrays_t中添加用户键值对
+ *
+ * *ha: ngx_hash_keys_arrays_t
+ * *key: 用户key,比如“www.jd.com”、“.jd.com”、"*.jd.com"、“www.jd.*”
+ * 		 如果key是带通配符的,则在添加的时候会把通配符去掉
+ * *value: 用户值,比如“198.168.12.32”
+ * flags: 一个位掩码
+ * 		NGX_HASH_WILDCARD_KEY: 处理通配符
+ * 		NGX_HASH_READONLY_KEY: 不把key转换为小写
+ *
+ * 不允许存在相同的元素,如果存在返回NGX_BUSY
+ *
+ * (只为域名key服务,也就是说key不能是其它数据)
+ *
+ */
 ngx_int_t
 ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
     ngx_uint_t flags)
@@ -822,31 +923,36 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
     ngx_array_t     *keys, *hwc;
     ngx_hash_key_t  *hk;
 
+    // 要添加的key的长度
     last = key->len;
 
-    if (flags & NGX_HASH_WILDCARD_KEY) {
+    if (flags & NGX_HASH_WILDCARD_KEY) {//支持通配符
 
         /*
          * supported wildcards:
          *     "*.example.com", ".example.com", and "www.example.*"
          */
 
+    	// 是否有通配符*
         n = 0;
 
         for (i = 0; i < key->len; i++) {
 
             if (key->data[i] == '*') {
                 if (++n > 1) {
+                	// 只支持一个通配符,如果有多个则返回NGX_DECLINED,比如 **.jd.com
                     return NGX_DECLINED;
                 }
             }
 
             if (key->data[i] == '.' && key->data[i + 1] == '.') {
+            	// key不能有连续两个符号“.”,比如 www..jd.com
                 return NGX_DECLINED;
             }
         }
 
         if (key->len > 1 && key->data[0] == '.') {
+        	//以点开头的域名,如 .jd.com
             skip = 1;
             goto wildcard;
         }
@@ -854,51 +960,65 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
         if (key->len > 2) {
 
             if (key->data[0] == '*' && key->data[1] == '.') {
+            	// 前置通配符,以 *. 开头
                 skip = 2;
                 goto wildcard;
             }
 
             if (key->data[i - 2] == '.' && key->data[i - 1] == '*') {
+            	// 后置通配符,以 .* 结尾
                 skip = 0;
+                // key的长度减去 .* 这两字符的长度
                 last -= 2;
                 goto wildcard;
             }
         }
 
         if (n) {
+            // 有通配符,但是又不符合通配符的规则
             return NGX_DECLINED;
         }
+
+        // 没有通配符
     }
 
     /* exact hash */
+    // 走到这里说明key不带通配符(如.和*)
 
+    // 此时代表key的hash值
     k = 0;
 
     for (i = 0; i < last; i++) {
         if (!(flags & NGX_HASH_READONLY_KEY)) {
+        	// 如果未打标NGX_HASH_READONLY_KEY,则key转换成小写
             key->data[i] = ngx_tolower(key->data[i]);
         }
         k = ngx_hash(k, key->data[i]);
     }
 
+    // 此时代表key在简易散列表中的第k个桶
     k %= ha->hsize;
 
     /* check conflicts in exact hash */
 
     name = ha->keys_hash[k].elts;
 
-    if (name) {
+    if (name) {// 桶已经存在
+    	// 检查桶中是否有相同的元素
         for (i = 0; i < ha->keys_hash[k].nelts; i++) {
             if (last != name[i].len) {
                 continue;
             }
 
             if (ngx_strncmp(key->data, name[i].data, last) == 0) {
+
+            	// 存在相同元素，则返回
                 return NGX_BUSY;
             }
         }
 
-    } else {
+    } else { // 桶还不存在
+    	// 初始化桶,初始化大小为4
         if (ngx_array_init(&ha->keys_hash[k], ha->temp_pool, 4,
                            sizeof(ngx_str_t))
             != NGX_OK)
@@ -907,6 +1027,7 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
         }
     }
 
+    // 将key添加到简易散列表的第k个桶中
     name = ngx_array_push(&ha->keys_hash[k]);
     if (name == NULL) {
         return NGX_ERROR;
@@ -914,6 +1035,7 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
 
     *name = *key;
 
+    // 将用户的key和value组装成ngx_hash_key_t,放入到数组中
     hk = ngx_array_push(&ha->keys);
     if (hk == NULL) {
         return NGX_ERROR;
@@ -923,13 +1045,20 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
     hk->key_hash = ngx_hash_key(key->data, last);
     hk->value = value;
 
+    // 以上是处理key不太通配符的代码
     return NGX_OK;
 
 
+// 处理key中带通配符的代码
 wildcard:
 
     /* wildcard hash */
 
+	// skip = 1,表示以点开头的域名,如 .jd.com
+	// skip = 2,表示以*.开头的域名,如 *.jd.com
+	// skip = 0,表示以.*结尾的域名,如 www.jd.*
+
+	// key转换为小写并计算key的hash值,计算时会去掉通配符
     k = ngx_hash_strlow(&key->data[skip], &key->data[skip], last - skip);
 
     k %= ha->hsize;
@@ -940,7 +1069,10 @@ wildcard:
 
         name = ha->keys_hash[k].elts;
 
-        if (name) {
+        if (name) { // 桶已经存在
+        	// 检查桶中是否有相同的元素
+
+        	// 去掉 .jd.com 中的第一个点的长度
             len = last - skip;
 
             for (i = 0; i < ha->keys_hash[k].nelts; i++) {
@@ -949,11 +1081,13 @@ wildcard:
                 }
 
                 if (ngx_strncmp(&key->data[1], name[i].data, len) == 0) {
+                	// 存在相同的元素,则直接返回NGX_BUSY
                     return NGX_BUSY;
                 }
             }
 
-        } else {
+        } else { // 桶不存在
+        	// 初始化桶,初始大小为4
             if (ngx_array_init(&ha->keys_hash[k], ha->temp_pool, 4,
                                sizeof(ngx_str_t))
                 != NGX_OK)
@@ -973,17 +1107,19 @@ wildcard:
             return NGX_ERROR;
         }
 
+        // 将key的名字拷贝过来
         ngx_memcpy(name->data, &key->data[1], name->len);
     }
 
 
-    if (skip) {
+    if (skip) { //处理前置通配符
 
         /*
          * convert "*.example.com" to "com.example.\0"
          *      and ".example.com" to "com.example\0"
          */
 
+    	// 此时last包含了通配符的长度
         p = ngx_pnalloc(ha->temp_pool, last);
         if (p == NULL) {
             return NGX_ERROR;
@@ -992,7 +1128,9 @@ wildcard:
         len = 0;
         n = 0;
 
+        // last-1 代表去掉了通配符的长度
         for (i = last - 1; i; i--) {
+        	// 将 *.example.com 转换成 com.example.\0
             if (key->data[i] == '.') {
                 ngx_memcpy(&p[n], &key->data[i + 1], len);
                 n += len;
@@ -1004,6 +1142,7 @@ wildcard:
             len++;
         }
 
+    	// 将 .example.com 转换成 com.example\0
         if (len) {
             ngx_memcpy(&p[n], &key->data[1], len);
             n += len;
@@ -1014,7 +1153,7 @@ wildcard:
         hwc = &ha->dns_wc_head;
         keys = &ha->dns_wc_head_hash[k];
 
-    } else {
+    } else { // 处理后置通配符
 
         /* convert "www.example.*" to "www.example\0" */
 
@@ -1036,7 +1175,7 @@ wildcard:
 
     name = keys->elts;
 
-    if (name) {
+    if (name) { // 第k个桶已经存在
         len = last - skip;
 
         for (i = 0; i < keys->nelts; i++) {
@@ -1049,7 +1188,7 @@ wildcard:
             }
         }
 
-    } else {
+    } else { // 第k个桶还不存在
         if (ngx_array_init(keys, ha->temp_pool, 4, sizeof(ngx_str_t)) != NGX_OK)
         {
             return NGX_ERROR;
@@ -1072,12 +1211,15 @@ wildcard:
 
     /* add to wildcard hash */
 
+    // 向hwc数组中放一个ngx_hash_key_t对象
     hk = ngx_array_push(hwc);
     if (hk == NULL) {
         return NGX_ERROR;
     }
 
+    // 去掉通配符的长度
     hk->key.len = last - 1;
+    // 这里用指针是因为,key的值最终会拷贝到基本散列表中
     hk->key.data = p;
     hk->key_hash = 0;
     hk->value = value;

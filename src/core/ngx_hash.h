@@ -62,7 +62,7 @@
 typedef struct { //ngx_hash_t结构中实际存放的元素
     void             *value; // 键值对key对应的值
     u_short           len; //name的长度
-    u_char            name[1];// TODO 为什么用这种方式定义，不直接用指针 u_char *name;
+    u_char            name[1];// 直接用指针会占用4个字节，用组数就占一个字节(其实用数组name[0]更好,占零个字节)
 } ngx_hash_elt_t;
 
 
@@ -145,10 +145,21 @@ typedef struct {
 } ngx_hash_init_t;
 
 
+/**
+ * 决定散列表中桶的个数的类型,ngx_hash_keys_array_init方法用
+ * 107个桶
+ */
 #define NGX_HASH_SMALL            1
+
+/**
+ * 决定散列表中桶的个数的类型,ngx_hash_keys_array_init方法用
+ * NGX_HASH_LARGE_HSIZE个桶
+ */
 #define NGX_HASH_LARGE            2
 
+// 数组初始元素个数
 #define NGX_HASH_LARGE_ASIZE      16384
+// 桶个数
 #define NGX_HASH_LARGE_HSIZE      10007
 
 #define NGX_HASH_WILDCARD_KEY     1
@@ -158,11 +169,13 @@ typedef struct {
 /**
  * 用来帮助生成散列表的结构体。
  *
+ * 包含三个散列表,基本散列表、前置通配符散列表、后置通配符散列表
+ *
  * 该结构体最终会包含所有散列表的一份数据(通过ngx_hash_add_key方法添加的)
  *
  */
 typedef struct {
-	// ? TODO 各个散列表的桶的个数 ?
+	// 各个散列表的桶的个数
     ngx_uint_t        hsize;
 
     ngx_pool_t       *pool;
@@ -171,18 +184,24 @@ typedef struct {
     // 以数组的形式存放基础散列表的键值对数据,以ngx_hash_key_t结构体存放
     // 由ngx_hash_add_key方法赋值
     ngx_array_t       keys;
+    // 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
+    // 这个桶用ngx_array_t结构体表示,桶里面存储了不含通配符的域名
     ngx_array_t      *keys_hash;
 
-    // 以数组的形式存放前置通配符散列表的键值对数据,以ngx_hash_key结构体存放
+    // 以数组的形式存放前置通配符散列表的键值对数据,以ngx_hash_key_t结构体存放
     // 由ngx_hash_add_key方法赋值
     // 如：*.jd.com
     ngx_array_t       dns_wc_head;
+    // 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
+    // 这个桶用ngx_array_t结构体表示,桶里面存储了包含前置通配符的域名
     ngx_array_t      *dns_wc_head_hash;
 
     // 以数组的形式存放后置通配符散列表的键值对数据,以ngx_hash_key结构体存放
     // 由ngx_hash_add_key方法赋值
     // 如：www.jd.*
     ngx_array_t       dns_wc_tail;
+    // 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
+    // 这个桶用ngx_array_t结构体表示,桶里面存储了包含后置通配符的域名
     ngx_array_t      *dns_wc_tail_hash;
 } ngx_hash_keys_arrays_t;
 
@@ -204,6 +223,7 @@ typedef struct {
  * len: 键名字的长度
  */
 void *ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len);
+
 void *ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len);
 void *ngx_hash_find_wc_tail(ngx_hash_wildcard_t *hwc, u_char *name, size_t len);
 /**
@@ -228,16 +248,74 @@ void *ngx_hash_find_combined(ngx_hash_combined_t *hash, ngx_uint_t key,
  */
 ngx_int_t ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
     ngx_uint_t nelts);
+
+/**
+ * 初始化带统配符的散列表
+ *
+ * *hinit: 用于构造hash结构的临时结构体
+ * *names: hash机构中要存入的键值对,该入参是个键值对数组
+ *		   全是带通配符的key,如 *.jd.com .jd.com www.jd.*
+ * nelts: 键值对个数,也就是names的个数
+ *
+ */
 ngx_int_t ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
     ngx_uint_t nelts);
 
+/**
+ * ngx_hash_key方法中用到
+ */
 #define ngx_hash(key, c)   ((ngx_uint_t) key * 31 + c)
+
+/**
+ * 一个hash方法
+ *
+ * *data: 要hash的数据的指针
+ * len: 要hash的数据的长度
+ */
 ngx_uint_t ngx_hash_key(u_char *data, size_t len);
+
+/**
+ * 一个hash方法，同ngx_hash_key方法
+ * hash之前会将数据转换为小写
+ *
+ * *data: 要hash的数据的指针
+ * len: 要hash的数据的长度
+ */
 ngx_uint_t ngx_hash_key_lc(u_char *data, size_t len);
+
+/**
+ * 将字符串 src 的小写形式赋值给字符串 dst,然后返回dst的hash值
+ *
+ * *src: 源字符串
+ * *dst: 转换成小写形式的字符串
+ *
+ */
 ngx_uint_t ngx_hash_strlow(u_char *dst, u_char *src, size_t n);
 
 
+/**
+ * 初始化ngx_hash_keys_arrays_t结构体
+ *
+ * *ha: 要初始化的ngx_hash_keys_arrays_t结构体
+ * type: 决定散列表中桶的个数的类型
+ *
+ */
 ngx_int_t ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type);
+
+/**
+ * 向ngx_hash_keys_arrays_t中添加用户键值对
+ *
+ * *ha: ngx_hash_keys_arrays_t
+ * *key: 用户key,比如“www.jd.com”、“.jd.com”、"*.jd.com"、“www.jd.*”
+ * *value: 用户值,比如“198.168.12.32”
+ * flags: 一个位掩码
+ * 		NGX_HASH_WILDCARD_KEY: 处理通配符
+ * 		NGX_HASH_READONLY_KEY: 不把key转换为小写
+ *
+ * 不允许存在相同的元素,如果存在返回NGX_BUSY
+ *
+ * (只为域名key服务,也就是说key不能是其它数据)
+ */
 ngx_int_t ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key,
     void *value, ngx_uint_t flags);
 

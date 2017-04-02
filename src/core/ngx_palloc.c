@@ -173,7 +173,7 @@ ngx_palloc(ngx_pool_t *pool, size_t size)
             	//最后未分配内存的首地址后移 m+size 个字节
                 p->d.last = m + size;
 
-                printf("从pool链中分配; pool地址是:%p; pool->current地址是:%p \n",pool,pool->current);
+                //printf("从pool链中分配; pool地址是:%p; pool->current地址是:%p \n",pool,pool->current);
 
                 return m;
             }
