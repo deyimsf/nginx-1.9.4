@@ -29,6 +29,12 @@ ngx_os_io_t ngx_os_io = {
 };
 
 
+/**
+ * 初始化一些跟操作系统相关的变量
+ *
+ * 如ngx_pagesize、ngx_cacheline_size等
+ *
+ */
 ngx_int_t
 ngx_os_init(ngx_log_t *log)
 {

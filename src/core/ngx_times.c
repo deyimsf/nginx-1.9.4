@@ -88,11 +88,13 @@ ngx_time_update(void)
         return;
     }
 
+    // 调用系统函数gettimeofday获取当前毫秒
     ngx_gettimeofday(&tv);
 
     sec = tv.tv_sec;
     msec = tv.tv_usec / 1000;
 
+    // 当前毫秒数放入变量中
     ngx_current_msec = (ngx_msec_t) sec * 1000 + msec;
 
     tp = &cached_time[slot];
@@ -109,14 +111,17 @@ ngx_time_update(void)
         slot++;
     }
 
+    // 更新第slot个位置的缓存时间
     tp = &cached_time[slot];
 
     tp->sec = sec;
     tp->msec = msec;
 
+    // 更新结构体gmt中的年月日等信息
     ngx_gmtime(sec, &gmt);
 
 
+    // 更新字符形式的日期,如 Mon, 28 Sep 1970 06:00:00 GMT
     p0 = &cached_http_time[slot][0];
 
     (void) ngx_sprintf(p0, "%s, %02d %s %4d %02d:%02d:%02d GMT",
@@ -131,6 +136,7 @@ ngx_time_update(void)
 
 #elif (NGX_HAVE_GMTOFF)
 
+    // 调用localtime_r或localtime方法更新tm日期
     ngx_localtime(sec, &tm);
     cached_gmtoff = (ngx_int_t) (tm.ngx_tm_gmtoff / 60);
     tp->gmtoff = cached_gmtoff;
@@ -178,6 +184,7 @@ ngx_time_update(void)
 
     ngx_memory_barrier();
 
+    // 为更新好的日期赋值
     ngx_cached_time = tp;
     ngx_cached_http_time.data = p0;
     ngx_cached_err_log_time.data = p1;

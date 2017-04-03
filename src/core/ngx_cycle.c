@@ -216,13 +216,25 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_strlow(cycle->hostname.data, (u_char *) hostname, cycle->hostname.len);
 
 
-    // 调用所有核心模块的create_conf方法
+    /* 调用所有核心模块的create_conf方法
+       nginx的核心模块包括:
+    		nginx.c
+			ngx_log.c
+			ngx_regex.c
+			ngx_thread_pool.c
+			ngx_event.c
+			ngx_event_openssl.c
+			ngx_http.c
+			ngx_google_perftools_module.c
+			ngx_stream.c
+	*/
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
         }
 
         // 每个核心模块的接口,比如事件核心模块接口ngx_events_module_ctx、http核心模块接口ngx_http_module_ctx
+        // ngx_modules[i]->ctx中的ctx就是定义各个模块行为的约束(可以看成一种协议)
         module = ngx_modules[i]->ctx;
 
         // 核心HTTP模块没有实现create_conf
@@ -232,6 +244,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                 ngx_destroy_pool(pool);
                 return NULL;
             }
+
+            // 目前只用到了第一层指针? TODO
             cycle->conf_ctx[ngx_modules[i]->index] = rv;
         }
     }
@@ -1021,6 +1035,7 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
 
     ngx_memzero(&file, sizeof(ngx_file_t));
 
+    // 获取保存nginx进程id的文件路径和名字
     file.name = ccf->pid;
     file.log = cycle->log;
 
@@ -1033,6 +1048,7 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
         return 1;
     }
 
+    // 读取nginx进程的id并放入到buf中
     n = ngx_read_file(&file, buf, NGX_INT64_LEN + 2, 0);
 
     if (ngx_close_file(file.fd) == NGX_FILE_ERROR) {
@@ -1046,6 +1062,7 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
 
     while (n-- && (buf[n] == CR || buf[n] == LF)) { /* void */ }
 
+    // 进程id转化为数字
     pid = ngx_atoi(buf, ++n);
 
     if (pid == NGX_ERROR) {

@@ -26,6 +26,7 @@ static void ngx_process_get_status(void);
 static void ngx_unlock_mutexes(ngx_pid_t pid);
 
 
+// 下面这三个变量用于存储启动nginx时候的入参值
 int              ngx_argc;
 char           **ngx_argv;
 char           **ngx_os_argv;
@@ -39,6 +40,12 @@ ngx_int_t        ngx_last_process;
 ngx_process_t    ngx_processes[NGX_MAX_PROCESSES];
 
 
+/**
+ * 对操作系统信号的映射
+ * ngx_signal_value方法用户获取操作系统的信号值
+ *
+ * 比如该方法可以返回 信号SIGHUP代表的值
+ */
 ngx_signal_t  signals[] = {
     { ngx_signal_value(NGX_RECONFIGURE_SIGNAL),
       "SIG" ngx_value(NGX_RECONFIGURE_SIGNAL),
@@ -283,6 +290,10 @@ ngx_execute_proc(ngx_cycle_t *cycle, void *data)
 }
 
 
+/**
+ * 为当前进程绑定信号函数
+ *
+ */
 ngx_int_t
 ngx_init_signals(ngx_log_t *log)
 {
@@ -613,13 +624,23 @@ ngx_debug_point(void)
 }
 
 
+/**
+ * 向进程pid发送信号,然后执行绑定的信号函数,如ngx_signal_handler
+ * 函数ngx_signal_handler基本上也是对要做的操作打个标记,运行的程序看到这个标记后会做相应的操作
+ *
+ * *name: nginx对应的命令,如reload、reopen等
+ * pid: 进程id
+ */
 ngx_int_t
 ngx_os_signal_process(ngx_cycle_t *cycle, char *name, ngx_int_t pid)
 {
     ngx_signal_t  *sig;
 
+    // signals数组中保存了nginx对reload、quit等命令和操作系统中信号的映射
+    // 比如reload对应SIGHUP信号,quit也对应SIGUSR1或SIGINFO信号
     for (sig = signals; sig->signo != 0; sig++) {
         if (ngx_strcmp(name, sig->name) == 0) {
+        	// 发信号
             if (kill(pid, sig->signo) != -1) {
                 return 0;
             }
