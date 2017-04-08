@@ -191,6 +191,14 @@ ngx_event_module_t  ngx_epoll_module_ctx = {
     }
 };
 
+/**
+ * 声明一个ngx模块,这个模块是NGX_EVENT_MODULE类型的
+ * 该类型的模块需要围绕ngx_event_module_t对象的配置来做事
+ *
+ * 如果非要和面向对象编程比较的话,ngx_module_t更像一个超类,ngx_event_module_t就想一个子类
+ * ngx中所有的操作都围绕着ngx_module_t中的协定来做事,像ngx_core_module_t(核心模块类型)、ngx_event_module_t(事件模块类型)
+ * ,这些需要更具体的模块,他们又可以携带一些信息,来规定更具体的操作。
+ */
 ngx_module_t  ngx_epoll_module = {
     NGX_MODULE_V1,
     &ngx_epoll_module_ctx,               /* module context */

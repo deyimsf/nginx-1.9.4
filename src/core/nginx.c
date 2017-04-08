@@ -4,6 +4,25 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/**
+ * ngx是一个模块化的软件架构,他将模块抽象化为ngx_moudle_t结构体。
+ *
+ * 几乎所有的主要功能都是围绕着模块来做的,模块可以定义成不同的类型,
+ * 如:NGX_CORE_MODULE(核心模块)、NGX_HTTP_MODULE(http模块).
+ *
+ * 每种模块类型都可以定义他自己的一些行为规范,比如核心模块使用ngx_core_module_t
+ * 结构体来制定所以核心模块需要遵守的规则;http模块使用ngx_http_module_t结构图体
+ * 来指定所有http模块需要遵守的规则;
+ *
+ * 非要和面向对象语言对比的话,ngx_moudle_t像是超级抽象类,ngx_core_module_t、ngx_http_module_t等
+ * 就想是继承了超类的子类.
+ *
+ *
+ *
+ *
+ *
+ */
+
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -196,7 +215,7 @@ static char **ngx_os_environ;
  *				------    -------    ------
  */
 int ngx_cdecl
-main_old(int argc, char *const *argv)
+main(int argc, char *const *argv)
 {
     ngx_buf_t        *b;
     ngx_log_t        *log;
@@ -328,6 +347,7 @@ main_old(int argc, char *const *argv)
     }
 
     // 主要用来设置文件路劲和前缀等,如cycle->conf_prefix、conf_file等
+    // 这个方法处理完之后cycle->conf_file就变成了完整的路径
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -359,6 +379,8 @@ main_old(int argc, char *const *argv)
     }
 
     // TODO 。。。 初始化各个NGX_CORE_MODULE模块的init_cycle->conf_ctx等
+    // 很重要的一个方法,慢慢看 TODO
+    // init_cycle只用来传递一些配置文件路径信息,临时使用,返回的cycle才是真正的后续要用到的
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
         if (ngx_test_config) {
@@ -910,7 +932,7 @@ ngx_save_argv(ngx_cycle_t *cycle, int argc, char *const *argv)
 
 
 /**
- * 主要用来设置文件路劲和前缀等
+ * 主要用来设置文件路劲和安装路径等
  * 如cycle->conf_prefix、conf_file等
  *
  */
@@ -920,7 +942,7 @@ ngx_process_options(ngx_cycle_t *cycle)
     u_char  *p;
     size_t   len;
 
-    // 整个if语句用来设置对象cycle中的 prefix(启动路径?) 和 conf_prefix(配置文件路径)
+    // 整个if语句用来设置对象cycle中的 prefix(安装) 和 conf_prefix(配置文件路径)
     if (ngx_prefix) {
         len = ngx_strlen(ngx_prefix);
         p = ngx_prefix;
@@ -975,7 +997,7 @@ ngx_process_options(ngx_cycle_t *cycle)
 #endif
     }
 
-    // 向对象cycle中的配置文件路径赋值 TODO 应该是相对路径
+    // 向对象cycle中的配置文件路径赋值,相对路径
     if (ngx_conf_file) {
     	// 如果用户启动nginx时使用了-c来指定文件路径,则使用给用户指定的文件路径
         cycle->conf_file.len = ngx_strlen(ngx_conf_file);

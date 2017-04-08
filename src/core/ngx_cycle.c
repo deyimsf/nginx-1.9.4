@@ -245,7 +245,29 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                 return NULL;
             }
 
-            // 目前只用到了第一层指针? TODO
+            /*
+               目前只用到了第二层指针
+               核心模块对****conf_ctx的使用如下:
+			   conf_ctx
+				-------------------------
+				|   *   |   *   |   *
+				-------------------------
+				|ngx_core_conf_t
+				\(存储核心模块信息的结构体指针)
+				 ---------
+				 |   *   |
+				 ---------
+				 |
+				 \真正的结构体
+				  -------------------
+				  | ngx_core_conf_t |
+				  -------------------
+
+			   从上图可以看到,对变量****conf_ctx,只用到了前两层指针,使用时强转成两层指针就可以了
+			   所以 *(ngx_core_conf_t **)conf_ctx 就是指向ngx_core_conf_t的指针
+			   以此类推,拿第二个核心模块的配置指针需要这样:
+			   	   *(ngx_xxx_conf_t **)(conf_ctx+1)
+            */
             cycle->conf_ctx[ngx_modules[i]->index] = rv;
         }
     }

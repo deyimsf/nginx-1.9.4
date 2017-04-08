@@ -68,9 +68,12 @@ struct ngx_cycle_s {
 
     ngx_cycle_t              *old_cycle;
 
+    // 配置文件nginx.conf的绝对路劲
     ngx_str_t                 conf_file;
     ngx_str_t                 conf_param;
+    // 配置文件nginx.conf所在的目录
     ngx_str_t                 conf_prefix;
+    // 安装路径
     ngx_str_t                 prefix;
     ngx_str_t                 lock_file;
     ngx_str_t                 hostname;

@@ -193,8 +193,9 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
     ngx_process_slot = s;
 
 
+    // fork出一个worker进程
     pid = fork();
-
+    // 从这里开始子进程和父进程都会执行下面的代码
     switch (pid) {
 
     case -1:
@@ -204,6 +205,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
         return NGX_INVALID_PID;
 
     case 0:
+    	// 下面三行代码只有子进程才会执行
         ngx_pid = ngx_getpid();
         proc(cycle, data);
         break;
@@ -476,6 +478,7 @@ ngx_process_get_status(void)
     one = 0;
 
     for ( ;; ) {
+    	// 获取意外死掉的进程id
         pid = waitpid(-1, &status, WNOHANG);
 
         if (pid == 0) {
@@ -519,6 +522,8 @@ ngx_process_get_status(void)
 
         for (i = 0; i < ngx_last_process; i++) {
             if (ngx_processes[i].pid == pid) {
+            	// 对意外死掉的进程打如下标记
+
                 ngx_processes[i].status = status;
                 ngx_processes[i].exited = 1;
                 process = ngx_processes[i].name;

@@ -171,6 +171,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_reap = 0;
             ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "reap children");
 
+            // 救活意外死掉的worker
             live = ngx_reap_children(cycle);
         }
 
@@ -201,6 +202,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         }
 
         if (ngx_quit) {
+        	// 向所有worker发送信号
             ngx_signal_worker_processes(cycle,
                                         ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
 
@@ -451,6 +453,10 @@ ngx_pass_open_channel(ngx_cycle_t *cycle, ngx_channel_t *ch)
 }
 
 
+/**
+ * 向所有worker发送信号
+ *
+ */
 static void
 ngx_signal_worker_processes(ngx_cycle_t *cycle, int signo)
 {

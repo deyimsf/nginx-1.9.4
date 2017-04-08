@@ -40,12 +40,15 @@ ngx_get_full_name(ngx_pool_t *pool, ngx_str_t *prefix, ngx_str_t *name)
 
 #endif
 
+    // 最后加一是为了在字符串最后保存 \0
     n = ngx_pnalloc(pool, len + name->len + 1);
     if (n == NULL) {
         return NGX_ERROR;
     }
 
+    // 将安装目录字符拷贝到地址n中,p指向len的位置,也就是n中最后一个字符的下一个地址
     p = ngx_cpymem(n, prefix->data, len);
+    // 将安装目录路径和文件相对路径拼装起来
     ngx_cpystrn(p, name->data, name->len + 1);
 
     name->len += len;
