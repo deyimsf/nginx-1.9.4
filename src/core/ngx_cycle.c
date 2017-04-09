@@ -248,25 +248,28 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             /*
                目前只用到了第二层指针
                核心模块对****conf_ctx的使用如下:
-			   conf_ctx
-				-------------------------
-				|   *   |   *   |   *
-				-------------------------
-				|ngx_core_conf_t
-				\(存储核心模块信息的结构体指针)
-				 ---------
-				 |   *   |
-				 ---------
-				 |
-				 \真正的结构体
-				  -------------------
-				  | ngx_core_conf_t |
-				  -------------------
+			    conf_ctx
+				---------
+				|   *   |
+				---------
+					| ngx_core_conf_t  | ngx_xxx_conf_t
+					\				   \
+				 	 -----------------------------------------
+				 	 |       *         |       *        |
+				 	 -----------------------------------------
+				 	   |
+				 	   \ 真正的结构体
+				  	  	-------------------
+				  	  	| ngx_core_conf_t |
+				  	  	-------------------
 
 			   从上图可以看到,对变量****conf_ctx,只用到了前两层指针,使用时强转成两层指针就可以了
 			   所以 *(ngx_core_conf_t **)conf_ctx 就是指向ngx_core_conf_t的指针
 			   以此类推,拿第二个核心模块的配置指针需要这样:
 			   	   *(ngx_xxx_conf_t **)(conf_ctx+1)
+			   实际上如果不关心指针类型,只关心指针的值是不需要强转的,像这样:
+			   	   *conf_ctx
+			   和强转之后效果一样
             */
             cycle->conf_ctx[ngx_modules[i]->index] = rv;
         }
@@ -310,6 +313,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     // 解析nginx.conf配置文件
     // 该方法执行完后,所有的模块指令就都被解析完了
+    // TODO 重要，细看
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);

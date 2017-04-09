@@ -27,6 +27,10 @@ typedef struct {
 #endif
 
 
+/**
+ * nginx对事件的抽象
+ *
+ */
 struct ngx_event_s {
     void            *data;
 
@@ -108,6 +112,7 @@ struct ngx_event_s {
     unsigned         available:1;
 #endif
 
+    // 事件发生后要做的事
     ngx_event_handler_pt  handler;
 
 
@@ -175,6 +180,9 @@ struct ngx_event_aio_s {
 #endif
 
 
+/**
+ * 每个事件模块都必须实现这10个抽象方
+ */
 typedef struct {
     ngx_int_t  (*add)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
     ngx_int_t  (*del)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
@@ -441,12 +449,16 @@ typedef struct {
 } ngx_event_conf_t;
 
 
+/**
+ * 事件模块的定义
+ */
 typedef struct {
     ngx_str_t              *name;
 
     void                 *(*create_conf)(ngx_cycle_t *cycle);
     char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
 
+    // 实现该模块必须定义ngx_event_actions_t中规定的10个抽象方法
     ngx_event_actions_t     actions;
 } ngx_event_module_t;
 

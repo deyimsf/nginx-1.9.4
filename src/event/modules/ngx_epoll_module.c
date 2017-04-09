@@ -828,7 +828,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             }
 #endif
 
-            // 将这个事件设置为可读(已经读到了数据)
+            // 将这个事件设置准备就绪,提醒后续用到该事件的模块可以干活了
             rev->ready = 1;
 
             if (flags & NGX_POST_EVENTS) {
@@ -860,6 +860,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                 continue;
             }
 
+            // 将这个事件设置准备就绪,提醒后续用到该事件的模块可以干活了
             wev->ready = 1;
 
             if (flags & NGX_POST_EVENTS) {

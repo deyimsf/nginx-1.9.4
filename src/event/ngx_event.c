@@ -98,6 +98,9 @@ static ngx_core_module_t  ngx_events_module_ctx = {
 };
 
 
+/**
+ * 用于处理事件的核心模块
+ */
 ngx_module_t  ngx_events_module = {
     NGX_MODULE_V1,
     &ngx_events_module_ctx,                /* module context */
@@ -918,6 +921,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     // 为什么做这个事???
+    // 直接 *conf=ctx 这样也行吧
     *(void **) conf = ctx;
 
     for (i = 0; ngx_modules[i]; i++) {
