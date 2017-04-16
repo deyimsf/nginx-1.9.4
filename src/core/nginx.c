@@ -155,13 +155,24 @@ static ngx_command_t  ngx_core_commands[] = {
 };
 
 
+/**
+ * 声明一个核心模块上下文,这个核心模块的上下文叫core
+ *
+ */
 static ngx_core_module_t  ngx_core_module_ctx = {
+	// 模块名字
     ngx_string("core"),
     ngx_core_module_create_conf,
     ngx_core_module_init_conf
 };
 
 
+/**
+ * 声明一个模块,这个模块是一个核心模块
+ *
+ * 这个核心模块用来规定ngx的运行时的一些基本行为，比如worker个数
+ *
+ */
 ngx_module_t  ngx_core_module = {
     NGX_MODULE_V1,
     &ngx_core_module_ctx,                  /* module context */

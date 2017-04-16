@@ -360,6 +360,11 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 }
 
 
+/**
+ * 打开cycle->listening中的socket
+ * 设置非阻塞
+ * 调用listen方法开始监听
+ */
 ngx_int_t
 ngx_open_listening_sockets(ngx_cycle_t *cycle)
 {
@@ -944,6 +949,10 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
 
 /**
  * 真正获取连接的时候，才会把该连接放入到对应的读写事件结构体中
+ * 根据socket描述符获取一个ngx_connection_t对象
+ *
+ * s: socket描述符
+ * *log: 日志对象
  */
 ngx_connection_t *
 ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
@@ -953,7 +962,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     ngx_connection_t  *c;
 
     /* disable warning: Win32 SOCKET is u_int while UNIX socket is int */
-
+    // TODO files指向整个connections数组?   ngx_cycle->files_n当前进程可用的文件描述符个数？
     if (ngx_cycle->files && (ngx_uint_t) s >= ngx_cycle->files_n) {
         ngx_log_error(NGX_LOG_ALERT, log, 0,
                       "the new socket has number %d, "
@@ -962,9 +971,11 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
         return NULL;
     }
 
+    // 将空闲连接链表的第一个空闲连接对象作为当前连接
     c = ngx_cycle->free_connections;
 
     if (c == NULL) {
+    	// 如果空闲连接已经耗尽了，则试图从ngx_cycle->reusable_connections_queue队列中获取一个连接
         ngx_drain_connections();
         c = ngx_cycle->free_connections;
     }
@@ -978,25 +989,30 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     }
 
     // 连接(ngx_connection_t)未被使用时 c->data 指向的是空闲链表的next指针
+    // free_connections链表头部指向c的下一个ngx_connection_t对象
     ngx_cycle->free_connections = c->data;
+    // 空闲连接个数减一
     ngx_cycle->free_connection_n--;
 
     if (ngx_cycle->files) {
         ngx_cycle->files[s] = c;
     }
 
+    // 将连接的读写事件指针临时保存在rev、wev变量中,因为紧接着要对c对象的内存清零
     rev = c->read;
     wev = c->write;
 
-    // 将连接(ngx_connection_t)中的数据清零
-    // 相当于初始化从空闲链表中取出的ngx_connection_t结构体
+    // 将连接c(ngx_connection_t)中的数据清零
     ngx_memzero(c, sizeof(ngx_connection_t));
 
+    // 读写事件对象重新赋值给c对象
     c->read = rev;
     c->write = wev;
+    // socket文件描述符
     c->fd = s;
     c->log = log;
 
+    //TODO 用来区分该事件是kqueue中的还是epoll中的
     instance = rev->instance;
 
     ngx_memzero(rev, sizeof(ngx_event_t));
@@ -1008,15 +1024,24 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     rev->index = NGX_INVALID_INDEX;
     wev->index = NGX_INVALID_INDEX;
 
+    // 将该连接(ngx_connection_t)放入到读写事件的data字段中
     rev->data = c;
     wev->data = c;
 
+    // 一但获取到一个连接,就将该链接的写事件中的write标志设置为1,
+    // 表示可以向该连接写数据了,但是并不代表该连接代表的socket描述符真的可以写数据了(可以理解为业务上的可以)
     wev->write = 1;
 
     return c;
 }
 
 
+/**
+ * 将连接c(ngx_connection_t)对象放回到ngx_cycle->free_connections链表中
+ *
+ * *c: 要释放的连接
+ *
+ */
 void
 ngx_free_connection(ngx_connection_t *c)
 {
@@ -1030,6 +1055,12 @@ ngx_free_connection(ngx_connection_t *c)
 }
 
 
+/**
+ * 关闭一个连接c,这个动作会调用ngx_free_connection方法将c对象释放，
+ * 然后关闭c对象关联的socket文件描述符
+ *
+ * *c: 要关闭的连接
+ */
 void
 ngx_close_connection(ngx_connection_t *c)
 {
@@ -1144,6 +1175,7 @@ ngx_reusable_connection(ngx_connection_t *c, ngx_uint_t reusable)
 }
 
 
+// TODO
 static void
 ngx_drain_connections(void)
 {
@@ -1163,6 +1195,8 @@ ngx_drain_connections(void)
                        "reusing connection");
 
         c->close = 1;
+        // TODO 这个handler方法会把从ngx_cycle->reusable_connections_queue中获取的c放入到,
+        // ngx_cycle->free_connections链表中?
         c->read->handler(c->read);
     }
 }

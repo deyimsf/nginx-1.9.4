@@ -34,6 +34,7 @@ typedef void (*ngx_event_save_peer_session_pt)(ngx_peer_connection_t *pc,
 #endif
 
 
+// ngx主动发起的连接
 struct ngx_peer_connection_s {
     ngx_connection_t                *connection;
 
@@ -44,7 +45,7 @@ struct ngx_peer_connection_s {
     ngx_uint_t                       tries;
     ngx_msec_t                       start_time;
 
-    // 获取一个上游地址的方法
+    // 获取一个上游连接的方法
     ngx_event_get_peer_pt            get;
     ngx_event_free_peer_pt           free;
     // 如果是默认轮询负载就是 ngx_http_upstream_rr_peer_data_t

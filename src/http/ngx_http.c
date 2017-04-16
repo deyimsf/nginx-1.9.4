@@ -390,6 +390,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    // 这个方法结束后 ngx_listening_t 中的fd仍然没有被初始化
     return NGX_CONF_OK;
 
 failed:

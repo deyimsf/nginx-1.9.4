@@ -141,7 +141,11 @@ struct ngx_module_s {
 };
 
 
+/**
+ * 核心模块的上下文定义
+ */
 typedef struct {
+	// 核心模块的名字
     ngx_str_t             name;
     void               *(*create_conf)(ngx_cycle_t *cycle);
     char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
@@ -246,6 +250,7 @@ char * ngx_conf_deprecated(ngx_conf_t *cf, void *post, void *data);
 char *ngx_conf_check_num_bounds(ngx_conf_t *cf, void *post, void *data);
 
 
+// TODO 获取核心模块的配置信息
 #define ngx_get_conf(conf_ctx, module)  conf_ctx[module.index]
 
 

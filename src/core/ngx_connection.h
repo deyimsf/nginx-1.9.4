@@ -15,18 +15,26 @@
 
 typedef struct ngx_listening_s  ngx_listening_t;
 
+// 用于监听的连接
 struct ngx_listening_s {
     ngx_socket_t        fd;
 
+    // 该链接的内核socket地址
     struct sockaddr    *sockaddr;
+    // sockaddr对象长度
     socklen_t           socklen;    /* size of sockaddr */
+    // 文本形式的ip地址长度
     size_t              addr_text_max_len;
+    // 文本形式的ip
     ngx_str_t           addr_text;
 
     int                 type;
 
+    //
     int                 backlog;
+    // socket接收缓冲区大小
     int                 rcvbuf;
+    // socket发送缓冲区大小
     int                 sndbuf;
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     int                 keepidle;
@@ -133,7 +141,7 @@ struct ngx_connection_s {
     ngx_recv_chain_pt   recv_chain;
     ngx_send_chain_pt   send_chain;
 
-    // 该连接对应的监听对象?
+    // 该连接对应的监听对象,也就是说这个链接是有listening监听对象创建的
     ngx_listening_t    *listening;
 
     off_t               sent;
@@ -142,8 +150,11 @@ struct ngx_connection_s {
 
     ngx_pool_t         *pool;
 
+    // 该链接对应的内核socket地址
     struct sockaddr    *sockaddr;
+    // sockaddr对象的长度
     socklen_t           socklen;
+    // 该链接对应的字符串形式的ip地址
     ngx_str_t           addr_text;
 
     ngx_str_t           proxy_protocol_addr;
@@ -152,7 +163,9 @@ struct ngx_connection_s {
     ngx_ssl_connection_t  *ssl;
 #endif
 
+    // listening链接对应的内核socket地址
     struct sockaddr    *local_sockaddr;
+    // local_sockaddr对象的长度
     socklen_t           local_socklen;
 
     ngx_buf_t          *buffer;

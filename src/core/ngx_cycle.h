@@ -47,8 +47,13 @@ struct ngx_cycle_s {
 
     ngx_uint_t                log_use_stderr;  /* unsigned  log_use_stderr:1; */
 
+    // 一个数组,存放正在使用的连接(ngx_connection_t)
+    // 下标就是socket文件描述符
+    // 在ngx_get_connection方法中设置
     ngx_connection_t        **files;
+    // 指向connections数组中的一个空闲连接
     ngx_connection_t         *free_connections;
+    // 空闲连接的个数
     ngx_uint_t                free_connection_n;
 
     ngx_queue_t               reusable_connections_queue;
@@ -59,11 +64,17 @@ struct ngx_cycle_s {
     ngx_list_t                open_files;
     ngx_list_t                shared_memory;
 
+    // 可创建连接的最大个数,也就是connections数组的大小
     ngx_uint_t                connection_n;
+    // TODO 当前进程可以打开的最大描述符个数 ?
     ngx_uint_t                files_n;
 
+    // connections本身是一个数组,但是数组里面每一个ngx_connection_t对象又有一个指向
+    // 下一个空闲ngx_connection_t对象的指针(使用data字段临时代替)
     ngx_connection_t         *connections;
+    // 每个连接对应的读事件对象
     ngx_event_t              *read_events;
+    // 每个连接对应的写事件对象
     ngx_event_t              *write_events;
 
     ngx_cycle_t              *old_cycle;

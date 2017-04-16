@@ -190,6 +190,7 @@ ngx_event_accept(ngx_event_t *ev)
 
         } else {
             if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
+            	// socket设置成非阻塞
                 if (ngx_nonblocking(s) == -1) {
                     ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_socket_errno,
                                   ngx_nonblocking_n " failed");
@@ -356,6 +357,10 @@ ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
+        // 接收完一个新链接后调用该方法
+        // 这个方法有各个模块自己设置
+        // 比如http核心模块可以把自己的入口方法注入到监听的ls(ngx_listening_t)中
+        // http模块用方法ngx_http_add_listening,把ls->handler = ngx_http_init_connection;
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {

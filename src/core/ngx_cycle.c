@@ -645,6 +645,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
     }
 
+    /* 打开cycle->listening中的socket
+     * 设置非阻塞
+     * 调用listen方法开始监听
+     */
     if (ngx_open_listening_sockets(cycle) != NGX_OK) {
         goto failed;
     }

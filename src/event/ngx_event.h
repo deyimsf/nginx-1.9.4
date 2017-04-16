@@ -450,9 +450,11 @@ typedef struct {
 
 
 /**
- * 事件模块的定义
+ * 事件模块的上下文定义
+ *
  */
 typedef struct {
+	// 事件模块名字
     ngx_str_t              *name;
 
     void                 *(*create_conf)(ngx_cycle_t *cycle);

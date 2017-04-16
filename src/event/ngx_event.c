@@ -41,6 +41,7 @@ sig_atomic_t          ngx_event_timer_alarm;
 static ngx_uint_t     ngx_event_max_module;
 
 ngx_uint_t            ngx_event_flags;
+// 有具体事件实现模块负责设置该值,如 ngx_event_actions = ngx_epoll_module_ctx.actions;
 ngx_event_actions_t   ngx_event_actions;
 
 
@@ -77,7 +78,10 @@ ngx_atomic_t  *ngx_stat_waiting = &ngx_stat_waiting0;
 #endif
 
 
-
+/**
+ * 核心模块ngx_events_module拥有的命令
+ *
+ */
 static ngx_command_t  ngx_events_commands[] = {
 
     { ngx_string("events"),
@@ -91,7 +95,12 @@ static ngx_command_t  ngx_events_commands[] = {
 };
 
 
+/**
+ * 声明一个核心模块上下文,这个核心模块的上下文叫events
+ *
+ */
 static ngx_core_module_t  ngx_events_module_ctx = {
+	// 模块名字
     ngx_string("events"),
     NULL,
     ngx_event_init_conf
@@ -99,7 +108,10 @@ static ngx_core_module_t  ngx_events_module_ctx = {
 
 
 /**
- * 用于处理事件的核心模块
+ * 声明一个模块,这个模块是一个核心模块
+ *
+ * 这个核心模块是用来处理事件的
+ *
  */
 ngx_module_t  ngx_events_module = {
     NGX_MODULE_V1,
@@ -120,6 +132,10 @@ ngx_module_t  ngx_events_module = {
 static ngx_str_t  event_core_name = ngx_string("event_core");
 
 
+/**
+ * 事件模块ngx_event_core_module拥有的命令
+ *
+ */
 static ngx_command_t  ngx_event_core_commands[] = {
 
     { ngx_string("worker_connections"),
@@ -168,6 +184,10 @@ static ngx_command_t  ngx_event_core_commands[] = {
 };
 
 
+/**
+ * 声明一个事件模块上下文,这个事件模块的上下文叫event_core
+ *
+ */
 ngx_event_module_t  ngx_event_core_module_ctx = {
     &event_core_name,
     ngx_event_core_create_conf,            /* create configuration */
@@ -177,6 +197,12 @@ ngx_event_module_t  ngx_event_core_module_ctx = {
 };
 
 
+/**
+ * 声明一个事件模块
+ *
+ * 这个事件模块用来管理其它事件模块,比如使用哪个具体事件模型(epoll、select等)
+ *
+ */
 ngx_module_t  ngx_event_core_module = {
     NGX_MODULE_V1,
     &ngx_event_core_module_ctx,            /* module context */
@@ -421,6 +447,7 @@ ngx_handle_write_event(ngx_event_t *wev, size_t lowat)
 static char *
 ngx_event_init_conf(ngx_cycle_t *cycle, void *conf)
 {
+	// 检查事件模块的配置信息是否存在
     if (ngx_get_conf(cycle->conf_ctx, ngx_events_module) == NULL) {
         ngx_log_error(NGX_LOG_EMERG, cycle->log, 0,
                       "no \"events\" section in configuration");
@@ -750,6 +777,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 #endif
 
         // 真正获取连接的时候，才会把该连接放入到对应的读写事件结构体中
+        // ls[i].fd 在ngx_init_cycle方法中已经初始化好了(设置非阻塞等)
         c = ngx_get_connection(ls[i].fd, cycle->log);
 
         if (c == NULL) {
@@ -932,7 +960,27 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         m = ngx_modules[i]->ctx;
 
         if (m->create_conf) {
-        	// 第三层指针存放的是各个事件模块的配置项结构体
+        	/* 第三层指针存放的是各个事件模块的配置项结构体,指针图形如下:
+			   ctx
+			   -----
+			   | * |
+			   -----
+			   |
+			   \*ctx  *conf
+			    -----
+			    | * |
+			    -----
+			    |	   |	  |
+			    \epoll \slect \poll
+			     -----------------------
+			     |  *   |  *   |  *  |
+				 -----------------------
+				  |				  |
+				  \				  \
+				  ------------	   -------------
+				  |epoll_conf|	   | poll_conf |
+				  ------------	   -------------
+        	*/
             (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);
             if ((*ctx)[ngx_modules[i]->ctx_index] == NULL) {
                 return NGX_CONF_ERROR;
