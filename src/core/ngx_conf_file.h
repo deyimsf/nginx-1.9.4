@@ -76,11 +76,16 @@
 
 
 struct ngx_command_s {
+	// 命令名字
     ngx_str_t             name;
+
     // 命令类型,可以指定当前指令所属的区块(如main、http{}、server{}、upstream{}、server_if{}、location_if{}等)
     // 还可以指定命令的参数个数(NGX_CONF_NOARGS、NGX_CONF_TAKE1)等
     ngx_uint_t            type;
+
+    // 解析到该命令后要执行的方法
     char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+
     // 使用的是哪个方法(create_main|server|loc_conf)创建的结构体
     // 该值可以是NGX_HTTP_MAIN_CONF_OFFSET、NGX_HTTP_SRV_CONF_OFFSET、NGX_HTTP_LOC_CONF_OFFSET
     // 对应的值是 offsetof(ngx_http_conf_ctx_t, main|srv|loc_conf)
@@ -186,7 +191,6 @@ struct ngx_conf_s {
     ngx_log_t            *log;
 
     // 一般在调用ngx_conf_parse方法前,会设置
-    // 当解析http{}内指令时,ctx是http{}块内的ngx_http_conf_ctx_t
     void                 *ctx;
     // 模块类型(如NGX_CORE_MODULE、NGX_HTTP_MODULE等)
     ngx_uint_t            module_type;

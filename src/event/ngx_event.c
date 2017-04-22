@@ -458,6 +458,11 @@ ngx_event_init_conf(ngx_cycle_t *cycle, void *conf)
 }
 
 
+/**
+ * 还没有fork出worker进程时调用
+ *
+ * ngx_event_process_init方法则是在fork出worker进程之后调用
+ */
 static ngx_int_t
 ngx_event_module_init(ngx_cycle_t *cycle)
 {
@@ -603,7 +608,13 @@ ngx_timer_signal_handler(int signo)
 #endif
 
 
-// 子进程worker被fork出之后调用
+/**
+ * fork出woker进程之后调用
+ *
+ * ngx_event_module_init方法则是fork出worker进程之前调用
+ *
+ * TODO 明天重点这个方法
+ */
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
 {
@@ -615,16 +626,25 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     ngx_event_conf_t    *ecf;
     ngx_event_module_t  *module;
 
+    // 获取核心模块(ngx_core_module)的配置信息,模块ngx_core_module是一个核心模块
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+    // 获取核心事件模块(ngx_event_core_module)的配置信息,模块ngx_event_core_module是个事件模块
     ecf = ngx_event_get_conf(cycle->conf_ctx, ngx_event_core_module);
 
-    // 检查是否需要打开负载均衡锁
+    /* 检查是否需要打开负载均衡锁
+     * master: TODO?
+     * woker_processes: 如果只有一个worker进程就没必要开启负载了
+     * accept_mutex: 明确指定是否开启互斥锁
+     */
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
+    	// 使用互斥锁
         ngx_use_accept_mutex = 1;
         ngx_accept_mutex_held = 0;
+        // 对应accept_mutex_delay指令,一个延迟时间
         ngx_accept_mutex_delay = ecf->accept_mutex_delay;
 
     } else {
+    	// 不使用互斥锁
         ngx_use_accept_mutex = 0;
     }
 
@@ -651,13 +671,14 @@ ngx_event_process_init(ngx_cycle_t *cycle)
             continue;
         }
 
+        // 选定具体事件模块,如epoll
         if (ngx_modules[m]->ctx_index != ecf->use) {
             continue;
         }
 
         module = ngx_modules[m]->ctx;
 
-        // 调用每个事件模块的init方法(对于ngx_epoll_module模块来说就是ngx_epoll_init方法)
+        // 调用具体事件模块的init方法(对于ngx_epoll_module模块来说就是ngx_epoll_init方法)
         // 在ngx_epoll_init方法中会调用epoll_create方法创建epoll对象
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
             /* fatal */
@@ -669,6 +690,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #if !(NGX_WIN32)
 
+    // TODO
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
         struct itimerval  itv;
@@ -677,6 +699,9 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         sa.sa_handler = ngx_timer_signal_handler;
         sigemptyset(&sa.sa_mask);
 
+        /**
+         * SIGALRM: liunx中的信号,函数alarm和setitimer会产生SIGALRM信号
+         */
         if (sigaction(SIGALRM, &sa, NULL) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "sigaction(SIGALRM) failed");
@@ -688,12 +713,14 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         itv.it_value.tv_sec = ngx_timer_resolution / 1000;
         itv.it_value.tv_usec = (ngx_timer_resolution % 1000 ) * 1000;
 
+        // 设置一个定时器,每隔itv时间就调用一次ngx_timer_signal_handler方法
         if (setitimer(ITIMER_REAL, &itv, NULL) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "setitimer() failed");
         }
     }
 
+    // TODO
     if (ngx_event_flags & NGX_USE_FD_EVENT) {
         struct rlimit  rlmt;
 
@@ -714,7 +741,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
-    // 分配ngx_connection_t连接池
+    // 分配ngx_connection_t连接池,总共connection_n个
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL) {
@@ -723,7 +750,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     c = cycle->connections;
 
-    // 分配读事件池
+    // 分配读事件池,总共connection_n个
     cycle->read_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                    cycle->log);
     if (cycle->read_events == NULL) {
@@ -736,6 +763,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         rev[i].instance = 1;
     }
 
+    // 分配写事件池,总共connection_n个
     cycle->write_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                     cycle->log);
     if (cycle->write_events == NULL) {
@@ -754,6 +782,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     do {
         i--;
 
+        // 将cycle->connections池中的连接用data指针串联起来
         c[i].data = next;
         c[i].read = &cycle->read_events[i];
         c[i].write = &cycle->write_events[i];
@@ -965,21 +994,21 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 			   -----
 			   | * |
 			   -----
-			   |
-			   \*ctx  *conf
-			    -----
-			    | * |
-			    -----
-			    |	   |	  |
-			    \epoll \slect \poll
-			     -----------------------
-			     |  *   |  *   |  *  |
-				 -----------------------
-				  |				  |
-				  \				  \
-				  ------------	   -------------
-				  |epoll_conf|	   | poll_conf |
-				  ------------	   -------------
+			   |		 |(ngx_events_module.index)
+			   \*ctx0    \*ctx3
+			    ----------------------
+			    | * | .. | * |	 cycle->ctx[ngx_events_module.index] 等于*ctx3的值
+			    ----------------------
+			    		 |(event_core.ctx_index) |(epoll.ctx_index)
+			    		 \**ctx0				 \**ctx1
+			     	 	  --------------------------------------------------
+			     	 	  |            *          |         *       | (*cycle->ctx[ngx_events_module.index])[ngx_epoll_module_ctx_index] 等于**ctx1的值
+				 	 	  --------------------------------------------------
+				  	  	  	  	  |				 				|
+				  	  	  	  	  \***ctx0				  		\***ctx1
+				  	  	  	  	  ------------------	  		 --------------------
+				  	  	  	  	  |ngx_event_conf_t|	  		 | ngx_epoll_conf_t |
+				  	  	  	  	  ------------------	  		 --------------------
         	*/
             (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);
             if ((*ctx)[ngx_modules[i]->ctx_index] == NULL) {
@@ -988,6 +1017,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    // cf的结构体临时copy给pcf
     pcf = *cf;
     cf->ctx = ctx;
     cf->module_type = NGX_EVENT_MODULE;
@@ -995,6 +1025,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     rv = ngx_conf_parse(cf, NULL);
 
+    // 复原cf指向的结构体
     *cf = pcf;
 
     if (rv != NGX_CONF_OK) {

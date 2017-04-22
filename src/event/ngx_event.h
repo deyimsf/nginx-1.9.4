@@ -432,8 +432,18 @@ extern ngx_os_io_t  ngx_io;
 #define NGX_EVENT_CONF        0x02000000
 
 
+/* 该结构体用来保存事件模块的配置信息
+ *
+ * 如 events {
+ * 		worker_connections 1024;
+ * 		user epoll;
+ * 	  }
+ *
+ */
 typedef struct {
+	// woker进程支持的连接数,有worker_connections指令指定
     ngx_uint_t    connections;
+    // 使用哪种事件模块(epoll、select等),有use指令指定
     ngx_uint_t    use;
 
     ngx_flag_t    multi_accept;
@@ -441,6 +451,7 @@ typedef struct {
 
     ngx_msec_t    accept_mutex_delay;
 
+    // 当前事件模块名字(epoll、select等)
     u_char       *name;
 
 #if (NGX_DEBUG)

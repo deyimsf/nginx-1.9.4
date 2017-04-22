@@ -14,6 +14,7 @@
  *
  * 1) strerror() and strerror_r() functions are not Async-Signal-Safe,
  *    therefore, they cannot be used in signal handlers;
+ *
  *    strerror() and strerror_r()这两个函数不是"异步信号安全"的。
  *    异步信号安全函数是指,在函数内部即使因为信号正在被中断,在其它地方该函数被调用了也不会有问题。
  *    如果在函数中存在更新静态区域里的数据情况(如，malloc),就不是异步信号安全
