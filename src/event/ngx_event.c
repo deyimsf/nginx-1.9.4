@@ -50,7 +50,9 @@ ngx_atomic_t         *ngx_connection_counter = &connection_counter;
 
 
 ngx_atomic_t         *ngx_accept_mutex_ptr;
+// TODO
 ngx_shmtx_t           ngx_accept_mutex;
+// 是否使用负载均衡锁标记,1是使用, 0是不使用
 ngx_uint_t            ngx_use_accept_mutex;
 ngx_uint_t            ngx_accept_events;
 ngx_uint_t            ngx_accept_mutex_held;
@@ -474,7 +476,11 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     ngx_core_conf_t     *ccf;
     ngx_event_conf_t    *ecf;
 
+    /* 获取核心模块(ngx_events_module)的配置信息指针,核心模块指针都存放在conf_ctx的第二层指针上
+     * 这里用cf这指针貌似没啥用,获取ecf的话直接用ngx_event_get_conf(cycle->conf_ctx,ngx_event_core_module)就可以
+    */
     cf = ngx_get_conf(cycle->conf_ctx, ngx_events_module);
+    // 获取ngx_event_core_module模块的配置信息(如worker_connections、use等)
     ecf = (*cf)[ngx_event_core_module.ctx_index];
 
     if (!ngx_test_config && ngx_process <= NGX_PROCESS_MASTER) {
@@ -482,10 +488,13 @@ ngx_event_module_init(ngx_cycle_t *cycle)
                       "using the \"%s\" event method", ecf->name);
     }
 
+    // 获取核心模块(ngx_core_module)的配置信息指针
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
+    // 设置更新缓存时间的间隔时间
     ngx_timer_resolution = ccf->timer_resolution;
 
+    //下面这段代码貌似只是为了打印日志
 #if !(NGX_WIN32)
     {
     ngx_int_t      limit;
@@ -496,6 +505,12 @@ ngx_event_module_init(ngx_cycle_t *cycle)
                       "getrlimit(RLIMIT_NOFILE) failed, ignored");
 
     } else {
+    	/**
+    	 * 如果用户指定的worker_connections数，大于当前进程允许打开的最大描述符,并且指令worker_rlimit_nofile也没有设置值;
+    	 * 或者说worker_rlimit_nofile指令设置值了,但是指令worker_connections的值要大于worker_rlimit_nofile的值
+    	 *
+    	 * 简单说明就是limit的值不能大于worker_connections和worker_rlimit_nofile两个指令中最大的那个的值
+    	 */
         if (ecf->connections > (ngx_uint_t) rlmt.rlim_cur
             && (ccf->rlimit_nofile == NGX_CONF_UNSET
                 || ecf->connections > (ngx_uint_t) ccf->rlimit_nofile))
@@ -513,10 +528,12 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 #endif /* !(NGX_WIN32) */
 
 
+    // 如果没有开启master-worker模式,则不需要执行后续代码
     if (ccf->master == 0) {
         return NGX_OK;
     }
 
+    // TODO
     if (ngx_accept_mutex_ptr) {
         return NGX_OK;
     }
@@ -527,7 +544,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     cl = 128;
 
     size = cl            /* ngx_accept_mutex */
-           + cl          /* ngx_connection_counter */
+           + cl          /* ngx_connection_counter */ //记录连接个数
            + cl;         /* ngx_temp_number */
 
 #if (NGX_STAT_STUB)
@@ -542,11 +559,14 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
 #endif
 
+    /**共享内存,所有进程都可以看到的内存地址*/
+    // 设置共享内存大小
     shm.size = size;
     shm.name.len = sizeof("nginx_shared_zone") - 1;
     shm.name.data = (u_char *) "nginx_shared_zone";
     shm.log = cycle->log;
 
+    // 为共享内存分配内存空间,使用mmap函数;这样所有的进程就都可以看到这块内存了
     if (ngx_shm_alloc(&shm) != NGX_OK) {
         return NGX_ERROR;
     }
@@ -554,8 +574,9 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     shared = shm.addr;
 
     ngx_accept_mutex_ptr = (ngx_atomic_t *) shared;
-    ngx_accept_mutex.spin = (ngx_uint_t) -1;
+    ngx_accept_mutex.spin = (ngx_uint_t) -1; //TODO ngx_accept_mutex是干啥的
 
+    // TODO
     if (ngx_shmtx_create(&ngx_accept_mutex, (ngx_shmtx_sh_t *) shared,
                          cycle->lock_file.data)
         != NGX_OK)
@@ -563,6 +584,9 @@ ngx_event_module_init(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 
+    /**下面的代码负责把共享内存的地址赋值给各个变量**/
+
+    // 用来记录总的连接使用数的内存
     ngx_connection_counter = (ngx_atomic_t *) (shared + 1 * cl);
 
     (void) ngx_atomic_cmp_set(ngx_connection_counter, 0, 1);
@@ -595,9 +619,15 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
 #if !(NGX_WIN32)
 
+/**
+ * 设置是否可以调用更新缓存时间的函数ngx_time_update
+ *
+ * signo: 信号
+ */
 static void
 ngx_timer_signal_handler(int signo)
 {
+	// 可以更新缓存时间
     ngx_event_timer_alarm = 1;
 
 #if 1
@@ -613,7 +643,6 @@ ngx_timer_signal_handler(int signo)
  *
  * ngx_event_module_init方法则是fork出worker进程之前调用
  *
- * TODO 明天重点这个方法
  */
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
@@ -640,7 +669,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     	// 使用互斥锁
         ngx_use_accept_mutex = 1;
         ngx_accept_mutex_held = 0;
-        // 对应accept_mutex_delay指令,一个延迟时间
+        // 对应accept_mutex_delay指令,重新接收(accept)一个连接的延迟时间
         ngx_accept_mutex_delay = ecf->accept_mutex_delay;
 
     } else {
@@ -659,9 +688,13 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
+    // TODO 初始化两个队列, 暂时不知道这两个队列干嘛的
     ngx_queue_init(&ngx_posted_accept_events);
     ngx_queue_init(&ngx_posted_events);
 
+    /* 初始化定时器事件(ngx_event_timer/ngx_event_timer_rbtree),ngx_event_timer_rbtree是rbtree
+     * 每个worker的定时器事件都放在ngx_event_timer_rbtree红黑树中了
+     */
     if (ngx_event_timer_init(cycle->log) == NGX_ERROR) {
         return NGX_ERROR;
     }
@@ -690,13 +723,21 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #if !(NGX_WIN32)
 
-    // TODO
+    /**
+     * ngx_timer_resolution: 对应指令timer_resolution,减少gettimeofday()方法的调用次数
+     * TODO 后面两个是个啥意思...
+     *
+     * 基本原理是每隔一段时间调用一次ngx_timer_signal_handler方法
+     * 该方法将全局变量ngx_event_timer_alarm设置为1,表示可以调用ngx_time_update方法更新缓存时间
+     */
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
         struct itimerval  itv;
 
         ngx_memzero(&sa, sizeof(struct sigaction));
+        // 定时器回调方法
         sa.sa_handler = ngx_timer_signal_handler;
+        // 清空信号集合
         sigemptyset(&sa.sa_mask);
 
         /**
@@ -720,18 +761,21 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
     }
 
-    // TODO
+    // TODO 这两个是什么意思
     if (ngx_event_flags & NGX_USE_FD_EVENT) {
         struct rlimit  rlmt;
 
+        // 获取当前进程文件描述符限制
         if (getrlimit(RLIMIT_NOFILE, &rlmt) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "getrlimit(RLIMIT_NOFILE) failed");
             return NGX_ERROR;
         }
 
+        // 当前进程可以打开的最大描述符个数
         cycle->files_n = (ngx_uint_t) rlmt.rlim_cur;
 
+        // 分配files_n个指向ngx_connection_t的指针空间
         cycle->files = ngx_calloc(sizeof(ngx_connection_t *) * cycle->files_n,
                                   cycle->log);
         if (cycle->files == NULL) {
@@ -741,7 +785,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
-    // 分配ngx_connection_t连接池,总共connection_n个
+    // 分配ngx_connection_t连接池内存空间,总共connection_n个
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL) {
@@ -750,15 +794,17 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     c = cycle->connections;
 
-    // 分配读事件池,总共connection_n个
+    // 分配读事件池内存k空间,总共connection_n个
     cycle->read_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                    cycle->log);
     if (cycle->read_events == NULL) {
         return NGX_ERROR;
     }
 
+    // 所有的读事件对象
     rev = cycle->read_events;
     for (i = 0; i < cycle->connection_n; i++) {
+    	// TODO 这个close是干啥的
         rev[i].closed = 1;
         rev[i].instance = 1;
     }
@@ -772,41 +818,53 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     wev = cycle->write_events;
     for (i = 0; i < cycle->connection_n; i++) {
+    	// TODO 这个close是做什么的
         wev[i].closed = 1;
     }
 
     i = cycle->connection_n;
     next = NULL;
 
-    // 将读事件和写事件结构体关联到连接池中每一个连接
+    // 将读事件和写事件结构体关联到连接池中每一个连接(ngx_connection_t)上
     do {
         i--;
 
         // 将cycle->connections池中的连接用data指针串联起来
         c[i].data = next;
+        // 将连接对象和读事件对象关联起来
         c[i].read = &cycle->read_events[i];
+        // 将连接对象和写事件对象关联起来
         c[i].write = &cycle->write_events[i];
+        // 连接对象对应的描述符设置为-1
         c[i].fd = (ngx_socket_t) -1;
 
         next = &c[i];
     } while (i);
 
+    // 刚开始闲置连接头指向cycle->connections中的第一个连接(ngx_connection_t)
     cycle->free_connections = next;
     cycle->free_connection_n = cycle->connection_n;
 
     /* for each listening socket */
-
+    /* 循环cycle中的所有监听连接,这些连接都是各个模块要监听的端口连接
+     * 这个过程会把各个监听连接的读事件加入到事件驱动器中区
+     */
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
 #if (NGX_HAVE_REUSEPORT)
+    	// TODO reuseport(复用端口号?)
         if (ls[i].reuseport && ls[i].worker != ngx_worker) {
             continue;
         }
 #endif
 
-        // 真正获取连接的时候，才会把该连接放入到对应的读写事件结构体中
-        // ls[i].fd 在ngx_init_cycle方法中已经初始化好了(设置非阻塞等)
+        /*
+         * 真正获取连接的时候，才会把该连接放入到对应的读写事件结构体中
+         * ls[i].fd 在ngx_init_cycle方法中已经初始化好了(设置非阻塞等)
+         *
+         * 根据文件描述符获取一个连接对象(ngx_connection_t)
+         */
         c = ngx_get_connection(ls[i].fd, cycle->log);
 
         if (c == NULL) {
@@ -815,19 +873,22 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
         c->log = &ls[i].log;
 
+        // 连接对象(ngx_connection_t)中有监听对象(ngx_listening_t)
         c->listening = &ls[i];
+        // 监听对象(ngx_listening_t)中有连接对象(ngx_connection_t)
         ls[i].connection = c;
 
         rev = c->read;
 
         rev->log = c->log;
+        // 读事件的accept为1表示该读事件对应的是监听连接
         rev->accept = 1;
 
 #if (NGX_HAVE_DEFERRED_ACCEPT)
         rev->deferred_accept = ls[i].deferred_accept;
 #endif
 
-        if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
+        if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) { // TODO
             if (ls[i].previous) {
 
                 /*
@@ -885,17 +946,26 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #else
 
+        /*
+         * 读事件发生后执行该方法,用该方法接收客户端的连接。
+         * 其实该方法可以算是启动其它模块(使用了事件模块的模块)执行业务流程的一个入口。
+         *
+         * 因为方法ngx_event_accept最后会执行ls->handler(c)方法,而该方法则是其它模块
+         * 在初始化时设置的自己的方法,比如http核心模块的ngx_http_init_connection方法。
+         *
+         */
         rev->handler = ngx_event_accept;
 
         if (ngx_use_accept_mutex
 #if (NGX_HAVE_REUSEPORT)
-            && !ls[i].reuseport
+            && !ls[i].reuseport //TODO
 #endif
            )
         {
             continue;
         }
 
+        // 将该监听连接的读事件加入到事件驱动器中
         if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
             return NGX_ERROR;
         }

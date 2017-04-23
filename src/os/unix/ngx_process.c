@@ -93,6 +93,9 @@ ngx_signal_t  signals[] = {
 };
 
 
+/**
+ * fork出worker进程
+ */
 ngx_pid_t
 ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
     char *name, ngx_int_t respawn)

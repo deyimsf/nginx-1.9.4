@@ -59,6 +59,7 @@ struct ngx_listening_s {
     ngx_listening_t    *previous;
     ngx_connection_t   *connection;
 
+    // 当前worker编号,启动worker时给出
     ngx_uint_t          worker;
 
     unsigned            open:1;
@@ -77,6 +78,7 @@ struct ngx_listening_s {
     unsigned            ipv6only:1;
 #endif
 #if (NGX_HAVE_REUSEPORT)
+    // TODO
     unsigned            reuseport:1;
     unsigned            add_reuseport:1;
 #endif

@@ -49,7 +49,8 @@ struct ngx_cycle_s {
 
     // 一个数组,存放正在使用的连接(ngx_connection_t)
     // 下标就是socket文件描述符
-    // 在ngx_get_connection方法中设置
+    // 在ngx_event_process_init方法中分配内存空间(分配files_n个指针空间)
+    // 在ngx_get_connection方法中具体赋值
     ngx_connection_t        **files;
     // 指向connections数组中的一个空闲连接
     ngx_connection_t         *free_connections;
@@ -66,7 +67,7 @@ struct ngx_cycle_s {
 
     // 可创建连接的最大个数,也就是connections数组的大小
     ngx_uint_t                connection_n;
-    // TODO 当前进程可以打开的最大描述符个数 ?
+    // 当前进程可以打开的最大描述符个数
     ngx_uint_t                files_n;
 
     // connections本身是一个数组,但是数组里面每一个ngx_connection_t对象又有一个指向
@@ -93,6 +94,9 @@ struct ngx_cycle_s {
 
 typedef struct {
      ngx_flag_t               daemon;
+     /* 对应master_process指令,表示是否开启master模式(也就是master-worker模拟式),默认开启
+      * 如果值为零则表示不开启,也就是单进程模式(开发调试时使用)。
+      */
      ngx_flag_t               master;
 
      ngx_msec_t               timer_resolution;

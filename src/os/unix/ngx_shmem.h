@@ -13,9 +13,15 @@
 #include <ngx_core.h>
 
 
+/**
+ * 共享内存
+ */
 typedef struct {
+	// 共享内存的内存地址
     u_char      *addr;
+    // 共享内存大小
     size_t       size;
+    // 共享内存名字
     ngx_str_t    name;
     ngx_log_t   *log;
     ngx_uint_t   exists;   /* unsigned  exists:1;  */

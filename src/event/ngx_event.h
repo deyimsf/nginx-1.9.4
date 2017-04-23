@@ -36,6 +36,7 @@ struct ngx_event_s {
 
     unsigned         write:1;
 
+    // 标记为1,表示该事件对应的是监听连接
     unsigned         accept:1;
 
     /* used to detect the stale events in kqueue and epoll */
@@ -72,6 +73,7 @@ struct ngx_event_s {
 
     unsigned         posted:1;
 
+    // TODO
     unsigned         closed:1;
 
     /* to test on worker exit */
@@ -447,8 +449,10 @@ typedef struct {
     ngx_uint_t    use;
 
     ngx_flag_t    multi_accept;
+    // 是否开启负载均衡锁,对应指令accept_mutex,默认off
     ngx_flag_t    accept_mutex;
 
+    // 当accept_mutex开启的时候,如果wokre获取不到均衡锁,则指定worker重新接收(accept)连接的一个延迟时间
     ngx_msec_t    accept_mutex_delay;
 
     // 当前事件模块名字(epoll、select等)

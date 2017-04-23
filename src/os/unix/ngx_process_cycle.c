@@ -29,6 +29,7 @@ static void ngx_cache_loader_process_handler(ngx_event_t *ev);
 
 
 ngx_uint_t    ngx_process;
+// 当前worker编号
 ngx_uint_t    ngx_worker;
 ngx_pid_t     ngx_pid;
 

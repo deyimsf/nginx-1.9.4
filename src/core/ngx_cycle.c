@@ -666,7 +666,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     pool->log = cycle->log;
 
-    // 调用每个模块的init_module回调方法
+    /*
+     * 初始化模块
+     * 调用每个模块的init_module回调方法
+     */
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->init_module) {
             if (ngx_modules[i]->init_module(cycle) != NGX_OK) {
