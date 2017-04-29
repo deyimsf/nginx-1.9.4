@@ -1047,8 +1047,8 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    // 为什么做这个事???
-    // 直接 *conf=ctx 这样也行吧
+    // 为什么做这个事???  TODO  看完配置文件的解析，回过头看再看ctx和cycle->conf_ctx是如何对应的
+    // 直接 *conf=ctx 这样也行吧(是行，但是因为ctx是指针，*conf不是指针, 这样赋值不太好看)
     *(void **) conf = ctx;
 
     for (i = 0; ngx_modules[i]; i++) {
@@ -1062,23 +1062,23 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         	/* 第三层指针存放的是各个事件模块的配置项结构体,指针图形如下:
 			   ctx
 			   -----
-			   | * |
+			   | * | 该内存空间在变量定义时给出(void ***ctx); 值是ngx_pcalloc(cf->pool, sizeof(void *))方法的返回值。
 			   -----
-			   |		 |(ngx_events_module.index)
-			   \*ctx0    \*ctx3
-			    ----------------------
-			    | * | .. | * |	 cycle->ctx[ngx_events_module.index] 等于*ctx3的值
-			    ----------------------
-			    		 |(event_core.ctx_index) |(epoll.ctx_index)
-			    		 \**ctx0				 \**ctx1
-			     	 	  --------------------------------------------------
-			     	 	  |            *          |         *       | (*cycle->ctx[ngx_events_module.index])[ngx_epoll_module_ctx_index] 等于**ctx1的值
-				 	 	  --------------------------------------------------
-				  	  	  	  	  |				 				|
-				  	  	  	  	  \***ctx0				  		\***ctx1
-				  	  	  	  	  ------------------	  		 --------------------
-				  	  	  	  	  |ngx_event_conf_t|	  		 | ngx_epoll_conf_t |
-				  	  	  	  	  ------------------	  		 --------------------
+			   |设 *(ctx+0) 为ctx0
+			   \*(ctx+0)
+			   	-----
+			    | * | 这一层指针有具体的核心模块负责创建。该内存空间有ngx_pcalloc(cf->pool, sizeof(void *))方法分配; 值是ngx_pcalloc(cf->pool, ngx_event_max_module * sizeof(void *))方法的返回值。
+			    -----
+				|设*(ctx0+0)为ctx00	|设*(ctx0+1)为ctx01
+				\*(ctx0+0)   		\*(ctx0+1)
+				 -----------------------------
+				 |     *       |       *     | 该内存空间有ngx_pcalloc(cf->pool, ngx_event_max_module * sizeof(void *))方法分配; 值是m->create_conf(cf->cycle)方法的返回值。
+				 -----------------------------
+				 |					   	  |
+				 \*(ctx00+0)	  		  \*(ctx01+0)
+				  ------------------       ------------------
+				  |ngx_event_conf_t|       |ngx_epoll_conf_t| 该内存空间有m->create_conf(cf->cycle)方法创建
+				  ------------------       ------------------
         	*/
             (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);
             if ((*ctx)[ngx_modules[i]->ctx_index] == NULL) {

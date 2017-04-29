@@ -4,6 +4,39 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/**
+   四个星号解释 ****conf_ctx
+   根据宏定义ngx_event_get_conf来解释
+   设ctx = conf_ctx
+
+    ctx
+	-----
+	| * |
+	-----
+	|	    	|(ngx_events_module.index)
+	\*(ctx+0)   \*(ctx+index)  设*(ctx+index)为index
+	 ----------------------
+     | * | .. |  *  |这一层内存有main中调用ngx_init_cycle函数创建,共ngx_max_module个。 cycle->conf_ctx[ngx_events_module.index] 等于*(ctx+index)的值。
+	 ----------------------
+	 	 	   |*(index+0)
+	 	 	   \设*(index+0)为index0
+	  	  	    ---------
+	  	  	    |   *   | 这一层指针有具体的核心模块负责创建。  *(cycle->conf_ctx[ngx_events_module.index]) 等于 *( *(ctx+index) + 0 ) 的值。
+	  	  	    ---------
+	  	  	    |*(index0 + 0)				 		   |*(index0 + ctx_index)
+	  	  	    |存放event_core事件模块用的的结构体的地址     |存放epoll事件模块用到的配置结构体的地址
+	  	  	    \设*(index0+0)为index00		 			\设*(index0 + ctx_index)为index0ctx_index
+	   	   	   	 ------------------------------------------------------------
+	   	   	   	 |  		   *             |  				*  			|这一层存放自定义模块的配置结构体地址。(*(cycle->conf_ctx[ngx_events_module.index]))[ngx_epoll_module.ctx_index] 等于 *( (*( *(ctx+index) + 0 )) + ctx_index)的值。
+	   	   	   	 ------------------------------------------------------------
+				 |							  	 |存放ngx_epoll_conf_t结构体的数据
+				 \*(index00 + 0)				 \ *(index0ctx_index + 0)
+		 	 	  ------------------	  		  --------------------
+  	  	 	 	  |ngx_event_conf_t|	  		  | ngx_epoll_conf_t |   等于 *( ( *( ( *( *(ctx+index) + 0 ) ) + ctx_index)) + 0 )的值。
+		 	 	  ------------------	  		  --------------------
+ */
+
+
 
 #ifndef _NGX_CYCLE_H_INCLUDED_
 #define _NGX_CYCLE_H_INCLUDED_

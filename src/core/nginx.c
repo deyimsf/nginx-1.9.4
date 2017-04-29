@@ -384,7 +384,7 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    // 为nginx的所有模块加编号
+    // 为nginx的所有模块加编号,不区分核心模块和非核心模块
     ngx_max_module = 0;
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = ngx_max_module++;
