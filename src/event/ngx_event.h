@@ -200,6 +200,10 @@ typedef struct {
     ngx_int_t  (*process_events)(ngx_cycle_t *cycle, ngx_msec_t timer,
                    ngx_uint_t flags);
 
+    /*
+      fork出worker进程之后,在/src/event/ngx_event.c/ngx_event_process_init方法中,
+      会调用该方法(actions.init)
+    */
     ngx_int_t  (*init)(ngx_cycle_t *cycle, ngx_msec_t timer);
     void       (*done)(ngx_cycle_t *cycle);
 } ngx_event_actions_t;
@@ -364,7 +368,9 @@ extern ngx_event_actions_t   ngx_event_actions;
 
 #elif (NGX_HAVE_EPOLL)
 
+// epoll中的读事件
 #define NGX_READ_EVENT     (EPOLLIN|EPOLLRDHUP)
+// epoll中的写事件
 #define NGX_WRITE_EVENT    EPOLLOUT
 
 #define NGX_LEVEL_EVENT    0

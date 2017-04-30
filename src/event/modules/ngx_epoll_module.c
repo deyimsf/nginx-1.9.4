@@ -94,7 +94,11 @@ struct io_event {
 #endif /* NGX_TEST_BUILD_EPOLL */
 
 
+/**
+ * 用来存放epoll事件模块配置信息的结构体
+ */
 typedef struct {
+	// 每次调用epoll_wait时可以返回的最大就绪事件个数
     ngx_uint_t  events;
     ngx_uint_t  aio_requests;
 } ngx_epoll_conf_t;
@@ -150,6 +154,7 @@ static ngx_str_t      epoll_name = ngx_string("epoll");
 
 static ngx_command_t  ngx_epoll_commands[] = {
 
+	// 每次调用epoll_wait时可以返回的最大就绪事件个数
     { ngx_string("epoll_events"),
       NGX_EVENT_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_num_slot,
@@ -186,6 +191,11 @@ ngx_event_module_t  ngx_epoll_module_ctx = {
         NULL,                            /* trigger a notify */
 #endif
         ngx_epoll_process_events,        /* process the events */
+
+	    /*
+	      fork出worker进程之后,在/src/event/ngx_event.c/ngx_event_process_init方法中,
+	      会调用该方法(actions.init)
+	    */
         ngx_epoll_init,                  /* init the events */
         ngx_epoll_done,                  /* done the events */
     }
@@ -319,11 +329,21 @@ failed:
 #endif
 
 
+/*
+  fork出worker进程之后,在/src/event/ngx_event.c/ngx_event_process_init方法中,
+  会调用该方法(actions.init)。
+
+  该方法做了下面这几件事:
+  1.创建epoll对象
+  2.创建用于接收就绪事件的epoll_event数组
+  3.绑定ngx_event_actions变量,该变量中的方法用于操作事件驱动器中的事件
+*/
 static ngx_int_t
 ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 {
     ngx_epoll_conf_t  *epcf;
 
+    // 获取eopll事件模块的配置信息
     epcf = ngx_event_get_conf(cycle->conf_ctx, ngx_epoll_module);
 
     // 调用epoll_create创建epoll对象
@@ -349,6 +369,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 #endif
     }
 
+    // 如果当前用于接收事件数组的长度,小于指定的长度,则重新设置长度并重新创建数组
     if (nevents < epcf->events) {
         if (event_list) {
             ngx_free(event_list);
@@ -366,8 +387,13 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 
     ngx_io = ngx_os_io;
 
+    /* 这是一个全局变量,在/src/event/ngx_event.h中通过extern关键字声明出去
+     * 其它模块可以使用ngx_event_actions变量中的事件方法,向事件驱动器(epoll、kqueue等)中操作关心的事件
+     * 该操作表示使用epoll驱动器提供的方法
+     */
     ngx_event_actions = ngx_epoll_module_ctx.actions;
 
+    // 为ngx_event_flags打标,这些NGX_USE_开头的标记都是啥意思呢
 #if (NGX_HAVE_CLEAR_EVENT)
     ngx_event_flags = NGX_USE_CLEAR_EVENT
 #else
@@ -508,6 +534,14 @@ ngx_epoll_done(ngx_cycle_t *cycle)
 }
 
 
+/**
+ * 向epoll中添加事件
+ *
+ * *ev: 要添加的事件对象
+ * event: 要添加的事件类型,读(EPOLLIN|EPOLLRDHUP)或写(EPOLLOUT)
+ * flags: 事件触发方式,水平触发(NGX_LEVEL_EVENT),边缘触发(NGX_CLEAR_EVENT)
+ *
+ */
 static ngx_int_t
 ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 {
@@ -517,26 +551,44 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     ngx_connection_t    *c;
     struct epoll_event   ee;
 
+    // 取出该事件对应的连接
     c = ev->data;
 
+    // 取出要添加的事件类型
     events = (uint32_t) event;
 
     if (event == NGX_READ_EVENT) {
+    	/*
+    	 * 如果当前要添加的是读事件
+    	 * 因为还不确定写事件是否已经在epoll中,所以先把写事件和对应的写事件类型(EPOLLOUT)放入到相应的变量中
+    	 */
         e = c->write;
         prev = EPOLLOUT;
 #if (NGX_READ_EVENT != EPOLLIN|EPOLLRDHUP)
+        // epoll中的读事件类型就是这两个,如果不是则强制改为这两个
         events = EPOLLIN|EPOLLRDHUP;
 #endif
 
     } else {
+    	/**
+    	 * 如果当前要添加的是写事件
+    	 * 因为还不确定读事件是否已经在epoll中,所以先把读事件和对应的读事件类型(EPOLLIN|EPOLLRDHUP)放入到相应的变量中
+    	 */
         e = c->read;
         prev = EPOLLIN|EPOLLRDHUP;
 #if (NGX_WRITE_EVENT != EPOLLOUT)
+        // epoll中的写事件类型就是这个,如果不是则强制改为这个
         events = EPOLLOUT;
 #endif
     }
 
+    /*
+     * 如果当前要添加的是读事件,那么e就代表连接的写事件
+     * 如果当前要添加的是写事件,那么e就代表连接的读事件
+     * e和prev这两个变量是为了记录,连接c在epoll中的旧事件
+     */
     if (e->active) {
+    	// 如果连接c在epoll中存在旧事件,则这次的操作就是修改
         op = EPOLL_CTL_MOD;
         events |= prev;
 
@@ -544,19 +596,32 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
         op = EPOLL_CTL_ADD;
     }
 
+    // 注册事件和事件的触发模式(边缘和水平)
     ee.events = events | (uint32_t) flags;
+
+    /* 将连接c放入到epoll_event对象中
+     * 因为在ngx中所有的地址都是对齐的,也就是说所有的地址最后一位肯定是0,
+     * 而0和任意数n按位与的结果仍然是n,所以c和instance按位与后,c的最后一位就是instance的值。
+     * 所以这一步操作的另外一个意义是,把当前事件中的instance标志位也保存在了epoll_event对象中。
+     *
+     * 这时候epoll_event.data.ptr就保存了c的地址(使用时最后一位要变成0)和instance标志位两个值。
+     *
+     * TODO instance标志位是什么意思
+     */
     ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0,
                    "epoll add event: fd:%d op:%d ev:%08XD",
                    c->fd, op, ee.events);
 
+    // 将事件添加(或更新)到ep(epoll对象)中,op是要做的操作(添加或修改),c->fd是文件描述符,ee就是事件对象
     if (epoll_ctl(ep, op, c->fd, &ee) == -1) {
         ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_errno,
                       "epoll_ctl(%d, %d) failed", op, c->fd);
         return NGX_ERROR;
     }
 
+    // 将当前事件标记为已经存在epoll对象中的事件
     ev->active = 1;
 #if 0
     ev->oneshot = (flags & NGX_ONESHOT_EVENT) ? 1 : 0;
@@ -566,6 +631,14 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 }
 
 
+/**
+ * 从epoll中删除一个事件(读或写)
+ *
+ * *ev: 要操作的事件对象,该对象代表ngx中的一个读或写对象
+ * event: 事件类型,是读事件还是写事件
+ * flags: 事件触发方式(水平或边缘) | NGX_CLOSE_EVENT | ?
+ *
+ */
 static ngx_int_t
 ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 {
@@ -581,28 +654,45 @@ ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
      * before the closing the file descriptor
      */
 
+    // NGX_CLOSE_EVENT标记代表后续会对该事件中的fd做关闭操作? TODO
     if (flags & NGX_CLOSE_EVENT) {
         ev->active = 0;
         return NGX_OK;
     }
 
+    // 取出事件对象ev中的连接
     c = ev->data;
 
     if (event == NGX_READ_EVENT) {
+    	/*
+		 * 如果当前要删除的是读事件
+		 * 因为还不确定写事件是否已经在epoll中,所以先把写事件对象和对应的写事件类型(EPOLLOUT)放入到相应的变量中
+		 */
         e = c->write;
         prev = EPOLLOUT;
 
     } else {
+    	/*
+		 * 如果当前要删除的是写事件
+		 * 因为还不确定读事件是否已经在epoll中,所以先把读事件对象和对应的读事件类型(EPOLLIN|EPOLLRDHUP)放入到相应的变量中
+		 */
         e = c->read;
         prev = EPOLLIN|EPOLLRDHUP;
     }
 
+    /*
+     * 如果当前要删除的是读事件,那么e就代表c(连接)的写事件
+     * 如果当前要删除的是写事件,那么e就代表c(连接)的读事件
+     * e和prev这两个变量是为了记录,连接c在epoll中的旧事件
+     */
     if (e->active) {
+    	// 修改操作,保留原来的旧事件
         op = EPOLL_CTL_MOD;
         ee.events = prev | (uint32_t) flags;
         ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 
     } else {
+    	// 删除操作
         op = EPOLL_CTL_DEL;
         ee.events = 0;
         ee.data.ptr = NULL;
@@ -612,35 +702,49 @@ ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
                    "epoll del event: fd:%d op:%d ev:%08XD",
                    c->fd, op, ee.events);
 
+    // 将事件(读或写)从ep(epoll对象)中删除掉,c->fd是文件描述符,ee就是事件对象
     if (epoll_ctl(ep, op, c->fd, &ee) == -1) {
         ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_errno,
                       "epoll_ctl(%d, %d) failed", op, c->fd);
         return NGX_ERROR;
     }
 
+    // 因为ev对应的事件已经不再epoll中了,所以active标记为0
     ev->active = 0;
 
     return NGX_OK;
 }
 
 
+/**
+ * 将一个连接添加到epoll对象中
+ * 因为一个连接即关联了读事件又关联了写事件,所以该方法会把对应的读写事件都放入到epoll中
+ *
+ */
 static ngx_int_t
 ngx_epoll_add_connection(ngx_connection_t *c)
 {
     struct epoll_event  ee;
 
+    // 注册读写事件和边缘触(EPOLLET)发机制
     ee.events = EPOLLIN|EPOLLOUT|EPOLLET|EPOLLRDHUP;
+    /*
+     * 将ngx中的连接(c)地址放入到epoll_event对象中,地址的最后一位保存读事件的instance标志位
+     * TODO 为啥是读事件的instance标志位,为啥不是写事件的标志位,难道是因为新连接都是先操作读事件?
+     */
     ee.data.ptr = (void *) ((uintptr_t) c | c->read->instance);
 
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, c->log, 0,
                    "epoll add connection: fd:%d ev:%08XD", c->fd, ee.events);
 
+    // 执行添加操作
     if (epoll_ctl(ep, EPOLL_CTL_ADD, c->fd, &ee) == -1) {
         ngx_log_error(NGX_LOG_ALERT, c->log, ngx_errno,
                       "epoll_ctl(EPOLL_CTL_ADD, %d) failed", c->fd);
         return NGX_ERROR;
     }
 
+    // 因为读写事件都放在了epoll中,所以事件的active都标记为1
     c->read->active = 1;
     c->write->active = 1;
 
@@ -648,6 +752,13 @@ ngx_epoll_add_connection(ngx_connection_t *c)
 }
 
 
+/**
+ *  从epoll中删除一个连接
+ *
+ *  *c: 要删除的连接
+ *  flags: NGX_CLOSE_EVENT | ?
+ *
+ */
 static ngx_int_t
 ngx_epoll_del_connection(ngx_connection_t *c, ngx_uint_t flags)
 {
@@ -669,16 +780,19 @@ ngx_epoll_del_connection(ngx_connection_t *c, ngx_uint_t flags)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0,
                    "epoll del connection: fd:%d", c->fd);
 
+    // 要做删除操作
     op = EPOLL_CTL_DEL;
     ee.events = 0;
     ee.data.ptr = NULL;
 
+    // 从epoll中删除c->fd对应的事件
     if (epoll_ctl(ep, op, c->fd, &ee) == -1) {
         ngx_log_error(NGX_LOG_ALERT, c->log, ngx_errno,
                       "epoll_ctl(%d, %d) failed", op, c->fd);
         return NGX_ERROR;
     }
 
+    // c对应的读写事件已经从epoll中删除,所以对应的active设置为0
     c->read->active = 0;
     c->write->active = 0;
 
@@ -707,7 +821,14 @@ ngx_epoll_notify(ngx_event_handler_pt handler)
 #endif
 
 
-// 处理事件
+/**
+ * 调用epoll_wait方法处理事件
+ *
+ * *cycle: 有关进程的信息
+ * timer: 调用epoll_wait时要等待的时间
+ * flags: NGX_UPDATE_TIME | NGX_POST_EVENTS
+ *
+ */
 static ngx_int_t
 ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 {
@@ -725,7 +846,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "epoll timer: %M", timer);
 
-    // 获取准备就绪的事件
+    // 获取就绪的事件
     events = epoll_wait(ep, event_list, (int) nevents, timer);
 
     err = (events == -1) ? ngx_errno : 0;
@@ -779,6 +900,26 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             /*
              * the stale event from a file descriptor
              * that was just closed in this iteration
+             *
+             * 使用instance貌似无法判断fd是否关闭: TODO
+             * 假设现在有5个事件对象,分别表示为e1~e5; 操作系统的事件(event_poll),非ngx中的事件
+             * 有3个连接对象,分别为c1、c3、c5
+             * 有一个用于监听的文件描述符,用fd_l1表示
+             *
+             * 现在e1、e3、e5分别关联着c1、c3、c5
+             * e2、e4是有监听描述符fd_l1产生的
+             *
+             * e1做完事之后,关闭了e5对应的c5; 此时e5中的instance = 0; c5中的instance = 0; (这一步是前事件关闭后事件的连接)
+             *
+             * e2是一个新建连接操作,获取新fd后,从连接池中有获取了c5, 此时c5中的instance = 1;
+             *
+             * e3是一个普通事件操作,他做完事之后,又把e2刚创建的连接c5给关闭了(这一步是关键),此时c5中的instance = 1; (这一步是后事件关闭前事件的连接)
+             *
+             * e4又是一个新建连接操作,获取新fd后,从连接池中又获取了c5,此时c5中的instance = 0;
+             *
+             * 此时e5中关联的c5又复活了,并且e5中的instance和c5中的instance是一致的;
+             * 实际上e5对应的文件描述符早在e1做完事之后就关闭了,e5这个事件应该早就过期了,但是这里且无法区分是否过期。
+             *
              */
 
             ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
@@ -819,7 +960,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             revents |= EPOLLIN|EPOLLOUT;
         }
 
-        // 是读事件，且是活跃的
+        // 是读事件，且存在epoll中? TODO
         if ((revents & EPOLLIN) && rev->active) {
 
 #if (NGX_HAVE_EPOLLRDHUP)
@@ -828,7 +969,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             }
 #endif
 
-            // 将这个事件设置准备就绪,提醒后续用到该事件的模块可以干活了
+            // 设置有数据可读
             rev->ready = 1;
 
             if (flags & NGX_POST_EVENTS) {
@@ -860,7 +1001,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                 continue;
             }
 
-            // 将这个事件设置准备就绪,提醒后续用到该事件的模块可以干活了
+            // 设置可写数据标志
             wev->ready = 1;
 
             if (flags & NGX_POST_EVENTS) {

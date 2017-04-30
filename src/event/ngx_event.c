@@ -41,7 +41,11 @@ sig_atomic_t          ngx_event_timer_alarm;
 static ngx_uint_t     ngx_event_max_module;
 
 ngx_uint_t            ngx_event_flags;
-// 有具体事件实现模块负责设置该值,如 ngx_event_actions = ngx_epoll_module_ctx.actions;
+
+/*
+ * 有具体事件实现模块负责设置该值,如 ngx_event_actions = ngx_epoll_module_ctx.actions;
+ * 该变量中的方法用于操作事件驱动器中的事件
+ */
 ngx_event_actions_t   ngx_event_actions;
 
 
@@ -461,7 +465,7 @@ ngx_event_init_conf(ngx_cycle_t *cycle, void *conf)
 
 
 /**
- * 还没有fork出worker进程时调用
+ * 还没有fork出worker进程时调用((ngx_module_t->init_module))
  *
  * ngx_event_process_init方法则是在fork出worker进程之后调用
  */
@@ -639,7 +643,7 @@ ngx_timer_signal_handler(int signo)
 
 
 /**
- * fork出woker进程之后调用
+ * fork出woker进程之后调用(ngx_module_t->init_process)
  *
  * ngx_event_module_init方法则是fork出worker进程之前调用
  *
