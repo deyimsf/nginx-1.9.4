@@ -43,6 +43,7 @@ ngx_event_accept(ngx_event_t *ev)
         ev->timedout = 0;
     }
 
+    // 获取事件核心模块的配置信息结构体
     ecf = ngx_event_get_conf(ngx_cycle->conf_ctx, ngx_event_core_module);
 
     if (!(ngx_event_flags & NGX_USE_KQUEUE_EVENT)) {
@@ -67,15 +68,23 @@ ngx_event_accept(ngx_event_t *ev)
             s = accept(lc->fd, (struct sockaddr *) sa, &socklen);
         }
 #else
+        // 从监听连接lc->fd中建立一个连接
         s = accept(lc->fd, (struct sockaddr *) sa, &socklen);
 #endif
 
         if (s == (ngx_socket_t) -1) {
             err = ngx_socket_errno;
 
+            /* non-blocking and interrupt i/o */
+            /* Resource temporarily unavailable */
+            /*
+             * 有可能开启负载均衡后,该事件对应的accept操作被别的worker给抢走了
+             */
             if (err == NGX_EAGAIN) {
                 ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ev->log, err,
                                "accept() not ready");
+
+                // 事件没有准备好,或者被别的worker抢走了则直接返回。
                 return;
             }
 
@@ -138,11 +147,14 @@ ngx_event_accept(ngx_event_t *ev)
         (void) ngx_atomic_fetch_add(ngx_stat_accepted, 1);
 #endif
 
+        // 设置负载均衡开启的阀值,这是一个动态值,每建立一个新连接就更新一次
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
+        // 为新建立的网络描述符s分配一个连接对象(ngx_connection_t)
         c = ngx_get_connection(s, ev->log);
 
+        // 没有多余的连接对象(ngx_connection_t)使用了,则直接关闭这个新建立的描述符
         if (c == NULL) {
             if (ngx_close_socket(s) == -1) {
                 ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_socket_errno,
@@ -162,12 +174,14 @@ ngx_event_accept(ngx_event_t *ev)
             return;
         }
 
+        // 为网络描述符s分配内核socket地址空间
         c->sockaddr = ngx_palloc(c->pool, socklen);
         if (c->sockaddr == NULL) {
             ngx_close_accepted_connection(c);
             return;
         }
 
+        // 将网络描述符s的内核socket数据,copy到c->sockadd中
         ngx_memcpy(c->sockaddr, sa, socklen);
 
         log = ngx_palloc(c->pool, sizeof(ngx_log_t));
@@ -215,6 +229,7 @@ ngx_event_accept(ngx_event_t *ev)
         c->local_sockaddr = ls->sockaddr;
         c->local_socklen = ls->socklen;
 
+        // TODO
         c->unexpected_eof = 1;
 
 #if (NGX_HAVE_UNIX_DOMAIN)
@@ -367,7 +382,7 @@ ngx_event_accept(ngx_event_t *ev)
             ev->available--;
         }
 
-        // ev->available标志位为1时，表示尽量多的建立TCP连接
+        // ev->available标志位为1时，表示尽量多的建立TCP连接,该值有multi_accept指令负责
     } while (ev->available);
 }
 
@@ -390,6 +405,8 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
         }
 
         ngx_accept_events = 0;
+
+        // 获取互斥锁
         ngx_accept_mutex_held = 1;
 
         return NGX_OK;

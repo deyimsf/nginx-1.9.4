@@ -14,6 +14,7 @@
 #include <ngx_event.h>
 
 
+// 对于epoll_wait来说就是无穷等待
 #define NGX_TIMER_INFINITE  (ngx_msec_t) -1
 
 #define NGX_TIMER_LAZY_DELAY  300
@@ -28,6 +29,11 @@ void ngx_event_cancel_timers(void);
 extern ngx_rbtree_t  ngx_event_timer_rbtree;
 
 
+/**
+ * 从红黑树中删除一个时间事件
+ *
+ * *ev: 要删除的事件
+ */
 static ngx_inline void
 ngx_event_del_timer(ngx_event_t *ev)
 {
@@ -47,12 +53,19 @@ ngx_event_del_timer(ngx_event_t *ev)
 }
 
 
+/**
+ * 添加一个时间事件
+ *
+ *  *ev: 要添加的事件
+ *  timer: 超时时间
+ */
 static ngx_inline void
 ngx_event_add_timer(ngx_event_t *ev, ngx_msec_t timer)
 {
     ngx_msec_t      key;
     ngx_msec_int_t  diff;
 
+    // 计算真正的超时时间(红黑树节点的key)
     key = ngx_current_msec + timer;
 
     if (ev->timer_set) {
@@ -81,6 +94,10 @@ ngx_event_add_timer(ngx_event_t *ev, ngx_msec_t timer)
                    "event timer add: %d: %M:%M",
                     ngx_event_ident(ev->data), timer, ev->timer.key);
 
+    /*
+     * 事件ev中的timer就是树的节点
+     * ev = (ngx_event_t *) ((char *) node - offsetof(ngx_event_t, timer));
+     */
     ngx_rbtree_insert(&ngx_event_timer_rbtree, &ev->timer);
 
     ev->timer_set = 1;

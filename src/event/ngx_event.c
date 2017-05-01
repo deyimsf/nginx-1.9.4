@@ -57,10 +57,13 @@ ngx_atomic_t         *ngx_connection_counter = &connection_counter;
 ngx_atomic_t         *ngx_accept_mutex_ptr;
 // TODO
 ngx_shmtx_t           ngx_accept_mutex;
-// 是否使用负载均衡锁标记,1是使用, 0是不使用
+/*
+ * 是使用互斥锁(accept_mutex),1使用, 0不使用
+ * 如果开启了accept_mutex锁,并且当前进程不是master进程,并且worker的个数大于1,才会使用这个锁
+ */
 ngx_uint_t            ngx_use_accept_mutex;
 ngx_uint_t            ngx_accept_events;
-// TODO
+// 表示当前进程是否获取到互斥锁,1获取到了,0没有获取到; 刚开始的时候所有的worker都没有获取到该锁
 ngx_uint_t            ngx_accept_mutex_held;
 ngx_msec_t            ngx_accept_mutex_delay;
 ngx_int_t             ngx_accept_disabled;
@@ -263,19 +266,43 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 #endif
     }
 
+    // 处理负载问题,默认会处理负载问题
     if (ngx_use_accept_mutex) {
         if (ngx_accept_disabled > 0) {
+        	/*
+        	 * 所有worker刚启动后不会走这个逻辑,因为刚开始ngx_accept_disabled肯定是负数。
+        	 *
+        	 * 如果当前负载值大于零,表示当前woker已经很忙了,所以就没必要再去获取锁了,获取不了锁
+        	 * 也就无法将监听连接对应的读事件放入epoll中,所以后续就只能处理普通连接的事件。
+        	 */
             ngx_accept_disabled--;
 
         } else {
+        	/*
+        	 * 所有woker刚启动的时候肯定没有负载问题,也就是说ngx_accept_disabled值肯定小于零
+        	 * 这时候第一个接收连接的worker肯定会获取到这个锁(ngx_accept_mutex_held=1)。
+        	 *
+        	 * 拿到互斥锁的worker会利用ngx_posted_accept_events和ngx_posted_events这两个队列,快速的释放锁。
+        	 * 其实就是把从epoll_wait中获取到的事件都放入到这两个队列中,而不是立即执行其对应的回调方法。
+        	 *
+        	 * 这里有另一需要注意的地方:
+        	 *  虽然刚开始的时候所有的worker都会有监听连接的读事件在epoll中,但是在没有获取锁的时候,他们是不会
+        	 *  去处理监听连接的读事件的,因为只要获取锁失败,他们的监听连接对应的读事件都会从epoll中删除。
+        	 *
+        	 *  只有当一个worker获取锁后,才会开始去处理监听连接事件,只有处理过一次监听连接事件并建立起新连接后,
+        	 *  才会有普通连接事件。
+        	 *
+        	 */
             if (ngx_trylock_accept_mutex(cycle) == NGX_ERROR) {
                 return;
             }
 
+            // 获取到锁之后就设置该worker支持post事件机制(NGX_POST_EVENTS)
             if (ngx_accept_mutex_held) {
                 flags |= NGX_POST_EVENTS;
 
             } else {
+            	// 获取锁失败后,后续在调用epoll_wait方法时,会设置超时时间是timer
                 if (timer == NGX_TIMER_INFINITE
                     || timer > ngx_accept_mutex_delay)
                 {
@@ -287,9 +314,20 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     delta = ngx_current_msec;
 
-    // 处理网络事件
-    // ?处理完这些网络事件后,不需要更新该事件对应的超时时间吗？
-    //
+    /*
+     * 处理网络事件
+     * 调用epoll_wait方法处理事件
+     *
+     * 如果对应的读事件是监听连接的,就说明需要建立新连接了,建立新连接使用ngx_event_accept方法
+     * 该方法会设置ngx_accept_disabled值,这是一个开启负载均衡的阀值,每调用一次ngx_event_accept方法
+     * 都会更新一次ngx_accept_disabled的值。
+     *
+     * 只有获取锁的woker才有NGX_POST_EVENTS标记,所以获取到锁的worker的ngx_accept_mutex_held值为1(表示该woker获取到锁了)
+     * 获取到锁的woker不会立即执行相应的事件回调方法,会将其放入到ngx_posted_accept_events或ngx_posted_events这两个队列中。
+     * 这样做是为了快速的释放锁,避免其它worker因为获取不到锁而无法执行正常的事件操作。
+     *
+     * 所以如果不开互斥锁的话,也就不会有处理负载问题,这样每个woker拿到事件后就会立即执行相应的回调方法。
+     */
     (void) ngx_process_events(cycle, timer, flags);
 
     delta = ngx_current_msec - delta;
@@ -297,18 +335,29 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "timer delta: %M", delta);
 
-    // 处理post(网络?)事件
+    // 1.处理存放在ngx_posted_accept_events队列中的读事件来接收新连接
     ngx_event_process_posted(cycle, &ngx_posted_accept_events);
 
+    /*
+     * 处理完新连接之后立即释放锁,这样就尽可能小的影响其他worker处理普通网络事件
+     *
+     * 如果互斥锁在当前worker进程中,因为已经把队列ngx_posted_accept_events中的建立新连接事件处理完了.
+     * 所以这里就调用ngx_shmtx_unlock方法释放锁.
+     *
+     * 但是这里并没有及时的设置ngx_accept_mutex_held=0,其实我所谓,因为每次外围循环过来后都会
+     * 先执行(前提是worker没有过载)ngx_trylock_accept_mutex方法来重置ngx_accept_mutex_held变量。
+     */
     if (ngx_accept_mutex_held) {
         ngx_shmtx_unlock(&ngx_accept_mutex);
     }
 
+    // 2.处理时间事件
     if (delta) {
-    	// 处理超时事件
+    	// 处理时间事件
         ngx_event_expire_timers();
     }
 
+    // 3.处理延迟的普通读写事件
     ngx_event_process_posted(cycle, &ngx_posted_events);
 }
 
@@ -680,11 +729,12 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     /* 检查是否需要打开负载均衡锁
      * master: TODO?
      * woker_processes: 如果只有一个worker进程就没必要开启负载了
-     * accept_mutex: 明确指定是否开启互斥锁
+     * accept_mutex: 明确指定是否开启互斥锁(是否使用负载均衡,默认不使用)
      */
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
     	// 使用互斥锁
         ngx_use_accept_mutex = 1;
+        // 0表示没有获取到互斥锁
         ngx_accept_mutex_held = 0;
         // 对应accept_mutex_delay指令,重新接收(accept)一个连接的延迟时间,当发生互斥的时候用
         ngx_accept_mutex_delay = ecf->accept_mutex_delay;
@@ -705,7 +755,10 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
-    // TODO 初始化两个队列, 暂时不知道这两个队列干嘛的
+    /**
+     * ngx_posted_accept_events: 存放监听连接对应的读事件
+     * ngx_posted_events: 存放普通连接对应的读写事件
+     */
     ngx_queue_init(&ngx_posted_accept_events);
     ngx_queue_init(&ngx_posted_events);
 
@@ -742,10 +795,12 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     /**
      * ngx_timer_resolution: 对应指令timer_resolution,减少gettimeofday()方法的调用次数
-     * TODO 后面两个是个啥意思...
+     * 如果用户设置了ngx_timer_resolution值,则设置一个定时器,定时更新ngx_event_timer_alarm变量
      *
      * 基本原理是每隔一段时间调用一次ngx_timer_signal_handler方法
      * 该方法将全局变量ngx_event_timer_alarm设置为1,表示可以调用ngx_time_update方法更新缓存时间
+     *
+     * TODO NGX_USE_TIMER_EVENT: 啥意思
      */
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
@@ -818,7 +873,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 
-    // 所有的读事件对象
+    // 为所有的读事件对象初始一些标记
     rev = cycle->read_events;
     for (i = 0; i < cycle->connection_n; i++) {
     	// TODO 这个close是干啥的
@@ -833,6 +888,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 
+    // 为所有写事件对象初始化closed标记
     wev = cycle->write_events;
     for (i = 0; i < cycle->connection_n; i++) {
     	// TODO 这个close是做什么的
@@ -863,8 +919,10 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     cycle->free_connection_n = cycle->connection_n;
 
     /* for each listening socket */
-    /* 循环cycle中的所有监听连接,这些连接都是各个模块要监听的端口连接
+    /*
+     * 循环cycle中的所有监听连接,这些连接都是各个模块要监听的端口连接
      * 这个过程会把各个监听连接的读事件加入到事件驱动器中区
+     *
      */
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
@@ -1443,6 +1501,7 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
     ngx_conf_init_ptr_value(ecf->name, event_module->name->data);
 
     ngx_conf_init_value(ecf->multi_accept, 0);
+    // 默认开启互斥锁
     ngx_conf_init_value(ecf->accept_mutex, 1);
     ngx_conf_init_msec_value(ecf->accept_mutex_delay, 500);
 

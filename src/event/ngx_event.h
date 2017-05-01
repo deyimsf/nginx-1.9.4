@@ -117,6 +117,10 @@ struct ngx_event_s {
 #if (NGX_HAVE_KQUEUE) || (NGX_HAVE_IOCP)
     int              available;
 #else
+    /*
+     * available标志位为1时，表示尽量多的建立TCP连接
+     * 该值有multi_accept指令负责
+     */
     unsigned         available:1;
 #endif
 
@@ -434,7 +438,9 @@ extern ngx_event_actions_t   ngx_event_actions;
 
 #define ngx_notify           ngx_event_actions.notify
 
+// 添加一个时间事件
 #define ngx_add_timer        ngx_event_add_timer
+// 删除一个时间事件
 #define ngx_del_timer        ngx_event_del_timer
 
 
@@ -466,10 +472,13 @@ typedef struct {
     ngx_uint_t    use;
 
     ngx_flag_t    multi_accept;
-    // 是否开启负载均衡锁,对应指令accept_mutex,默认off
+    /**
+     * 是否开启互斥锁,对应指令accept_mutex,默认on; 1.11.3之后默认是off
+     * 如果开启,代表使用负载均衡机制
+     */
     ngx_flag_t    accept_mutex;
 
-    // 当accept_mutex开启的时候,如果wokre获取不到均衡锁,则指定worker重新接收(accept)连接的一个延迟时间
+    // 当accept_mutex开启的时候,如果wokre获取不到均衡锁,则指定worker重新接收(accept)连接的一个延迟时间?
     ngx_msec_t    accept_mutex_delay;
 
     // 当前事件模块名字(epoll、select等)

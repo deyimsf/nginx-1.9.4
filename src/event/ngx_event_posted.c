@@ -10,7 +10,9 @@
 #include <ngx_event.h>
 
 
+// 存放监听连接对应的读事件
 ngx_queue_t  ngx_posted_accept_events;
+// 存放普通连接对应的读写事件
 ngx_queue_t  ngx_posted_events;
 
 

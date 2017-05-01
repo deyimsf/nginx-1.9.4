@@ -10,7 +10,9 @@
 #include <ngx_event.h>
 
 
+// 用于存储定时器事件的红黑树
 ngx_rbtree_t              ngx_event_timer_rbtree;
+// 定时器事件红黑树的哨兵
 static ngx_rbtree_node_t  ngx_event_timer_sentinel;
 
 /*
@@ -73,6 +75,7 @@ ngx_event_expire_timers(void)
             return;
         }
 
+        // 通过节点地址,和该节点在ngx_event_t中的字段偏移量,计算出该节点关联的事件
         ev = (ngx_event_t *) ((char *) node - offsetof(ngx_event_t, timer));
 
         ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,

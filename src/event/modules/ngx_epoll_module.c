@@ -618,7 +618,6 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
      *
      * 这时候epoll_event.data.ptr就保存了c的地址(使用时最后一位要变成0)和instance标志位两个值。
      *
-     * TODO instance标志位是什么意思
      */
     ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 
