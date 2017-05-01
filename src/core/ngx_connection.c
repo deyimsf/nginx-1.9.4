@@ -1012,15 +1012,17 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     c->fd = s;
     c->log = log;
 
-    //TODO 用来区分该事件是kqueue中的还是epoll中的
+    // 获取事件(这个标记为是的对应连接的,所以rev中的和wev中的是一致的)对应连接(ngx_connection_t)的新鲜(stale)标记
     instance = rev->instance;
 
     ngx_memzero(rev, sizeof(ngx_event_t));
     ngx_memzero(wev, sizeof(ngx_event_t));
 
+    // 连接新鲜值置反
     rev->instance = !instance;
     wev->instance = !instance;
 
+    // TODO 做啥用的?
     rev->index = NGX_INVALID_INDEX;
     wev->index = NGX_INVALID_INDEX;
 
@@ -1028,8 +1030,14 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     rev->data = c;
     wev->data = c;
 
-    // 一但获取到一个连接,就将该链接的写事件中的write标志设置为1,
-    // 表示可以向该连接写数据了,但是并不代表该连接代表的socket描述符真的可以写数据了(可以理解为业务上的可以)
+    /*
+     * 一但获取到一个连接,就将该链接的写事件中的write标志设置为1,
+     * 表示可以向该连接写数据了,但是并不代表该连接代表的socket描述符真的可以写数据了(可以理解为业务上的可以)
+     *
+     * 必须发生了可写事件才可以真正的写数据:
+     * 	wev->active = 1: 些时间存在于事件驱动器中(比如epoll)
+     *	该事件已经就绪: 从事件驱动器(比如epoll)中返回了该事件对应的连接
+     */
     wev->write = 1;
 
     return c;

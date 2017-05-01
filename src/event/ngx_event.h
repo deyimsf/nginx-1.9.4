@@ -40,17 +40,23 @@ struct ngx_event_s {
     unsigned         accept:1;
 
     /* used to detect the stale events in kqueue and epoll */
+    /*
+     * 用来标记该事件对应的连接(ngx_connection_t)是否新鲜(stale)
+     * 也就是该事件对应的连接从第一次放入到epoll中,到该事件被处理之前是否被释放过
+     */
     unsigned         instance:1;
 
     /*
      * the event was passed or would be passed to a kernel;
      * in aio mode - operation was posted.
      */
+    // 该事件对应的事件类型存在epoll中
     unsigned         active:1;
 
     unsigned         disabled:1;
 
     /* the ready event; in aio mode 0 means that no operation can be posted */
+    // 有数据可读
     unsigned         ready:1;
 
     unsigned         oneshot:1;
@@ -122,6 +128,7 @@ struct ngx_event_s {
     ngx_event_ovlp_t ovlp;
 #endif
 
+    // TODO
     ngx_uint_t       index;
 
     ngx_log_t       *log;
@@ -215,6 +222,8 @@ extern ngx_event_actions_t   ngx_event_actions;
 /*
  * The event filter requires to read/write the whole data:
  * select, poll, /dev/poll, kqueue, epoll.
+ *
+ * 对于epoll来说是使用水平触发机制来触发事件
  */
 #define NGX_USE_LEVEL_EVENT      0x00000001
 
@@ -227,6 +236,8 @@ extern ngx_event_actions_t   ngx_event_actions;
 /*
  * The event filter notifies only the changes and an initial level:
  * kqueue, epoll.
+ *
+ * 对于epoll来说是使用边缘触发机制来触发事件
  */
 #define NGX_USE_CLEAR_EVENT      0x00000004
 

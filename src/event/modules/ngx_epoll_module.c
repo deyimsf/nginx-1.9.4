@@ -98,8 +98,12 @@ struct io_event {
  * 用来存放epoll事件模块配置信息的结构体
  */
 typedef struct {
-	// 每次调用epoll_wait时可以返回的最大就绪事件个数
+	/*
+	 * 每次调用epoll_wait时可以返回的最大就绪事件个数,对应epoll_events指令(官方文档没有标出这个指令)
+	 * 默认是512
+	 */
     ngx_uint_t  events;
+    // 对应worker_aio_requests指令
     ngx_uint_t  aio_requests;
 } ngx_epoll_conf_t;
 
@@ -197,9 +201,12 @@ ngx_event_module_t  ngx_epoll_module_ctx = {
 	      会调用该方法(actions.init)
 	    */
         ngx_epoll_init,                  /* init the events */
+
+		// 销毁epoll对象,目前没有模块在使用这个方法
         ngx_epoll_done,                  /* done the events */
     }
 };
+
 
 /**
  * 声明一个ngx模块,这个模块是NGX_EVENT_MODULE类型的
@@ -485,9 +492,13 @@ ngx_epoll_notify_handler(ngx_event_t *ev)
 #endif
 
 
+/**
+ * 关闭(close)epoll对象
+ */
 static void
 ngx_epoll_done(ngx_cycle_t *cycle)
 {
+	// 关闭epoll对象
     if (close(ep) == -1) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "epoll close() failed");
@@ -527,6 +538,7 @@ ngx_epoll_done(ngx_cycle_t *cycle)
 
 #endif
 
+    // 释放事件数组占用的内存
     ngx_free(event_list);
 
     event_list = NULL;
@@ -849,22 +861,32 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     // 获取就绪的事件
     events = epoll_wait(ep, event_list, (int) nevents, timer);
 
+    // 如果epoll_wait为正常返回,则设置err为ngx_errno,否则设置为0(零表示正常返回)
     err = (events == -1) ? ngx_errno : 0;
 
+    // 更新缓存时间
     if (flags & NGX_UPDATE_TIME || ngx_event_timer_alarm) {
         ngx_time_update();
     }
 
+    // 如果发生了错误
     if (err) {
+    	// 如果epoll_wait是被一个信号中断的则走这里
         if (err == NGX_EINTR) {
-
+        	/*
+        	 * 如果epoll_wait是被SIGALRM信号中断的,则走下面这段逻辑,因为目前ngx中只有该信号绑定的
+        	 * ngx_timer_signal_handler方法才会设置变量ngx_event_timer_alarm为1
+        	 */
             if (ngx_event_timer_alarm) {
+            	// 此次调用被中断的目的就是去更新缓存时间,而缓存时间的更新已经在上面做过了,所以直接返回NGX_OK。
+
                 ngx_event_timer_alarm = 0;
                 return NGX_OK;
             }
 
             level = NGX_LOG_INFO;
 
+            //如果是有其它信号中断的,则最终会返回错误,比如其它连接错误等。
         } else {
             level = NGX_LOG_ALERT;
         }
@@ -874,22 +896,34 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     }
 
     if (events == 0) {
+    	/*
+    	 * 如果epoll_wait设置的超时时间不是-1(NGX_TIMER_INFINITE),则说明是epoll_wait超时了
+    	 * 超时后什么也不做,直接返回NGX_OK
+    	 */
         if (timer != NGX_TIMER_INFINITE) {
             return NGX_OK;
         }
 
+        /**
+         * 如果epoll_wait设置的超时时间是-1(NGX_TIMER_INFINITE),且没有返回一个可用的就绪事件,则表明发生了其它错误
+         */
         ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,
                       "epoll_wait() returned no events without timeout");
         return NGX_ERROR;
     }
 
+    /* 开始处理返回的就绪事件 */
+
     for (i = 0; i < events; i++) {
     	// 取出这个事件对应的链接
         c = event_list[i].data.ptr;
 
-        // 取出是否过期标记位
+        // 取出instance标记位,这个标记代表该事件对应的连接c是否被释放过,用它可以标记事件是否新鲜
         instance = (uintptr_t) c & 1;
-        // 还原c连接(将c的最后一位置为0)
+        /*
+         * 还原c连接地址(将c的最后一位置为0)
+         * ~1表示把1按位取反,取反后就是 00001,该值于任何数据按与操作则最后一位都会被置为零
+         */
         c = (ngx_connection_t *) ((uintptr_t) c & (uintptr_t) ~1);
 
         // 取出该链接的读事件
@@ -901,7 +935,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
              * the stale event from a file descriptor
              * that was just closed in this iteration
              *
-             * 使用instance貌似无法判断fd是否关闭: TODO
+             * 使用instance貌似无法判断fd是否关闭过(连接c是否被释放过):
              * 假设现在有5个事件对象,分别表示为e1~e5; 操作系统的事件(event_poll),非ngx中的事件
              * 有3个连接对象,分别为c1、c3、c5
              * 有一个用于监听的文件描述符,用fd_l1表示
@@ -924,10 +958,12 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 
             ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                            "epoll: stale event %p", c);
+
+            // 如果事件不新鲜了就不用管他了,也不用主动从epoll中删除该事件,因为一个关闭的fd会主动从epoll中删除自己注册的事件
             continue;
         }
 
-        // 就绪事件集合
+        // 当前事件就绪的事件类型(读事件或写事件)
         revents = event_list[i].events;
 
         ngx_log_debug3(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
@@ -935,6 +971,13 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                        c->fd, revents, event_list[i].data.ptr);
 
         if (revents & (EPOLLERR|EPOLLHUP)) {
+        	/*
+        	 * EPOLLERR: 连接发生错误
+        	 * EPOLLHUP: 连接被挂起
+        	 *
+        	 * 这两个事件不需要主动向epoll对象注册,默认就会存在这两个事件
+        	 *
+        	 */
             ngx_log_debug2(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                            "epoll_wait() error on fd:%d ev:%04XD",
                            c->fd, revents);
@@ -957,14 +1000,27 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
              * active handler
              */
 
+        	/*
+        	 * 事件对应的连接发生了错误,或者连接被挂起,并且返回的事件类型中也不存在EPOLLIN或EPOLLOUT
+        	 * 如果这里不做任何事情的话,后续方法就永远无法感知这个连接的错误,这个连接可能就永远无法的到释放。
+        	 *
+        	 * 这里解决的办法是假定EPOLLIN和EPOLLOUT,这两个事件都发生了,再通过判断哪一个事件在epoll中来
+        	 * 决定执行哪一个具体事件绑定的方法。
+        	 *
+        	 * 这个方法对用户屏蔽了EPOLLERR|EPOLLHUP这两个事件的存在,用户在具体执行自己的逻辑的时候才会感知到
+        	 * 连接发生了错误,然后用户就可以做逻辑在处理这个问题。
+        	 *
+        	 */
+
             revents |= EPOLLIN|EPOLLOUT;
         }
 
-        // 是读事件，且存在epoll中? TODO
+        // 是读事件,并且该事件在epoll中; 这里对事件active标记的判断就是用来屏蔽EPOLLERR和EPOLLHUP这两个错误事件的方法
         if ((revents & EPOLLIN) && rev->active) {
 
 #if (NGX_HAVE_EPOLLRDHUP)
             if (revents & EPOLLRDHUP) {
+            	// TODO 紧急数据
                 rev->pending_eof = 1;
             }
 #endif
@@ -972,10 +1028,12 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             // 设置有数据可读
             rev->ready = 1;
 
+            // TODO 延迟事件?
             if (flags & NGX_POST_EVENTS) {
                 queue = rev->accept ? &ngx_posted_accept_events
                                     : &ngx_posted_events;
 
+                // 把事件添加到相应的延迟队列中
                 ngx_post_event(rev, queue);
 
             } else {
@@ -990,6 +1048,9 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
         if ((revents & EPOLLOUT) && wev->active) {
 
             if (c->fd == -1 || wev->instance != instance) {
+            	/*
+            	 * 和读做同样的判断，判断fd是否被关闭,以及事件是否新鲜
+            	 */
 
                 /*
                  * the stale event from a file descriptor
@@ -1004,6 +1065,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             // 设置可写数据标志
             wev->ready = 1;
 
+            // post事件?
             if (flags & NGX_POST_EVENTS) {
                 ngx_post_event(wev, &ngx_posted_events);
 
@@ -1104,6 +1166,9 @@ ngx_epoll_eventfd_handler(ngx_event_t *ev)
 #endif
 
 
+/**
+ * 创建用于保存epoll配置信息的结构体
+ */
 static void *
 ngx_epoll_create_conf(ngx_cycle_t *cycle)
 {
@@ -1121,6 +1186,11 @@ ngx_epoll_create_conf(ngx_cycle_t *cycle)
 }
 
 
+/**
+ *
+ * 初始化配置信息events和aio_requests
+ *
+ */
 static char *
 ngx_epoll_init_conf(ngx_cycle_t *cycle, void *conf)
 {

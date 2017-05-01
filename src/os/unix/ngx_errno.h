@@ -19,6 +19,16 @@ typedef int               ngx_err_t;
 #define NGX_ENOENT        ENOENT
 #define NGX_ENOPATH       ENOENT
 #define NGX_ESRCH         ESRCH
+
+/**
+ * 中断了一个阻塞的系统调用
+ *
+ * 一个阻塞的系统调用(如epoll_wait)可以被信号中断,中断发生在信号绑定的函数执行完毕之后。
+ * 如果这个这个信号在绑定函数的时候,指定了SA_RESTART标志位,那么有些阻塞调用时可以被重启的,
+ * 比如read、write等函数。有些阻塞函数(如epoll_wait)即使信号指定了SA_RESTART标志位,也
+ * 无法重启。
+ *
+ */
 #define NGX_EINTR         EINTR
 #define NGX_ECHILD        ECHILD
 #define NGX_ENOMEM        ENOMEM

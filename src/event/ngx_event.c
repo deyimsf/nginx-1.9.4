@@ -36,6 +36,7 @@ static char *ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf);
 
 
 static ngx_uint_t     ngx_timer_resolution;
+// 可以更新缓存时间,在ngx_timer_signal_handler方法中设置
 sig_atomic_t          ngx_event_timer_alarm;
 
 static ngx_uint_t     ngx_event_max_module;
@@ -59,6 +60,7 @@ ngx_shmtx_t           ngx_accept_mutex;
 // 是否使用负载均衡锁标记,1是使用, 0是不使用
 ngx_uint_t            ngx_use_accept_mutex;
 ngx_uint_t            ngx_accept_events;
+// TODO
 ngx_uint_t            ngx_accept_mutex_held;
 ngx_msec_t            ngx_accept_mutex_delay;
 ngx_int_t             ngx_accept_disabled;
@@ -231,11 +233,22 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     ngx_uint_t  flags;
     ngx_msec_t  timer, delta;
 
+    /*
+     * 如果使用定时器设置了定期更新缓存时间的机制(使用SIGALRM信号绑定的ngx_timer_signal_handler方法)
+     * 那么就把epoll_wait的超时时间(timer)设置为无穷大(NGX_TIMER_INFINITE)
+     *
+     * 具体事件模块(比如epoll)使用ngx_event_timer_alarm标志来决定是否调用ngx_time_update方法
+     */
     if (ngx_timer_resolution) {
         timer = NGX_TIMER_INFINITE;
         flags = 0;
 
     } else {
+    	/*
+    	 * 用户没有自定义更新ngx缓存时间的机制,那么就从事件定时器中查找一个最小的时间来决定
+    	 *
+    	 * 具体事件模块(比如epoll)使用NGX_UPDATE_TIME标志来决定收调用ngx_time_update方法
+    	 */
         timer = ngx_event_find_timer();
         flags = NGX_UPDATE_TIME;
 
@@ -673,7 +686,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     	// 使用互斥锁
         ngx_use_accept_mutex = 1;
         ngx_accept_mutex_held = 0;
-        // 对应accept_mutex_delay指令,重新接收(accept)一个连接的延迟时间
+        // 对应accept_mutex_delay指令,重新接收(accept)一个连接的延迟时间,当发生互斥的时候用
         ngx_accept_mutex_delay = ecf->accept_mutex_delay;
 
     } else {
