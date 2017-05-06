@@ -21,7 +21,7 @@ typedef int               ngx_err_t;
 #define NGX_ESRCH         ESRCH
 
 /**
- * 中断了一个阻塞的系统调用
+ * 该信号表示中断了一个阻塞的系统调用
  *
  * 一个阻塞的系统调用(如epoll_wait)可以被信号中断,中断发生在信号绑定的函数执行完毕之后。
  * 如果这个这个信号在绑定函数的时候,指定了SA_RESTART标志位,那么有些阻塞调用时可以被重启的,
@@ -30,6 +30,8 @@ typedef int               ngx_err_t;
  *
  */
 #define NGX_EINTR         EINTR
+
+// No child processes (POSIX.1)
 #define NGX_ECHILD        ECHILD
 #define NGX_ENOMEM        ENOMEM
 #define NGX_EACCES        EACCES
@@ -39,7 +41,14 @@ typedef int               ngx_err_t;
 #define NGX_ENOTDIR       ENOTDIR
 #define NGX_EISDIR        EISDIR
 #define NGX_EINVAL        EINVAL
+
+/*
+ * Too many open files in system (POSIX.1).  On Linux,
+ * this is probably a result of encountering the /proc/sys/fs/file-max limit
+ */
 #define NGX_ENFILE        ENFILE
+
+// Too many open files (POSIX.1).
 #define NGX_EMFILE        EMFILE
 #define NGX_ENOSPC        ENOSPC
 #define NGX_EPIPE         EPIPE
@@ -47,6 +56,8 @@ typedef int               ngx_err_t;
 #define NGX_ENOPROTOOPT   ENOPROTOOPT
 #define NGX_EOPNOTSUPP    EOPNOTSUPP
 #define NGX_EADDRINUSE    EADDRINUSE
+
+// Connection aborted (POSIX.1)
 #define NGX_ECONNABORTED  ECONNABORTED
 #define NGX_ECONNRESET    ECONNRESET
 #define NGX_ENOTCONN      ENOTCONN
@@ -71,6 +82,7 @@ typedef int               ngx_err_t;
 #if (__hpux__)
 #define NGX_EAGAIN        EWOULDBLOCK
 #else
+// non-blocking and interrupt i/o
 #define NGX_EAGAIN        EAGAIN
 #endif
 

@@ -72,6 +72,7 @@ struct ngx_event_s {
 
     unsigned         delayed:1;
 
+    // 是否延迟连接tcp连接,当为1时表示延迟建立tcp连接,只有连接上真正有数据的时候才建立连接
     unsigned         deferred_accept:1;
 
     /* the pending eof reported by kqueue, epoll or in aio chain operation */
@@ -118,8 +119,9 @@ struct ngx_event_s {
     int              available;
 #else
     /*
-     * available标志位为1时，表示尽量多的建立TCP连接
-     * 该值有multi_accept指令负责
+     * 如果该事件是监听连接的接收事件则
+     * 表示是否尽量多的建立TCP连接
+     * 该值有multi_accept指令负责(on|off)
      */
     unsigned         available:1;
 #endif
@@ -471,6 +473,7 @@ typedef struct {
     // 使用哪种事件模块(epoll、select等),有use指令指定
     ngx_uint_t    use;
 
+    // 是否尽可能多的获取连接(on|off)
     ngx_flag_t    multi_accept;
     /**
      * 是否开启互斥锁,对应指令accept_mutex,默认on; 1.11.3之后默认是off

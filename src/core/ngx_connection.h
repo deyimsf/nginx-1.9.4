@@ -72,6 +72,7 @@ struct ngx_listening_s {
     unsigned            listen:1;
     unsigned            nonblocking:1;
     unsigned            shared:1;    /* shared between threads or processes */
+    // 是否将ip地址转换成字符串形式
     unsigned            addr_ntop:1;
 
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)

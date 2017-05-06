@@ -58,10 +58,11 @@ ngx_atomic_t         *ngx_accept_mutex_ptr;
 // TODO
 ngx_shmtx_t           ngx_accept_mutex;
 /*
- * 是使用互斥锁(accept_mutex),1使用, 0不使用
+ * 是否使用互斥锁(accept_mutex),1使用, 0不使用
  * 如果开启了accept_mutex锁,并且当前进程不是master进程,并且worker的个数大于1,才会使用这个锁
  */
 ngx_uint_t            ngx_use_accept_mutex;
+// ngx_eventport_module事件模块用到的
 ngx_uint_t            ngx_accept_events;
 // 表示当前进程是否获取到互斥锁,1获取到了,0没有获取到; 刚开始的时候所有的worker都没有获取到该锁
 ngx_uint_t            ngx_accept_mutex_held;
@@ -145,7 +146,6 @@ static ngx_str_t  event_core_name = ngx_string("event_core");
 
 /**
  * 事件模块ngx_event_core_module拥有的命令
- *
  */
 static ngx_command_t  ngx_event_core_commands[] = {
 
@@ -230,6 +230,10 @@ ngx_module_t  ngx_event_core_module = {
 };
 
 
+/**
+ * 间接调用epoll_wait方法处理监听连接事件和普通网络事件
+ * 处理时间事件
+ */
 void
 ngx_process_events_and_timers(ngx_cycle_t *cycle)
 {
@@ -266,17 +270,21 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 #endif
     }
 
-    // 处理负载问题,默认会处理负载问题
+    // 处理负载和惊群问题
     if (ngx_use_accept_mutex) {
+    	// 处理负载问题
         if (ngx_accept_disabled > 0) {
         	/*
         	 * 所有worker刚启动后不会走这个逻辑,因为刚开始ngx_accept_disabled肯定是负数。
         	 *
         	 * 如果当前负载值大于零,表示当前woker已经很忙了,所以就没必要再去获取锁了,获取不了锁
         	 * 也就无法将监听连接对应的读事件放入epoll中,所以后续就只能处理普通连接的事件。
+        	 *
+        	 * 所以一旦处理的连接过多后,worker就不再去抢锁,不抢锁就不会有新连接去处理。
         	 */
             ngx_accept_disabled--;
 
+        // 处理惊群问题
         } else {
         	/*
         	 * 所有woker刚启动的时候肯定没有负载问题,也就是说ngx_accept_disabled值肯定小于零
@@ -286,8 +294,8 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
         	 * 其实就是把从epoll_wait中获取到的事件都放入到这两个队列中,而不是立即执行其对应的回调方法。
         	 *
         	 * 这里有另一需要注意的地方:
-        	 *  虽然刚开始的时候所有的worker都会有监听连接的读事件在epoll中,但是在没有获取锁的时候,他们是不会
-        	 *  去处理监听连接的读事件的,因为只要获取锁失败,他们的监听连接对应的读事件都会从epoll中删除。
+        	 *  只要使用互斥锁,那么刚开始的时候,所有worker的epoll中都不会存在监听连接事件,
+        	 *  所以如果没有不去获取一次锁,则永远都不会有网络事件处理.
         	 *
         	 *  只有当一个worker获取锁后,才会开始去处理监听连接事件,只有处理过一次监听连接事件并建立起新连接后,
         	 *  才会有普通连接事件。
@@ -339,13 +347,16 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     ngx_event_process_posted(cycle, &ngx_posted_accept_events);
 
     /*
-     * 处理完新连接之后立即释放锁,这样就尽可能小的影响其他worker处理普通网络事件
+     * 处理完新连接之后立即释放锁,这样其它worker就有机会获得锁了。
      *
-     * 如果互斥锁在当前worker进程中,因为已经把队列ngx_posted_accept_events中的建立新连接事件处理完了.
-     * 所以这里就调用ngx_shmtx_unlock方法释放锁.
+     * 但是这里并没有及时的设置ngx_accept_mutex_held=0,这是因为,虽然锁已经释放了,但是
+     * 所有监听连接的读事件都还在epoll中,所以ngx_accept_mutex_held变量的另一个意思表示
+     * 该worker进程中epoll事件启动器中,还存在监听连接事件。
      *
-     * 但是这里并没有及时的设置ngx_accept_mutex_held=0,其实我所谓,因为每次外围循环过来后都会
-     * 先执行(前提是worker没有过载)ngx_trylock_accept_mutex方法来重置ngx_accept_mutex_held变量。
+     * 实际上监听连接事件的删除和该变量的重置,是在ngx_trylock_accept_mutex方法中进行的。
+     * 当该worker进程下次去获取锁的时候,如果没有获取成功,并且ngx_accept_mutex_held的值
+     * 还是1,这时就会把所有监听连接的事件从epoll中删除,并且重置ngx_accept_mutex_held值
+     * 为0。
      */
     if (ngx_accept_mutex_held) {
         ngx_shmtx_unlock(&ngx_accept_mutex);
@@ -433,6 +444,9 @@ ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)
 }
 
 
+/**
+ * 向事件驱动器中添加写事件
+ */
 ngx_int_t
 ngx_handle_write_event(ngx_event_t *wev, size_t lowat)
 {
@@ -833,7 +847,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
     }
 
-    // TODO 这两个是什么意思
+    // TODO
     if (ngx_event_flags & NGX_USE_FD_EVENT) {
         struct rlimit  rlmt;
 
@@ -1031,16 +1045,25 @@ ngx_event_process_init(ngx_cycle_t *cycle)
          */
         rev->handler = ngx_event_accept;
 
+        // 检查是否使用互斥锁
         if (ngx_use_accept_mutex
 #if (NGX_HAVE_REUSEPORT)
             && !ls[i].reuseport //TODO
 #endif
            )
         {
+        	/*
+        	 * 如果使用互斥锁就不会将监听连接的读事件放入到事件驱动器中,
+        	 * 这样可以保证后续worker只有在获取到互斥锁的情况下才能处理新建连接。
+        	 */
             continue;
         }
 
-        // 将该监听连接的读事件加入到事件驱动器中
+        /*
+         * 走到这里说明没有使用互斥锁。
+         *
+         * 将该监听连接的读事件加入到事件驱动器中
+         */
         if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
             return NGX_ERROR;
         }

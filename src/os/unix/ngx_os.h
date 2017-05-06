@@ -24,9 +24,11 @@ typedef ngx_chain_t *(*ngx_send_chain_pt)(ngx_connection_t *c, ngx_chain_t *in,
     off_t limit);
 
 typedef struct {
+	// 读方法
     ngx_recv_pt        recv;
     ngx_recv_chain_pt  recv_chain;
     ngx_recv_pt        udp_recv;
+    // 写方法
     ngx_send_pt        send;
     ngx_send_chain_pt  send_chain;
     ngx_uint_t         flags;
