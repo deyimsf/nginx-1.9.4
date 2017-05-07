@@ -763,6 +763,14 @@ ngx_timer_signal_handler(int signo)
  *
  * ngx_event_module_init方法则是fork出worker进程之前调用
  *
+ * 1.设置是否使用互斥锁变量ngx_use_accept_mutex
+ * 2.选定具体事件模块
+ * 3.分配ngx_connection_t连接池内存空间,总共connection_n个
+ * 4.分配读写事件对象内存空间
+ *		cycle->read_events
+ *		cycle->write_events
+ * 5.连接对象和读写事件对象关联起来
+ * 6.初始化cycle->listening中的监听连接,比如设置连接中读事件的回调方法(rev->handler = ngx_event_accept)
  */
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
