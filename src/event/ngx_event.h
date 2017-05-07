@@ -80,7 +80,7 @@ struct ngx_event_s {
 
     unsigned         posted:1;
 
-    // TODO
+    // eventport和kqueue模块会用到;epoll不用
     unsigned         closed:1;
 
     /* to test on worker exit */
@@ -287,12 +287,16 @@ extern ngx_event_actions_t   ngx_event_actions;
 /*
  * The event filter has no opaque data and requires file descriptors table:
  * poll, /dev/poll.
+ *
+ * devpoll、poll这两个事件模块会用到这个标记
  */
 #define NGX_USE_FD_EVENT         0x00000400
 
 /*
  * The event module handles periodic or absolute timer event by itself:
  * kqueue in FreeBSD 4.4, NetBSD 2.0, and MacOSX 10.4, Solaris 10's event ports.
+ *
+ * eventport和kqueue模块会用到,epoll模块不会设置该标记
  */
 #define NGX_USE_TIMER_EVENT      0x00000800
 

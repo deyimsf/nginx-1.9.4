@@ -35,6 +35,7 @@ static void *ngx_event_core_create_conf(ngx_cycle_t *cycle);
 static char *ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf);
 
 
+// 更新缓存时间的间隔时间
 static ngx_uint_t     ngx_timer_resolution;
 // 可以更新缓存时间,在ngx_timer_signal_handler方法中设置
 sig_atomic_t          ngx_event_timer_alarm;
@@ -51,11 +52,12 @@ ngx_event_actions_t   ngx_event_actions;
 
 
 static ngx_atomic_t   connection_counter = 1;
+// 总共建立的连接个数(671行该指针指向了共享内存)
 ngx_atomic_t         *ngx_connection_counter = &connection_counter;
 
-
+// 映射的共享内存地址
 ngx_atomic_t         *ngx_accept_mutex_ptr;
-// TODO
+// 共享缓存锁
 ngx_shmtx_t           ngx_accept_mutex;
 /*
  * 是否使用互斥锁(accept_mutex),1使用, 0不使用
@@ -72,8 +74,15 @@ ngx_int_t             ngx_accept_disabled;
 
 #if (NGX_STAT_STUB)
 
+/*
+ * 如果没有开启master-worker模式,指针变量ngx_stat_accepted会指向ngx_stat_accepted0对应的地址
+ *
+ * 如果开启了master-worker模式,指针变量ngx_stat_accepted会指向共享内存地址:
+ * 		ngx_stat_accepted = (ngx_atomic_t *) (shared + 3 * cl);
+ */
 ngx_atomic_t   ngx_stat_accepted0;
 ngx_atomic_t  *ngx_stat_accepted = &ngx_stat_accepted0;
+
 ngx_atomic_t   ngx_stat_handled0;
 ngx_atomic_t  *ngx_stat_handled = &ngx_stat_handled0;
 ngx_atomic_t   ngx_stat_requests0;
@@ -446,6 +455,10 @@ ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)
 
 /**
  * 向事件驱动器中添加写事件
+ *
+ * *wev: 要添加的写事件
+ * lowat: This directive is ignored on Linux, Solaris, and Windows.
+ * 		./src/http/ngx_http_core_module.c中有send_lowat指令
  */
 ngx_int_t
 ngx_handle_write_event(ngx_event_t *wev, size_t lowat)
@@ -541,7 +554,10 @@ ngx_event_init_conf(ngx_cycle_t *cycle, void *conf)
 
 
 /**
- * 还没有fork出worker进程时调用((ngx_module_t->init_module))
+ * 设置事件模块的初始化信息
+ *
+ * 还没有fork出worker进程时在方法/src/core/ngx_cycle.c/ngx_init_cycle中
+ * 调用的ngx_module_t->init_module方法。
  *
  * ngx_event_process_init方法则是在fork出worker进程之后调用
  */
@@ -556,9 +572,10 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     ngx_core_conf_t     *ccf;
     ngx_event_conf_t    *ecf;
 
-    /* 获取核心模块(ngx_events_module)的配置信息指针,核心模块指针都存放在conf_ctx的第二层指针上
+    /*
+     * 获取核心模块(ngx_events_module)的配置信息指针,核心模块指针都存放在conf_ctx的第二层指针上
      * 这里用cf这指针貌似没啥用,获取ecf的话直接用ngx_event_get_conf(cycle->conf_ctx,ngx_event_core_module)就可以
-    */
+     */
     cf = ngx_get_conf(cycle->conf_ctx, ngx_events_module);
     // 获取ngx_event_core_module模块的配置信息(如worker_connections、use等)
     ecf = (*cf)[ngx_event_core_module.ctx_index];
@@ -574,7 +591,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     // 设置更新缓存时间的间隔时间
     ngx_timer_resolution = ccf->timer_resolution;
 
-    //下面这段代码貌似只是为了打印日志
+    //下面这段代码貌似只是为了打印日志,比如分配的ngx_connection_t个数大于当前进程允许打开的最大描述符个数
 #if !(NGX_WIN32)
     {
     ngx_int_t      limit;
@@ -610,17 +627,26 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
     // 如果没有开启master-worker模式,则不需要执行后续代码
     if (ccf->master == 0) {
+    	/*
+    	 * 没有开启master-worker模块式,像ngx_stat_accepted、ngx_stat_handled等这样的指针变量,
+    	 * 则会直接指向ngx_stat_accepted0、ngx_stat_handled0这样的全局变量地址。
+    	 */
         return NGX_OK;
     }
 
-    // TODO
+    /*
+     * 如果该变量不等于0,就代表已经分配完共享内存了,不需要在分配了,直接返回就ok
+     * 比如reload的时候,共享内存是不会消失的,因为共享内存是在master进程中分配的
+     */
     if (ngx_accept_mutex_ptr) {
         return NGX_OK;
     }
 
 
     /* cl should be equal to or greater than cache line size */
+    /* 每个变量占用的内存,大于等于cpu缓存行 */
 
+    // 第一个128字节存放共享缓存(ngx_accept_mutex)中的lock(ngx_shmtx_sh_t->lock)
     cl = 128;
 
     size = cl            /* ngx_accept_mutex */
@@ -642,7 +668,9 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     /**共享内存,所有进程都可以看到的内存地址*/
     // 设置共享内存大小
     shm.size = size;
+    // 共享内存名字的长度
     shm.name.len = sizeof("nginx_shared_zone") - 1;
+    // 共享内存名字; 在这里的赋值,会把字符串放入到常量中,常量中的内存是无法改变的
     shm.name.data = (u_char *) "nginx_shared_zone";
     shm.log = cycle->log;
 
@@ -651,12 +679,22 @@ ngx_event_module_init(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 
+    // 映射好的共享内存地址
     shared = shm.addr;
-
     ngx_accept_mutex_ptr = (ngx_atomic_t *) shared;
-    ngx_accept_mutex.spin = (ngx_uint_t) -1; //TODO ngx_accept_mutex是干啥的
 
-    // TODO
+    /*
+     * spin表示没有获取到锁时,可以循环获重试获取锁的次数,在这个次数内扔未获取到锁,
+     * 则调用sched_yield方法休眠该进程。
+     *
+     * 方法/src/core/ngx_shmtx.c/ngx_shmtx_lock中会用到该值。
+     */
+    ngx_accept_mutex.spin = (ngx_uint_t) -1;
+
+    /*
+     * 共享缓存(ngx_accept_mutex)中的锁指针,指向分配好的共享缓存地址
+     * (&ngx_accept_mutex)->lock = &(shared->lock)
+     */
     if (ngx_shmtx_create(&ngx_accept_mutex, (ngx_shmtx_sh_t *) shared,
                          cycle->lock_file.data)
         != NGX_OK)
@@ -720,6 +758,8 @@ ngx_timer_signal_handler(int signo)
 
 /**
  * fork出woker进程之后调用(ngx_module_t->init_process)
+ * 	/src/os/unix/ngx_process_cycle.c/ngx_single_process_cycle
+ * 	/src/os/unix/ngx_process_cycle.c/ngx_worker_process_init
  *
  * ngx_event_module_init方法则是fork出worker进程之前调用
  *
@@ -741,7 +781,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     ecf = ngx_event_get_conf(cycle->conf_ctx, ngx_event_core_module);
 
     /* 检查是否需要打开负载均衡锁
-     * master: TODO?
+     * master: 是否是master-worker模式,如果不是就没必要使用互斥锁了
      * woker_processes: 如果只有一个worker进程就没必要开启负载了
      * accept_mutex: 明确指定是否开启互斥锁(是否使用负载均衡,默认不使用)
      */
@@ -750,7 +790,13 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         ngx_use_accept_mutex = 1;
         // 0表示没有获取到互斥锁
         ngx_accept_mutex_held = 0;
-        // 对应accept_mutex_delay指令,重新接收(accept)一个连接的延迟时间,当发生互斥的时候用
+        /*
+         * 对应accept_mutex_delay指令,获取(epoll_wait)就绪事件时最多可以等待的时间
+         * 如果当前worker获取互斥锁失败,ngx_accept_mutex_delay值就有可能是接下来调用epoll_wait方法时传入的参数。
+         * if (timer == NGX_TIMER_INFINITE || timer > ngx_accept_mutex_delay){
+         *   timer = ngx_accept_mutex_delay;
+         * }
+         */
         ngx_accept_mutex_delay = ecf->accept_mutex_delay;
 
     } else {
@@ -769,20 +815,24 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
-    /**
+    /*
+     * 这两个队列会配合互斥锁(accept_mutex)解决惊群问题
+     *
      * ngx_posted_accept_events: 存放监听连接对应的读事件
      * ngx_posted_events: 存放普通连接对应的读写事件
      */
     ngx_queue_init(&ngx_posted_accept_events);
     ngx_queue_init(&ngx_posted_events);
 
-    /* 初始化定时器事件(ngx_event_timer/ngx_event_timer_rbtree),ngx_event_timer_rbtree是rbtree
+    /*
+     * 初始化定时器事件(ngx_event_timer/ngx_event_timer_rbtree),ngx_event_timer_rbtree是rbtree
      * 每个worker的定时器事件都放在ngx_event_timer_rbtree红黑树中了
      */
     if (ngx_event_timer_init(cycle->log) == NGX_ERROR) {
         return NGX_ERROR;
     }
 
+    // 设置具体事件模块(比如epoll、kqueue等)
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_EVENT_MODULE) {
             continue;
@@ -795,8 +845,13 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
         module = ngx_modules[m]->ctx;
 
-        // 调用具体事件模块的init方法(对于ngx_epoll_module模块来说就是ngx_epoll_init方法)
-        // 在ngx_epoll_init方法中会调用epoll_create方法创建epoll对象
+        /*
+         * 调用具体事件模块的init方法(对于ngx_epoll_module模块来说就是ngx_epoll_init方法)
+         * 在ngx_epoll_init方法中会:
+         *  1.创建epoll对象
+  	  	 * 	2.创建用于接收就绪事件的epoll_event数组
+  	  	 *	3.绑定ngx_event_actions变量,该变量中的方法用于操作事件驱动器中的事件
+         */
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
             /* fatal */
             exit(2);
@@ -814,20 +869,23 @@ ngx_event_process_init(ngx_cycle_t *cycle)
      * 基本原理是每隔一段时间调用一次ngx_timer_signal_handler方法
      * 该方法将全局变量ngx_event_timer_alarm设置为1,表示可以调用ngx_time_update方法更新缓存时间
      *
-     * TODO NGX_USE_TIMER_EVENT: 啥意思
+     * NGX_USE_TIMER_EVENT: eventport和kqueue模块会用到,epoll模块不会设置该标记
+     * 	(The event module handles periodic or absolute timer event by itself)
      */
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
         struct itimerval  itv;
 
+        // sa对象清零
         ngx_memzero(&sa, sizeof(struct sigaction));
         // 定时器回调方法
         sa.sa_handler = ngx_timer_signal_handler;
-        // 清空信号集合
+        // 清空信号集合(不就是置零吗,搞这么大阵势)
         sigemptyset(&sa.sa_mask);
 
-        /**
-         * SIGALRM: liunx中的信号,函数alarm和setitimer会产生SIGALRM信号
+        /*
+         * 设置信号SIGALRM要处理的函数
+         * SIGALRM: liunx中的信号,函数alarm和setitimer设置的时钟都会产生SIGALRM信号
          */
         if (sigaction(SIGALRM, &sa, NULL) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
@@ -840,14 +898,19 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         itv.it_value.tv_sec = ngx_timer_resolution / 1000;
         itv.it_value.tv_usec = (ngx_timer_resolution % 1000 ) * 1000;
 
-        // 设置一个定时器,每隔itv时间就调用一次ngx_timer_signal_handler方法
+        /*
+         * 设置一个定时器,每隔itv时间就调用一次ngx_timer_signal_handler方法;
+         *
+         * 定时器到期后会发送SIGALRM信号,因为上面用sigaction方法将信号SIGALRM和
+         * 方法ngx_timer_signal_handler绑定了,所以到期后会触发该方法。
+         */
         if (setitimer(ITIMER_REAL, &itv, NULL) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "setitimer() failed");
         }
     }
 
-    // TODO
+    // NGX_USE_FD_EVENT: devpoll、poll这两个事件模块会用到这个标记;
     if (ngx_event_flags & NGX_USE_FD_EVENT) {
         struct rlimit  rlmt;
 
@@ -890,8 +953,9 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     // 为所有的读事件对象初始一些标记
     rev = cycle->read_events;
     for (i = 0; i < cycle->connection_n; i++) {
-    	// TODO 这个close是干啥的
+    	// eventport和kqueue模块会用到
         rev[i].closed = 1;
+        // 设置它是怕有脏数据吗
         rev[i].instance = 1;
     }
 
@@ -905,14 +969,20 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     // 为所有写事件对象初始化closed标记
     wev = cycle->write_events;
     for (i = 0; i < cycle->connection_n; i++) {
-    	// TODO 这个close是做什么的
+    	// eventport和kqueue模块会用到
         wev[i].closed = 1;
     }
 
     i = cycle->connection_n;
     next = NULL;
 
-    // 将读事件和写事件结构体关联到连接池中每一个连接(ngx_connection_t)上
+    /*
+     * 将读事件和写事件结构体关联到连接池中每一个连接(ngx_connection_t)上。
+     *
+     * 调用ngx_get_connection方法的时候才会把连接对象关联到对应的读写事件上,
+     * 产生一个文件描述符后会调用ngx_get_connection方法,将文件描述符合和连接对象关联上。
+     *
+     */
     do {
         i--;
 
@@ -934,9 +1004,9 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     /* for each listening socket */
     /*
-     * 循环cycle中的所有监听连接,这些连接都是各个模块要监听的端口连接
-     * 这个过程会把各个监听连接的读事件加入到事件驱动器中区
+     * 循环cycle中的所有监听连接,并初始化监听连接
      *
+     * 如果没有开启互斥锁则这个过程会把各个监听连接的读事件加入到事件驱动器中区
      */
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
@@ -1076,6 +1146,11 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 }
 
 
+/*
+ * 在Linux系统中好像没啥用
+ *
+ * This directive(send_lowat) is ignored on Linux, Solaris, and Windows.
+ */
 ngx_int_t
 ngx_send_lowat(ngx_connection_t *c, size_t lowat)
 {
@@ -1090,6 +1165,7 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
 
 #endif
 
+    // This directive is ignored on Linux, Solaris, and Windows.
     if (lowat == 0 || c->sndlowat) {
         return NGX_OK;
     }
@@ -1110,7 +1186,13 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
     return NGX_OK;
 }
 
+
 //  rv = (*cf->handler)(cf, NULL, cf->handler_conf);
+/*
+ * events指令对应的方法
+ *
+ * TODO 看完文件解析后回头再看
+ */
 static char *
 ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -1126,6 +1208,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     /* count the number of the event modules and set up their indices */
 
+    // 为当前可用的事件模块设置编号
     ngx_event_max_module = 0;
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_EVENT_MODULE) {
@@ -1200,6 +1283,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return rv;
     }
 
+    // 调用所有可用事件模块的init_conf方法,初始化配置信息;对于事件核心模块来说就是ngx_event_core_init_conf方法
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_EVENT_MODULE) {
             continue;
@@ -1219,6 +1303,11 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/*
+ * worker_connections指令对应的方法
+ *
+ * TODO 回头看,先看文件解析
+ */
 static char *
 ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -1245,6 +1334,11 @@ ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/*
+ * use指令对应的方法
+ *
+ * TODO 回头看,先看文件解析
+ */
 static char *
 ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -1308,6 +1402,9 @@ ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/*
+ * debug_connection指令对应的方法
+ */
 static char *
 ngx_event_debug_connection(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -1412,6 +1509,9 @@ ngx_event_debug_connection(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/**
+ * 创建用来存放事件核心模块配置信息的结构体
+ */
 static void *
 ngx_event_core_create_conf(ngx_cycle_t *cycle)
 {
@@ -1443,6 +1543,9 @@ ngx_event_core_create_conf(ngx_cycle_t *cycle)
 }
 
 
+/**
+ * 初始化事件核心模块的配置信息
+ */
 static char *
 ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
 {

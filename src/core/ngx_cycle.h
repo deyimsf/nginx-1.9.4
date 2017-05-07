@@ -127,6 +127,7 @@ struct ngx_cycle_s {
 
 typedef struct {
      ngx_flag_t               daemon;
+
      /* 对应master_process指令,表示是否开启master模式(也就是master-worker模拟式),默认开启
       * 如果值为零则表示不开启,也就是单进程模式(开发调试时使用)。
       */

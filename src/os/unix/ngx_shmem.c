@@ -11,14 +11,25 @@
 
 #if (NGX_HAVE_MAP_ANON)
 
+/**
+ * 使用mmap函数为共享变量分配内存
+ */
 ngx_int_t
 ngx_shm_alloc(ngx_shm_t *shm)
 {
+	/*
+	 * 映射一块共享内存
+	 * shm->size: 要映射的内存大小
+	 * PROT_READ|PROT_WRITE: 映射出来的内存允许读写操作
+	 * MAP_ANON(deprecated): 同MAP_ANONYMOUS,匿名映射,不会指向任何文件
+	 * MAP_SHARED: 内存的更新对其它进程可见
+	 */
     shm->addr = (u_char *) mmap(NULL, shm->size,
                                 PROT_READ|PROT_WRITE,
                                 MAP_ANON|MAP_SHARED, -1, 0);
 
     if (shm->addr == MAP_FAILED) {
+    	// 映射失败,返回错误
         ngx_log_error(NGX_LOG_ALERT, shm->log, ngx_errno,
                       "mmap(MAP_ANON|MAP_SHARED, %uz) failed", shm->size);
         return NGX_ERROR;

@@ -59,9 +59,13 @@ ngx_shmtx_destroy(ngx_shmtx_t *mtx)
 }
 
 
+/**
+ * 试着去获取锁,不会阻塞进程
+ */
 ngx_uint_t
 ngx_shmtx_trylock(ngx_shmtx_t *mtx)
 {
+	// lock=1就表示获取到锁了
     return (*mtx->lock == 0 && ngx_atomic_cmp_set(mtx->lock, 0, ngx_pid));
 }
 

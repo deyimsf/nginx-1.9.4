@@ -424,10 +424,14 @@ ngx_event_accept(ngx_event_t *ev)
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {
+        	// KQUEUE模块使用,epoll没用
             ev->available--;
         }
 
-        // ev->available标志位为1时，表示尽量多的建立TCP连接,该值有multi_accept指令负责
+       /*
+        * ev->available标志位为1时，表示尽量多的建立TCP连接,该值有multi_accept指令负责
+        * 当accept方法产生EAGAIN错误时会终止该循环
+        */
     } while (ev->available);
 }
 
