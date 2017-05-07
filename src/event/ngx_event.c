@@ -771,6 +771,7 @@ ngx_timer_signal_handler(int signo)
  *		cycle->write_events
  * 5.连接对象和读写事件对象关联起来
  * 6.初始化cycle->listening中的监听连接,比如设置连接中读事件的回调方法(rev->handler = ngx_event_accept)
+ *
  */
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
