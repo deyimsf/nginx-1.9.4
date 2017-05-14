@@ -33,6 +33,12 @@ static ngx_connection_t  dumb;
 /* STUB */
 
 
+/**
+ * 初始化工作
+ *
+ * 1.解析配置文件从这里开始(ngx_conf_parse方法)
+ *
+ */
 ngx_cycle_t *
 ngx_init_cycle(ngx_cycle_t *old_cycle)
 {
@@ -185,21 +191,22 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_queue_init(&cycle->reusable_connections_queue);
 
 
-    /* 这里是为每一个模块都分配了一个指针空间
-       刚开始的时候 ****conf_ctx的一级指针的值都是NULL
-       执行这句之后相当于为一级指针分配了一个ngx_max_module个(void *)大小的空间
-       实际上相当与为每个二级指针分配了一个空间,且这个空间的值是NULL
-       分配后cycle->conf_ctx的内存空间图如下:
-		conf_ctx
-		-------
-		|  *  |
-		-------
-		 |
-		 \
-		  ---------------------------
-		  |  *  |  *  |  *  |  总共有ngx_max_moudle个
-		  ---------------------------
-
+    /*
+     * 这里是为每一个模块都分配了一个指针空间
+     * 刚开始的时候 ****conf_ctx的一级指针的值都是NULL
+     * 执行这句之后相当于为一级指针分配了一个ngx_max_module个(void *)大小的空间
+     * 实际上相当与为每个二级指针分配了一个空间,且这个空间的值是NULL
+     * 分配后cycle->conf_ctx的内存空间图如下:
+	 *	conf_ctx
+	 *	-------
+	 *	|  *  |
+	 *	-------
+	 *	 |
+	 *	 \
+	 *	  ---------------------------
+	 *	  |  *  |  *  |  *  |  总共有ngx_max_moudle个(目前都是NULL值)
+	 *	  ---------------------------
+	 *
      */
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
@@ -251,11 +258,12 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         // ngx_modules[i]->ctx中的ctx就是定义各个模块行为的约束(可以看成一种协议)
         module = ngx_modules[i]->ctx;
 
-        /*  执行所有核心模块的create_conf方法,但是不是所有的核心模块都有该方法。
-        	比如代表事件核心模块(ngx_events_module)的上下文结构体(ngx_events_module_ctx)就没有定义create_conf方法。
-        	再比如http核心模块(ngx_http_module)的上下文结构体(ngx_http_module_ctx)也没有定义create_conf方法。
-        	所以这两个核心模块在 cycle->conf_ctx的第二层指针变量的值仍然是空。
-        */
+        /*
+         *  执行所有核心模块的create_conf方法,但是不是所有的核心模块都有该方法。
+         *	比如代表事件核心模块(ngx_events_module)的上下文结构体(ngx_events_module_ctx)就没有定义create_conf方法。
+         *	再比如http核心模块(ngx_http_module)的上下文结构体(ngx_http_module_ctx)也没有定义create_conf方法。
+         *	所以这两个核心模块在 cycle->conf_ctx的第二层指针变量的值仍然是空。
+         */
         if (module->create_conf) {
             rv = module->create_conf(cycle);
             if (rv == NULL) {
@@ -281,7 +289,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 				  	  	| ngx_core_conf_t |
 				  	  	-------------------
 
-			   从上图可以看到,对变量****conf_ctx,只用到了前两层指针,使用时强转成两层指针就可以了
+			   从上图可以看到,对变量****conf_ctx,核心模块只用到了前两层指针,使用时强转成两层指针就可以了
 			   所以 *(ngx_core_conf_t **)conf_ctx 就是指向ngx_core_conf_t的指针
 			   以此类推,拿第二个核心模块的配置指针需要这样:
 			   	   *(ngx_xxx_conf_t **)(conf_ctx+1)
@@ -312,17 +320,37 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
 
+    /*
+     * 此时conf.ctx中的指针就是最终指向各个模块的配置信息结构体的指针
+     *
+     * 这里用了一个1级(一个*)指针来接收一个4级指针(四个*)
+     *
+     * 此时conf_ctx实际上已经用到了两层指针(比如核心模块ngx_core_module在第二层有一个指向ngx_core_conf_t的指针)
+     *
+     * 所以conf.ctx(cycle->conf_ctx)的目前实际内存分配是这样:
+     *		 ctx
+     *		-----
+     *		| * |
+     *		-----
+     *		\
+     *		 ------------------
+     *		 | * | * | * | ngx_max_module个
+     *		 -------------------
+     */
     conf.ctx = cycle->conf_ctx;
     conf.cycle = cycle;
     conf.pool = pool;
     conf.log = log;
+    // 接下来要解析的模块类型(ngx主框架只关心NGX_CORE_MODULE和NGX_CONF_MODULE两种模块)
     conf.module_type = NGX_CORE_MODULE;
+    // 接下来要解析的命令类型
     conf.cmd_type = NGX_MAIN_CONF;
 
 #if 0
     log->log_level = NGX_LOG_DEBUG_ALL;
 #endif
 
+    // 处理 -g 参数传入的命令
     if (ngx_conf_param(&conf) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
@@ -331,7 +359,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     // 解析nginx.conf配置文件
     // 该方法执行完后,所有的模块指令就都被解析完了
-    // TODO 重要，细看
+    // TODO ------------- 下周重点
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);

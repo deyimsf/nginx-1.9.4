@@ -345,7 +345,7 @@ main(int argc, char *const *argv)
     // 清零init_cycle对象占用的内存,防止有脏数据
     ngx_memzero(&init_cycle, sizeof(ngx_cycle_t));
     init_cycle.log = log;
-    // 实际上init_cycle是在栈上分配的内存,但是这个栈是main方法所在的栈
+    // 实际上init_cycle是在栈上分配的内存,但是这个栈是main方法所在的栈,只是一个临时使用
     ngx_cycle = &init_cycle;
 
     init_cycle.pool = ngx_create_pool(1024, log);
@@ -372,14 +372,15 @@ main(int argc, char *const *argv)
     /*
      * ngx_crc32_table_init() requires ngx_cacheline_size set in ngx_os_init()
      */
-
     if (ngx_crc32_table_init() != NGX_OK) {
         return 1;
     }
 
-    // 初始化init_cycle->listening,如果环境变量getenv(NGINX_VAR)存在的话
-    // 数组init_cycle->listening用来存放ngx_listening_t对象
-    // ngx_listening_t结构体存放了nginx用来监听的ip和端口号
+    /*
+     * 初始化init_cycle->listening,如果环境变量getenv(NGINX_VAR)存在的话
+     * 数组init_cycle->listening用来存放ngx_listening_t对象
+     * ngx_listening_t结构体存放了nginx用来监听的ip和端口号
+     */
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -390,9 +391,14 @@ main(int argc, char *const *argv)
         ngx_modules[i]->index = ngx_max_module++;
     }
 
-    // TODO 。。。 初始化各个NGX_CORE_MODULE模块的init_cycle->conf_ctx等
-    // 很重要的一个方法,慢慢看 TODO
-    // init_cycle只用来传递一些配置文件路径信息,临时使用,返回的cycle才是真正的后续要用到的
+    /*
+     * 很重要的一个方法,慢慢看 TODO
+     *
+     * 1.初始化各个NGX_CORE_MODULE模块的init_cycle->conf_ctx等
+     * 2.调用NGX_CONF_MODLUE模块的ngx_conf_parse方法
+     *
+     * init_cycle只用来传递一些配置文件路径信息,临时使用,返回的cycle才是真正的后续要用到的
+     */
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
         if (ngx_test_config) {
@@ -430,9 +436,12 @@ main(int argc, char *const *argv)
     }
 
     if (ngx_signal) {
-    	// 处理 stop、quit、reopen、reload这四个信号,这四个信号要求当前nginx是已启动状态的
-    	// 因为下面的方法用到了nginx的主进程id(在文件nginx.pid中)
-    	// 信号函数有ngx_init_signals方法负责绑定
+    	/*
+    	 * 处理 stop、quit、reopen、reload这四个信号,这四个信号要求当前nginx是已启动状态的,
+    	 * 因为下面的方法用到了nginx的主进程id(在文件nginx.pid中)。
+    	 *
+    	 * 信号函数有ngx_init_signals方法负责绑定。
+    	 */
         return ngx_signal_process(cycle, ngx_signal);
     }
 

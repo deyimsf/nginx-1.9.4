@@ -1200,7 +1200,7 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
 /*
  * events指令对应的方法
  *
- * TODO 看完文件解析后回头再看
+ * TODO 看完文件解析后回头再看,主要看conf
  */
 static char *
 ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -1241,6 +1241,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     // 直接 *conf=ctx 这样也行吧(是行，但是因为ctx是指针，*conf不是指针, 这样赋值不太好看)
     *(void **) conf = ctx;
 
+    // 开始为所有事件模块创建配置信息结构体(通过m->create_conf方法创建),之后就可以取解析命令了
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_EVENT_MODULE) {
             continue;
@@ -1277,12 +1278,13 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-    // cf的结构体临时copy给pcf
+    // cf的结构体临时copy给pcf,用来保留现场
     pcf = *cf;
     cf->ctx = ctx;
     cf->module_type = NGX_EVENT_MODULE;
     cf->cmd_type = NGX_EVENT_CONF;
 
+    // 解析所有事件模块的指令(例如use、worker_connections);在解析命令之前,模块对应的配置信息结构体已经创建完毕。
     rv = ngx_conf_parse(cf, NULL);
 
     // 复原cf指向的结构体
@@ -1315,7 +1317,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 /*
  * worker_connections指令对应的方法
  *
- * TODO 回头看,先看文件解析
+ * TODO 先看文件解析再回头看一眼
  */
 static char *
 ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -1325,9 +1327,11 @@ ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_str_t  *value;
 
     if (ecf->connections != NGX_CONF_UNSET_UINT) {
+    	// 该指令不允许出现多次
         return "is duplicate";
     }
 
+    // 获取指令值,并将其转化为int值,然后赋值给配置信息结构体
     value = cf->args->elts;
     ecf->connections = ngx_atoi(value[1].data, value[1].len);
     if (ecf->connections == (ngx_uint_t) NGX_ERROR) {
@@ -1346,7 +1350,7 @@ ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 /*
  * use指令对应的方法
  *
- * TODO 回头看,先看文件解析
+ * TODO 看完文件解析再回头看一眼
  */
 static char *
 ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -1359,11 +1363,14 @@ ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_event_module_t   *module;
 
     if (ecf->use != NGX_CONF_UNSET_UINT) {
+    	// 该指令已经被设置过了,走到这里说明配置了多个use指令
         return "is duplicate";
     }
 
+    // use指令和值(如use epoll),下标0代表指令本身,下标1代表指令值(epoll)
     value = cf->args->elts;
 
+    // TODO
     if (cf->cycle->old_cycle->conf_ctx) {
         old_ecf = ngx_event_get_conf(cf->cycle->old_cycle->conf_ctx,
                                      ngx_event_core_module);
@@ -1377,9 +1384,18 @@ ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        // 开始对比用户选择是哪个具体事件模块
         module = ngx_modules[m]->ctx;
         if (module->name->len == value[1].len) {
+        	/*
+        	 * 比较具体事件模块名字
+        	 * epoll事件模块名字的定义:
+        	 * 		static ngx_str_t epoll_name = ngx_string("epoll");
+        	 *
+        	 */
             if (ngx_strcmp(module->name->data, value[1].data) == 0) {
+
+            	// 匹配成功则设置具体事件模块编号和名字
                 ecf->use = ngx_modules[m]->ctx_index;
                 ecf->name = module->name->data;
 
@@ -1520,6 +1536,7 @@ ngx_event_debug_connection(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 /**
  * 创建用来存放事件核心模块配置信息的结构体
+ * (此时指令还没有开始解析,等创建了存储指令信息的结构体才能解析指令)
  */
 static void *
 ngx_event_core_create_conf(ngx_cycle_t *cycle)
@@ -1531,6 +1548,7 @@ ngx_event_core_create_conf(ngx_cycle_t *cycle)
         return NULL;
     }
 
+    // 为下面的指令设置初始值
     ecf->connections = NGX_CONF_UNSET_UINT;
     ecf->use = NGX_CONF_UNSET_UINT;
     ecf->multi_accept = NGX_CONF_UNSET;
@@ -1554,6 +1572,7 @@ ngx_event_core_create_conf(ngx_cycle_t *cycle)
 
 /**
  * 初始化事件核心模块的配置信息
+ * (此时指令都已经解析完毕)
  */
 static char *
 ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
@@ -1569,7 +1588,15 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
 
     module = NULL;
 
+    // NGX_HAVE_EPOLL如果epoll可用,则该宏定义在 /objs/ngx_auto_config.h 中出现
 #if (NGX_HAVE_EPOLL) && !(NGX_TEST_BUILD_EPOLL)
+
+    /*
+     * 如果ngx在config的时候定义了宏NGX_HAVE_EPOLL,这里会测试一下epoll是否可用
+     * 可用则moudle指向ngx_epoll_module变量
+     *
+     * 不可用则继续向下走
+     */
 
     fd = epoll_create(100);
 
@@ -1583,27 +1610,37 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
 
 #endif
 
+    // 同NGX_HAVE_EPOLL宏
 #if (NGX_HAVE_DEVPOLL)
 
     module = &ngx_devpoll_module;
 
 #endif
 
+    // 同NGX_HAVE_EPOLL宏
 #if (NGX_HAVE_KQUEUE)
 
     module = &ngx_kqueue_module;
 
 #endif
 
+    // 同NGX_HAVE_EPOLL宏
 #if (NGX_HAVE_SELECT)
 
     if (module == NULL) {
+    	// 如果所有的高级事件驱动器都不支持则使用select
+
         module = &ngx_select_module;
     }
 
 #endif
 
     if (module == NULL) {
+
+    	/**
+    	 * 如果所有的宏定义都不存在,则从ngx_modules数组中选择第一个具体事件模块
+    	 */
+
         for (i = 0; ngx_modules[i]; i++) {
 
             if (ngx_modules[i]->type != NGX_EVENT_MODULE) {
@@ -1614,6 +1651,7 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
 
             if (ngx_strcmp(event_module->name->data, event_core_name.data) == 0)
             {
+            	// 将事件核心模块排除掉,因为他不负责处理具体事件
                 continue;
             }
 
@@ -1630,11 +1668,14 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
     ngx_conf_init_uint_value(ecf->connections, DEFAULT_CONNECTIONS);
     cycle->connection_n = ecf->connections;
 
+    // 只有ecf->use为NGX_CONF_UNSET_UINT时该方法才会起作用,也就是说,如果存在use指令,则该方法就不会执行
     ngx_conf_init_uint_value(ecf->use, module->ctx_index);
 
     event_module = module->ctx;
+    // 只有ecf->name为NGX_CONF_UNSET_PTR时该方法才会起作用
     ngx_conf_init_ptr_value(ecf->name, event_module->name->data);
 
+    // 只有ecf->multi_accept为NGX_CONF_UNSET时该方法才会起作用
     ngx_conf_init_value(ecf->multi_accept, 0);
     // 默认开启互斥锁
     ngx_conf_init_value(ecf->accept_mutex, 1);

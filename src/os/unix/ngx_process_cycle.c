@@ -297,6 +297,7 @@ ngx_single_process_cycle(ngx_cycle_t *cycle)
         exit(2);
     }
 
+    // worker循环开始之前做流程初始化
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->init_process) {
             if (ngx_modules[i]->init_process(cycle) == NGX_ERROR) {
@@ -306,6 +307,7 @@ ngx_single_process_cycle(ngx_cycle_t *cycle)
         }
     }
 
+    // worker事件循环开始
     for ( ;; ) {
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "worker cycle");
 

@@ -68,6 +68,11 @@
 #define NGX_CONF_BLOCK_DONE  2
 #define NGX_CONF_FILE_DONE   3
 
+/*
+ * ngx主框架只关心两种模块类型:
+ * 	NGX_CORE_MODULE: 核心模块,有/src/core/ngx_conf_file.c/ngx_init_cycle方法启动
+ *  NGX_CONF_MODULE: 解析配置文件的模块,有ngx_conf_parse方法(在ngx_init_cycle方法中被调用)启动
+ */
 #define NGX_CORE_MODULE      0x45524F43  /* "CORE" */
 #define NGX_CONF_MODULE      0x464E4F43  /* "CONF" */
 
