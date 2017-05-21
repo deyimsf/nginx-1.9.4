@@ -94,7 +94,13 @@ struct ngx_command_s {
     // 使用的是哪个方法(create_main|server|loc_conf)创建的结构体
     // 该值可以是NGX_HTTP_MAIN_CONF_OFFSET、NGX_HTTP_SRV_CONF_OFFSET、NGX_HTTP_LOC_CONF_OFFSET
     // 对应的值是 offsetof(ngx_http_conf_ctx_t, main|srv|loc_conf)
+
+    /*
+     * 某个字段(xxx)在cf->ctx结构体中的偏移量
+     * 比如loc_conf在ngx_http_conf_ctx_t结构体中偏移量
+     */
     ngx_uint_t            conf;
+    // 某个字段(yyy)在xxx中的偏移量
     ngx_uint_t            offset;
     void                 *post;
 };
@@ -163,9 +169,12 @@ typedef struct {
 
 
 typedef struct {
+	// 表示的文件
     ngx_file_t            file;
+    // 文件内容缓冲区
     ngx_buf_t            *buffer;
     ngx_buf_t            *dump;
+    // 记录当前文件解析到第几行
     ngx_uint_t            line;
 } ngx_conf_file_t;
 
@@ -182,7 +191,10 @@ typedef char *(*ngx_conf_handler_pt)(ngx_conf_t *cf,
 
 struct ngx_conf_s {
     char                 *name;
-    // 指令参数值
+    /*
+     * 指令参数值,数组中的第一个元素是指令名字,后面的是指令的入参
+     * 整个数组代表一个完整的指令
+     */
     ngx_array_t          *args;
 
     // 当前worker对应的ngx_cycle_t结构体
@@ -190,7 +202,7 @@ struct ngx_conf_s {
     // ngx_cycle_t中的pool
     ngx_pool_t           *pool;
     ngx_pool_t           *temp_pool;
-    // 当前解析的配置文件路径(如/path/nginx.conf、/path/domains/test.conf)
+    // 当前解析的配置文件(如/path/nginx.conf、/path/domains/test.conf)
     ngx_conf_file_t      *conf_file;
     // ngx_cycle_t中的log
     ngx_log_t            *log;

@@ -85,6 +85,7 @@ ngx_conf_param(ngx_conf_t *cf)
     b.end = b.last;
     b.temporary = 1;
 
+    // ngx_conf_parse方法中用NGX_INVALID_FILE标记判断是否是解析文件
     conf_file.file.fd = NGX_INVALID_FILE;
     conf_file.file.name.data = NULL;
     conf_file.line = 0;
@@ -100,6 +101,12 @@ ngx_conf_param(ngx_conf_t *cf)
 }
 
 
+/**
+ * 解析配置指令
+ *
+ * *filename: 要解析的配置文件
+ *
+ */
 char *
 ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 {
@@ -112,8 +119,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
     ngx_conf_file_t  *prev, conf_file;
     ngx_conf_dump_t  *cd;
     enum {
+    	// 默认解析配置文件
         parse_file = 0,
+		// 解析块配置,带花括号的
         parse_block,
+		// 解析-g参数传入的命令
         parse_param
     } type;
 
@@ -122,10 +132,12 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
     prev = NULL;
 #endif
 
+    // 解析配置文件
     if (filename) {
 
         /* open configuration file */
 
+    	// 打开配置文件,比如nginx.conf,也有可能是include指令指定的文件
         fd = ngx_open_file(filename->data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
         if (fd == NGX_INVALID_FILE) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
@@ -134,37 +146,61 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
             return NGX_CONF_ERROR;
         }
 
+        /*
+         * 保留前一个配置文件信息(比如前一个文件的解析位置等)
+         * 如果nginx.conf中包含include指令,则这里的前一个配置文件就有可能是nginx.conf了
+         *
+         * 解析完毕后要把prev还回到cf->conf_file中
+         *
+         * 在用一个文件中,cf->conf_file->buffer是公共的,因为他是一个指针,解析过程中不会改变
+         *
+         */
         prev = cf->conf_file;
 
+        // 把在当前栈内分配内存的ngx_conf_file_t对象赋值给cf->conf_file
         cf->conf_file = &conf_file;
 
+        // 调用系统函数fstat,用来获取打开的配置文件(fd)的一些基本信息(比如i-node节点号)
         if (ngx_fd_info(fd, &cf->conf_file->file.info) == NGX_FILE_ERROR) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, ngx_errno,
                           ngx_fd_info_n " \"%s\" failed", filename->data);
         }
 
+        /*
+         * 同样,将在当前站内分配内存的ngx_buf_t对象赋值给cf->conf_file->buffer
+         * 这里可以认为一个文件对应一个buffer对象
+         */
         cf->conf_file->buffer = &buf;
 
+        // 为buffer分配缓存空间,这里分配了NGX_CONF_BUFFER个字节
         buf.start = ngx_alloc(NGX_CONF_BUFFER, cf->log);
         if (buf.start == NULL) {
             goto failed;
         }
 
+        // 设置缓存个各个指针
         buf.pos = buf.start;
         buf.last = buf.start;
         buf.end = buf.last + NGX_CONF_BUFFER;
+        // 为1表示该缓存内容可以被修改
         buf.temporary = 1;
 
+        // 要解析的文件的描述符
         cf->conf_file->file.fd = fd;
+        // 要解析的文件名字长度
         cf->conf_file->file.name.len = filename->len;
+        // 要解析的文件名字
         cf->conf_file->file.name.data = filename->data;
+        // 要解析文件位置偏移量,因为这里是刚打开该文件,所以设置为0
         cf->conf_file->file.offset = 0;
         cf->conf_file->file.log = cf->log;
+        // 当前文件解析到第几行
         cf->conf_file->line = 1;
 
+        // 解析类型设置为解析配置文件
         type = parse_file;
 
-        if (ngx_dump_config
+        if (ngx_dump_config  // 入参以-T开头,测试和dump
 #if (NGX_DEBUG)
             || 1
 #endif
@@ -199,13 +235,16 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
     } else if (cf->conf_file->file.fd != NGX_INVALID_FILE) {
 
+    	// 解析花括号中的命令
         type = parse_block;
 
     } else {
+    	// 解析以-g入参输入的命令
         type = parse_param;
     }
 
 
+    // 开始解析命令
     for ( ;; ) {
         rc = ngx_conf_read_token(cf);
 
@@ -256,6 +295,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
         /* rc == NGX_OK || rc == NGX_CONF_BLOCK_START */
 
+        // cf->handler是干啥的 TODO
         if (cf->handler) {
 
             /*
@@ -263,6 +303,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
              * "types { ... }" directive
              */
 
+        	// TODO 暂时不明白,为什么存在cf->handler和NGX_CONF_BLOCK_START就要报错
             if (rc == NGX_CONF_BLOCK_START) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "unexpected \"{\"");
                 goto failed;
@@ -319,8 +360,10 @@ done:
 }
 
 /*
- * 为解析到的指令匹配所有模块的commands
- * 如果匹配到则执行相关命令的cmd->set方法
+ * 执行解析到的指令绑定的方法
+ *
+ * 1.遍历所有模块的所有指令和解析到的指令对比
+ * 2.如果对比成功则执行该指令对应的方法
  */
 static ngx_int_t
 ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
@@ -363,13 +406,14 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             if (ngx_modules[i]->type != NGX_CONF_MODULE
                 && ngx_modules[i]->type != cf->module_type)
             {
-            	// 过滤非NGX_CONF_MODULE模块
+            	// 过滤NGX_CONF_MODULE模块
                 continue;
             }
 
-            /* is the directive's location right ? */
             // 走到这里说明在模块ngx_modules[i]中,有和当前指令同名的指令
 
+            /* is the directive's location right ? */
+            // 判断指令的位置是否正确,不正确则忽略
             if (!(cmd->type & cf->cmd_type)) {
                 continue;
             }
@@ -425,13 +469,48 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             conf = NULL;
 
             if (cmd->type & NGX_DIRECT_CONF) {
+            	/*
+            	 * NGX_DIRECT_CONF 有这个标记代表模块的配置信息结构体放在了,cycle->conf_ctx的第二层指针上,
+            	 * 比如ngx的核心模块(ngx_core_module),直接从第二层指针上就可以取到这些模块的配置信息结构体
+            	 * 目前使用该标志的模块有:
+            	 * 		/core/nginx.c/ngx_core_module模块
+            	 * 		/core/ngx_regex.c/ngx_regex_module模块
+		    	 *		/core/ngx_thread_pool.c/ngx_thread_pool_module模块
+		    	 *		/event/ngx_event_openssl.c/ngx_openssl_module模块
+		    	 *		/misc/ngx_google_perftools_module.c/ngx_google_perftools_module模块
+				 * 以上这几个模块都是核心模块,其他模块都没有使用该标记
+				 *            	 *
+            	 */
                 conf = ((void **) cf->ctx)[ngx_modules[i]->index];
 
             } else if (cmd->type & NGX_MAIN_CONF) {
+            	/*
+            	 * 该指令类型是存放在配置文件的顶层区域的,比如events、http等指令。
+            	 *
+            	 * 没有使用NGX_DIRECT_CONF标记,则代表当前命令所在的模块使用到了cycle->conf_ctx的四层指针。
+            	 *
+            	 * 下面的操作是取出当前模块在第二层指针的位置,然后在取出该位置的地址,如下图
+            	 *   cf->ctx             conf
+				 *   -----              -----
+				 *	 | * |              | * |
+				 *	 -----              -----
+				 *	 \                 /
+				 *	  -----------------
+            	 *	  | * | * | * | * |
+            	 *	  -----------------
+            	 * 如果ngx_modules[i]->index 的值等于3,那么conf的值就是第二层中第四个星号变量的地址
+            	 */
                 conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
 
             } else if (cf->ctx) {
 
+            	/*
+            	 * TODO
+            	 * 这一步貌似就是取各个非核心模块的自定义结构体指针了,比如http模块?
+            	 *
+            	 * cmd->conf: 某个字段在cf->ctx结构体中的位置
+            	 *
+            	 */
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
 
                 if (confp) {
@@ -481,6 +560,17 @@ invalid:
 }
 
 
+/**
+ * 开始解析单词,这个单词并不是传统意义上的单词,也可以理解为一个内容块,
+ * 比如worker算是一个单词, "abc 465 sfd"双引号中的内容也算一个单词
+ *
+ * 解析文件中的指令和参数
+ *
+ * 每成功解析出一个指令就会返回:
+ * 	1.对于普通指令,解析到“;”符号(如: use epoll;)
+ * 	2.对于带花括号的,解析到指令名(如: events {}),剩下的花括号有events绑定发方法来完成
+ *
+ */
 static ngx_int_t
 ngx_conf_read_token(ngx_conf_t *cf)
 {
@@ -493,25 +583,43 @@ ngx_conf_read_token(ngx_conf_t *cf)
     ngx_str_t   *word;
     ngx_buf_t   *b, *dump;
 
+    // 是否解析出一个单词
     found = 0;
     need_space = 0;
+    /*
+     * 如果该值等于1,表示当前还没有解析到任何可用的单词
+     * 如果该值不等于1,表示当前正在解析单词
+     */
     last_space = 1;
+    // 当前在解析注释行(#)
     sharp_comment = 0;
+    // 当前在解析变量单词
     variable = 0;
+    // 当前在解析转义字符(以\开头的字符)
     quoted = 0;
+    // 当前在解析单引号中的内容
     s_quoted = 0;
+    // 当前在解析双引号中的内容
     d_quoted = 0;
 
+    // 初始化解析到单词个数
     cf->args->nelts = 0;
+    // 文件内容缓冲区
     b = cf->conf_file->buffer;
     dump = cf->conf_file->dump;
+    // 内容开始位置,一个临时变量,记录解析的过程中,每个单词的开始位置
     start = b->pos;
+    // 当前解析的文件行数
     start_line = cf->conf_file->line;
 
+    // 文件包含的总字节数
     file_size = ngx_file_size(&cf->conf_file->file.info);
 
     for ( ;; ) {
 
+    	/*
+    	 * 如果pos和last相等,则代表已经解析完缓冲区中的内容,需要从文件中读取新内容了
+    	 */
         if (b->pos >= b->last) {
 
             if (cf->conf_file->file.offset >= file_size) {
@@ -534,9 +642,17 @@ ngx_conf_read_token(ngx_conf_t *cf)
                 return NGX_CONF_FILE_DONE;
             }
 
+            /*
+             * 计算缓冲区是否截断了某个单词
+             * 比如单词 worker,如果缓冲区在最后几个字节是“wor”,那么即使b->pos等于b->last
+             * 那么在当前缓冲区中,是无法解析出worker这个单词的。
+             *
+             * 所以这里len的值就是“wor”这个字符串的长度3
+             */
             len = b->pos - start;
 
             if (len == NGX_CONF_BUFFER) {
+            	// 一个单词不能大于缓冲区的大小
                 cf->conf_file->line = start_line;
 
                 if (d_quoted) {
@@ -558,16 +674,24 @@ ngx_conf_read_token(ngx_conf_t *cf)
                 return NGX_ERROR;
             }
 
+            /*
+             * 如果len大于0,就像前面说的单词“worker”被缓冲区截断了,为了继续把文件中的内容写入缓冲区,
+             * 同事又不覆盖掉截断的内容,下面这个还数就是把截断的内容,移动到缓冲区的最前面,然后再把文件
+             * 的内容写入到缓冲区中。
+             */
             if (len) {
                 ngx_memmove(b->start, start, len);
             }
 
+            // 计算未读到缓冲区的文件还有多大
             size = (ssize_t) (file_size - cf->conf_file->file.offset);
 
             if (size > b->end - (b->start + len)) {
+            	// 如果剩余文件的大小,大于缓冲区实际可以写入的大小,则使用缓冲区的大小
                 size = b->end - (b->start + len);
             }
 
+            // 读取文件内容到缓冲区
             n = ngx_read_file(&cf->conf_file->file, b->start + len, size,
                               cf->conf_file->file.offset);
 
@@ -583,6 +707,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
                 return NGX_ERROR;
             }
 
+            // 修正缓冲区指针
             b->pos = b->start + len;
             b->last = b->pos + n;
             start = b->start;
@@ -592,9 +717,11 @@ ngx_conf_read_token(ngx_conf_t *cf)
             }
         }
 
+        // 解析一个字符
         ch = *b->pos++;
 
         if (ch == LF) {
+        	// 遇见换行符,则行数加一
             cf->conf_file->line++;
 
             if (sharp_comment) {
@@ -602,11 +729,14 @@ ngx_conf_read_token(ngx_conf_t *cf)
             }
         }
 
+        // 当前正在解析注释行
         if (sharp_comment) {
             continue;
         }
 
+        // 当前正在解析转义字符
         if (quoted) {
+        	// 转义字符只有两个字符,如\t、\b等
             quoted = 0;
             continue;
         }
@@ -637,11 +767,16 @@ ngx_conf_read_token(ngx_conf_t *cf)
             }
         }
 
+        /*
+         * 如果该值等于1,表示当前还没有解析到任何可用的单词
+         * 如果该值不等于1,表示当前正在解析单词
+         */
         if (last_space) {
             if (ch == ' ' || ch == '\t' || ch == CR || ch == LF) {
                 continue;
             }
 
+            // 到这里表明,解析到了单词的第一个字符
             start = b->pos - 1;
             start_line = cf->conf_file->line;
 
@@ -649,6 +784,10 @@ ngx_conf_read_token(ngx_conf_t *cf)
 
             case ';':
             case '{':
+            	/*
+            	 * 如果单词的第一个字符是'{',那么前面一定要有一个指令名字
+            	 * 比如"events {",如果没有则肯定是错误的
+            	 */
                 if (cf->args->nelts == 0) {
                     ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                        "unexpected \"%c\"", ch);
@@ -656,6 +795,10 @@ ngx_conf_read_token(ngx_conf_t *cf)
                 }
 
                 if (ch == '{') {
+                	/*
+                	 * 如果单词的第一个字符是'{',则直接返回
+                	 * 花括号的解析交给 '{' 字符前面的指令去解析
+                	 */
                     return NGX_CONF_BLOCK_START;
                 }
 
@@ -696,6 +839,8 @@ ngx_conf_read_token(ngx_conf_t *cf)
             }
 
         } else {
+        	/*当前正在解析单词的过程中*/
+
             if (ch == '{' && variable) {
                 continue;
             }
@@ -733,18 +878,21 @@ ngx_conf_read_token(ngx_conf_t *cf)
                 found = 1;
             }
 
-            // 解析出一个单词?
+            // 解析出一个单词
             if (found) {
+            	// 将解析出的单词放入数组中
                 word = ngx_array_push(cf->args);
                 if (word == NULL) {
                     return NGX_ERROR;
                 }
 
+                // 为数组元素分配空间
                 word->data = ngx_pnalloc(cf->pool, b->pos - 1 - start + 1);
                 if (word->data == NULL) {
                     return NGX_ERROR;
                 }
 
+                // 将缓冲区冲的单词内容,拷贝到数组元素word中
                 for (dst = word->data, src = start, len = 0;
                      src < b->pos - 1;
                      len++)
@@ -754,10 +902,20 @@ ngx_conf_read_token(ngx_conf_t *cf)
                         case '"':
                         case '\'':
                         case '\\':
+
+        		    		/*
+        		    		 * 如果转义字符是这种形式
+        		    		 * name\"cdb  age\'person  cycle\\woker,则直接忽略这个'\'
+        		    		 * 不需要将字符'\'赋值到数组中
+        		    		 */
                             src++;
                             break;
 
                         case 't':
+        		   			/*
+        		   			 * 如果是转义"\t"
+        		   			 * 则将字符串形式的"\t",转换成计算语言的'\t'
+        		   			 */
                             *dst++ = '\t';
                             src += 2;
                             continue;
@@ -776,14 +934,17 @@ ngx_conf_read_token(ngx_conf_t *cf)
                     }
                     *dst++ = *src++;
                 }
+                // 为毛搞一个'\0' TODO
                 *dst = '\0';
                 word->len = len;
 
                 if (ch == ';') {
+                	// 单词的下一个符号是';'则表示解析出一个完整指令
                     return NGX_OK;
                 }
 
                 if (ch == '{') {
+                	// 单词的下一个字符是'{'则表示这是一个以花括号为入参的指令
                     return NGX_CONF_BLOCK_START;
                 }
 

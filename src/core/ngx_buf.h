@@ -18,11 +18,24 @@ typedef void *            ngx_buf_tag_t;
 typedef struct ngx_buf_s  ngx_buf_t;
 
 struct ngx_buf_s {
+	/*
+	 * pos和last代表实际使用的内存大小。
+	 *
+	 * pos <= start
+	 * last <= end
+	 *
+	 * 从缓存读内容,则增加pos值就可以,但是不能大于end
+	 * 向缓存写数据,则增加last值就可以,但是不能大于end
+	 */
     u_char          *pos;
     u_char          *last;
     off_t            file_pos;
     off_t            file_last;
 
+    /*
+     * start和end代表缓存实际上分配的内存大小,跟有没有使用没有关系,
+     * 这两个指针在内存分配完毕后就不会改变了(TODO 暂时这么理解)
+     */
     u_char          *start;         /* start of buffer */
     u_char          *end;           /* end of buffer */
     ngx_buf_tag_t    tag;
@@ -31,6 +44,7 @@ struct ngx_buf_s {
 
 
     /* the buf's content could be changed */
+    // 为1表示该缓存内容可以被改变
     unsigned         temporary:1;
 
     /*

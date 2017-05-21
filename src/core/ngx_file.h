@@ -16,8 +16,10 @@
 struct ngx_file_s {
     ngx_fd_t                   fd;
     ngx_str_t                  name;
+    // 文件一些底层信息,内核结构体struct stat
     ngx_file_info_t            info;
 
+    // 要解析文件位置偏移量
     off_t                      offset;
     off_t                      sys_offset;
 

@@ -23,7 +23,9 @@ ngx_array_t            ngx_old_cycles;
 static ngx_pool_t     *ngx_temp_pool;
 static ngx_event_t     ngx_cleaner_event;
 
+// 入参以-t开头,测试
 ngx_uint_t             ngx_test_config;
+// 入参以-T开头,测试和dump
 ngx_uint_t             ngx_dump_config;
 ngx_uint_t             ngx_quiet_mode;
 
@@ -36,7 +38,26 @@ static ngx_connection_t  dumb;
 /**
  * 初始化工作
  *
- * 1.解析配置文件从这里开始(ngx_conf_parse方法)
+ * 1.更新缓存时间
+ * 2.创建ngx_cycle_t对象,并初始化一些基本参数
+ * 3.为ngx_cycle_t->conf_ctx分配内存空间(这里分配了两层的内存空间)
+ * 4.为所有核心模块创建配置信息结构体(调用核心模块的module->create_conf方法)
+ * 5.为ngx_conf_t设置基本参数,比如conf.ctx=cycle->conf_ctx等
+ * 6.处理-g参数传入的命令(调用ngx_conf_param方法)
+ *
+ *
+ * TODO 重点看,看完这个再回头看别的
+ * 7.调用ngx_conf_parse方法解析nginx.conf指令文件
+ *
+ *
+ * 8.所有指令解析完毕后调用所有核心模块的初始化方法module->init_conf
+ * 9.如果是单进程模式,则返回cycle对象
+ * 10.如果是worker模式则做一下worker模式要做的事,比如创建共享变量
+ * 11.处理老的监听对象,old_cycle->listening.nelts
+ * 12.打开cycle->listening中的监听连接,并把它设置为非阻塞
+ * 13.初始化模块(调用各个模块的ngx_modules[i]->init_module方法),只要有一个失败就退出
+ * 14.清理老old_cycle中的数据,比如打开的文件描述符(监听连接)等
+ * 15.释放临时内存
  *
  */
 ngx_cycle_t *
@@ -393,6 +414,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     if (ngx_process == NGX_PROCESS_SIGNALLER) {
         return cycle;
     }
+
+    // ----------------------多worker模式才会执行下面的代码
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 

@@ -1200,6 +1200,12 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
 /*
  * events指令对应的方法
  *
+ * 1.为事件模块编号
+ * 2.为事件模块分配存放各个事件模块配置信息的指针空间
+ * 3.为各个事件模块创建配置信息结构体
+ * 4.解析所有事件模块
+ * 5.调用所有事件模块的init_conf方法来初始化配置信息结构体
+ *
  * TODO 看完文件解析后回头再看,主要看conf
  */
 static char *
