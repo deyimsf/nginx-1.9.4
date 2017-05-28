@@ -37,7 +37,7 @@ static char *ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf);
 
 // 更新缓存时间的间隔时间
 static ngx_uint_t     ngx_timer_resolution;
-// 可以更新缓存时间,在ngx_timer_signal_handler方法中设置
+// 是否可以更新缓存时间,在ngx_timer_signal_handler方法中设置
 sig_atomic_t          ngx_event_timer_alarm;
 
 static ngx_uint_t     ngx_event_max_module;
@@ -154,7 +154,7 @@ static ngx_str_t  event_core_name = ngx_string("event_core");
 
 
 /**
- * 事件模块ngx_event_core_module拥有的命令
+ * 事件核心模块ngx_event_core_module拥有的命令
  */
 static ngx_command_t  ngx_event_core_commands[] = {
 
@@ -1206,7 +1206,17 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
  * 4.解析所有事件模块
  * 5.调用所有事件模块的init_conf方法来初始化配置信息结构体
  *
- * TODO 看完文件解析后回头再看,主要看conf
+ * cf->ctx: cycle->conf_ctx
+ *
+ * *conf: 该值是核心事件模块在cycle->conf_ctx中第二层指针的位置的值
+ *   cf->ctx      	     conf
+ *   -----          	-----
+ *	 | * |              | * |
+ *	 -----              -----
+ *	 \                 	/
+ *	  ------------------
+ *	  | * | * | * | *# |
+ *    ------------------
  */
 static char *
 ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -1216,6 +1226,15 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_uint_t            i;
     ngx_conf_t            pcf;
     ngx_event_module_t   *m;
+
+    /*
+     * 此时***ctx的内存结构如下:(*号代表指针类型;#号代表空;*#代表指针类型并且是空)
+     * 	   ctx
+     * 	  ------
+     * 	  | *# |
+     * 	  ------
+     *
+     */
 
     if (*(void **) conf) {
         return "is duplicate";
@@ -1233,18 +1252,62 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         ngx_modules[i]->ctx_index = ngx_event_max_module++;
     }
 
+    /*
+     * 分配完内存后ctx的结构如下
+     *   ctx
+     *  -----
+     *  | * |
+     *  -----
+     *  \
+     *   ------
+     *   | *# |
+     *   ------
+     */
     ctx = ngx_pcalloc(cf->pool, sizeof(void *));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    /*
+     * 分配完内存后ctx的结构如下
+     * 	ctx
+     * 	-----
+     * 	| * |
+     * 	-----
+     * 	\
+     * 	 -----
+     * 	 | * |
+     *   -----
+     *    \
+     *     -------------------
+     *     | *# | *# | *# | ....
+     *     -------------------
+     */
     *ctx = ngx_pcalloc(cf->pool, ngx_event_max_module * sizeof(void *));
     if (*ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
-    // 为什么做这个事???  TODO  看完配置文件的解析，回过头看再看ctx和cycle->conf_ctx是如何对应的
-    // 直接 *conf=ctx 这样也行吧(是行，但是因为ctx是指针，*conf不是指针, 这样赋值不太好看)
+    /*
+     * 直接 *conf=ctx 这样也行吧(是行，但是因为ctx是指针，*conf不是指针, 这样赋值不太好看)
+     * 这样赋值后四层指针就全部用到了:其中cf->ctx 等于 cycle->conf_ctx
+     *   cf->ctx             conf
+	 *   -----              -----
+	 *	 | * |              | * |
+	 *	 -----              -----
+	 *	 \                 /       ctx
+	 *	  -----------------       -----
+	 *	  | * | * | * | * |       | * |
+	 *    -----------------       -----
+	 *    				  \      /
+	 *    				   -----
+     *				       | * |
+     *				       -----
+     *				       \
+     *				       ------------------
+     *				       | *# | *# | *# |	 ...
+     *				       ------------------
+     */
     *(void **) conf = ctx;
 
     // 开始为所有事件模块创建配置信息结构体(通过m->create_conf方法创建),之后就可以取解析命令了
@@ -1323,7 +1386,9 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 /*
  * worker_connections指令对应的方法
  *
- * TODO 先看文件解析再回头看一眼
+ * *cf:有/src/event/ngx_event.c/ngx_events_block方法传递过来
+ * *cmd: 代表worker_connections指令的定义
+ * *conf: 指向事件核心模块的配置信息结构体ngx_event_conf_t
  */
 static char *
 ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -1356,7 +1421,9 @@ ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 /*
  * use指令对应的方法
  *
- * TODO 看完文件解析再回头看一眼
+ * *cf:有/src/event/ngx_event.c/ngx_events_block方法传递过来
+ * *cmd: 代表use指令的定义
+ * *conf: 指向事件核心模块的配置信息结构体ngx_event_conf_t
  */
 static char *
 ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -1435,6 +1502,10 @@ ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 /*
  * debug_connection指令对应的方法
+ *
+ * *cf:有/src/event/ngx_event.c/ngx_events_block方法传递过来
+ * *cmd: 代表debug_connection指令的定义
+ * *conf: 指向事件核心模块的配置信息结构体ngx_event_conf_t
  */
 static char *
 ngx_event_debug_connection(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)

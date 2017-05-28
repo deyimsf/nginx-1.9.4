@@ -44,12 +44,7 @@ static ngx_connection_t  dumb;
  * 4.为所有核心模块创建配置信息结构体(调用核心模块的module->create_conf方法)
  * 5.为ngx_conf_t设置基本参数,比如conf.ctx=cycle->conf_ctx等
  * 6.处理-g参数传入的命令(调用ngx_conf_param方法)
- *
- *
- * TODO 重点看,看完这个再回头看别的
  * 7.调用ngx_conf_parse方法解析nginx.conf指令文件
- *
- *
  * 8.所有指令解析完毕后调用所有核心模块的初始化方法module->init_conf
  * 9.如果是单进程模式,则返回cycle对象
  * 10.如果是worker模式则做一下worker模式要做的事,比如创建共享变量
@@ -380,7 +375,6 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     // 解析nginx.conf配置文件
     // 该方法执行完后,所有的模块指令就都被解析完了
-    // TODO ------------- 下周重点
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);

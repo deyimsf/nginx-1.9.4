@@ -45,7 +45,7 @@ ngx_module_t  ngx_conf_module = {
 
 
 /* The eight fixed arguments */
-
+/* 指令可以带的八种参数个数 */
 static ngx_uint_t argument_number[] = {
     NGX_CONF_NOARGS,
     NGX_CONF_TAKE1,
@@ -102,10 +102,15 @@ ngx_conf_param(ngx_conf_t *cf)
 
 
 /**
- * 解析配置指令
+ * 解析配置指令,并执行配置指令对应的方法
  *
- * *filename: 要解析的配置文件
+ * 该方法解析三种类型的配置:
+ * 1.解析配置文件中的内容
+ * 2.解析带花括号中的指令
+ * 3.解析用-g参数输入的命令,-g入参只能输入简单的指令格式,不能输入比如带花括号的复杂指令
  *
+ * 对于 "xxx {}" 这样的指令形式,如果花括号内的内容不是指令,则需要在调用该方法之前设置
+ * cf->handler方法,有这个handler来处理。
  */
 char *
 ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
@@ -295,20 +300,49 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
         /* rc == NGX_OK || rc == NGX_CONF_BLOCK_START */
 
-        // cf->handler是干啥的 TODO
+        /*
+         * 用户自定义的解析块类型指令的方法,这种指令对应的块内中的内容都不是指令。
+         *
+         * 目前是专门为types这种类型的指令指定定义的,因为types块内的内容不是指令,所以不能像解析一般
+         * 块内指令那样,对types的解析内的内容解释有ngx_http_core_module模块自己决定,比如ngx_http_core_type方法。
+         *
+         *
+         * 目前使用的模块有:
+         * /src/http/modules/ngx_http_charset_filter_module.c:1286:    cf->handler = ngx_http_charset_map;
+		 * /src/http/modules/ngx_http_geo_module.c:456:    cf->handler = ngx_http_geo;
+		 * /src/http/modules/ngx_http_map_module.c:273:    cf->handler = ngx_http_map;
+		 * /src/http/modules/ngx_http_split_clients_module.c:168:    cf->handler = ngx_http_split_clients;
+		 * /src/http/ngx_http_core_module.c:3374:    cf->handler = ngx_http_core_type;
+         */
         if (cf->handler) {
 
             /*
              * the custom handler, i.e., that is used in the http's
              * "types { ... }" directive
+             *
+             *	types {
+             *		{}; // 不允许出现这种情况
+             *		text/html html; // 正常的情况
+             *	}
+             *
              */
-
-        	// TODO 暂时不明白,为什么存在cf->handler和NGX_CONF_BLOCK_START就要报错
             if (rc == NGX_CONF_BLOCK_START) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "unexpected \"{\"");
                 goto failed;
             }
 
+            /*
+             * cf->handler() 这样调用也可以;函数指针的两种不同调用方式
+             *
+             * 假设pfunc是一个指向函数的指针,*pfunc就是这个函数,按照这种解释,则我们在使用
+             * 函数指针调用函数的时候应该使用 *pfunc 来调用函数,像这样
+             * 		int c = (*pfunc)(5,6)
+             * 历史上,贝尔实验室的C和Unix的开发者使用的就是这种观点,即
+             * 		int c = (*pfunc)(5,6)
+             * 而Berkeyly的Unix的扩展这采用函数指针的形式对其调用,即
+             *		pfunc(5,6)
+             * 标准C为了兼容性,两种方式都接受。
+             */
             rv = (*cf->handler)(cf, NULL, cf->handler_conf);
             if (rv == NGX_CONF_OK) {
                 continue;
@@ -324,6 +358,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         }
 
 
+        // 从所有模块中遍历对比解析到的指令,如果匹配则执行
         rc = ngx_conf_handler(cf, rc);
 
         if (rc == NGX_ERROR) {
@@ -360,7 +395,7 @@ done:
 }
 
 /*
- * 执行解析到的指令绑定的方法
+ * 真正执行指令绑定的方法
  *
  * 1.遍历所有模块的所有指令和解析到的指令对比
  * 2.如果对比成功则执行该指令对应的方法
@@ -418,6 +453,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 continue;
             }
 
+            // 如果指令不是块类型的,并且ngx_conf_read_token()没有返回NGX_OK则指令格式错误
             if (!(cmd->type & NGX_CONF_BLOCK) && last != NGX_OK) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                   "directive \"%s\" is not terminated by \";\"",
@@ -425,6 +461,13 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 return NGX_ERROR;
             }
 
+            /*
+             * 如果是块指令,但是ngx_conf_read_token()没有返回NGX_CONF_BLOCK_START,则
+             * 指令格式错误。
+             *
+             * 比如events {} 指令
+             *
+             */
             if ((cmd->type & NGX_CONF_BLOCK) && last != NGX_CONF_BLOCK_START) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                    "directive \"%s\" has no opening \"{\"",
@@ -433,6 +476,11 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             }
 
             /* is the directive's argument count right ? */
+
+            /*
+             * 检查指令后面带的参数个数是否正确。
+             * 如果没有指定参数个数,则最多带八个参数。
+             */
 
             if (!(cmd->type & NGX_CONF_ANY)) {
 
@@ -470,6 +518,9 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 
             if (cmd->type & NGX_DIRECT_CONF) {
             	/*
+            	 * 此时cf->ctx有/src/core/ngx_cycle.c/ngx_init_cycle方法传递过来;
+            	 *
+            	 *
             	 * NGX_DIRECT_CONF 有这个标记代表模块的配置信息结构体放在了,cycle->conf_ctx的第二层指针上,
             	 * 比如ngx的核心模块(ngx_core_module),直接从第二层指针上就可以取到这些模块的配置信息结构体
             	 * 目前使用该标志的模块有:
@@ -478,18 +529,36 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 		    	 *		/core/ngx_thread_pool.c/ngx_thread_pool_module模块
 		    	 *		/event/ngx_event_openssl.c/ngx_openssl_module模块
 		    	 *		/misc/ngx_google_perftools_module.c/ngx_google_perftools_module模块
-				 * 以上这几个模块都是核心模块,其他模块都没有使用该标记
-				 *            	 *
+				 * 以上这几个模块都是核心模块,其他模块都没有使用该标记。
+				 *
+				 * 下面的操作取出的conf如下图:
+				 *   cf->ctx
+				 *   -----
+				 *	 | * |
+				 *	 -----
+				 *	 \					   conf
+				 *	  ---------           -----
+            	 *	  | * | ...           | * |
+            	 *	  ---------           -----
+				 *	   \                 /
+				 *	    -----------------
+				 *	    |ngx_core_conf_t|
+				 *	    -----------------
             	 */
                 conf = ((void **) cf->ctx)[ngx_modules[i]->index];
 
             } else if (cmd->type & NGX_MAIN_CONF) {
             	/*
-            	 * 该指令类型是存放在配置文件的顶层区域的,比如events、http等指令。
+            	 * 此时cf->ctx有/src/core/ngx_cycle.c/ngx_init_cycle方法传递过来;
+            	 *
+            	 *
+            	 * 该指令类型是存放在配置文件的顶层区域的,比如:
+            	 * 	核心事件模块(ngx_events_module)的"events {}"指令;
+            	 * 	核心http模块(ngx_http_module)的"http {}"指令;
             	 *
             	 * 没有使用NGX_DIRECT_CONF标记,则代表当前命令所在的模块使用到了cycle->conf_ctx的四层指针。
             	 *
-            	 * 下面的操作是取出当前模块在第二层指针的位置,然后在取出该位置的地址,如下图
+            	 * 下面的操作是取出当前模块在第二层指针的位置,然后在取出该位置的地址,如下图:
             	 *   cf->ctx             conf
 				 *   -----              -----
 				 *	 | * |              | * |
@@ -505,10 +574,48 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             } else if (cf->ctx) {
 
             	/*
-            	 * TODO
-            	 * 这一步貌似就是取各个非核心模块的自定义结构体指针了,比如http模块?
+            	 * 如果是事件模块,那么cf->ctx是有/src/event/ngx_event.c/ngx_events_block方法传递过来的;
+            	 * 如果是http模块,那么cf->ctx是有/src/http/ngx_http.c/ngx_http_block方法传递过来的;
             	 *
-            	 * cmd->conf: 某个字段在cf->ctx结构体中的位置
+            	 *
+            	 * 这一步是取各个非核心模块的自定义结构体指针了,比如
+            	 *  事件模块NGX_EVENT_MODULE;
+            	 *  http模块NGX_HTTP_MODULE;
+            	 *
+            	 *
+            	 * 1.如果当前是具体的事件模块,那么ctx的内存结构是这样的:
+            	 *	     ctx
+            	 *	------------
+            	 *	    | * |     cycle->conf_ctx的第二层指针
+            	 *	------------
+            	 *	     \
+            	 *	 	  -----
+            	 *	 	  | * |
+            	 *	 	  -----
+            	 * 		   \
+            	 * 		     ---------
+            	 *           | * | * |
+            	 *           ---------
+            	 *	        /          \
+            	 * ------------------   ------------------
+            	 * |ngx_event_cont_t|   |ngx_epoll_conf_t|
+            	 * ------------------   ------------------
+            	 * 另外,事件模块的cmd->conf都是零,貌似目前只有http模块使用了cmd->conf字段。
+            	 * 最终conf会指向具体的ngx_xxx_cont_t结构体。
+            	 *
+            	 *
+            	 *
+            	 * 2.如果当前是具体的http模块,那么ctx的内存结构是这样的:
+            	 *	     ctx
+            	 *	------------
+            	 *	    | * |     cycle->conf_ctx的第二层指针
+            	 *	------------
+            	 *	     \
+            	 *	 	  -----------------------
+            	 *	 	  | ngx_http_conf_ctx_t |
+            	 *	 	  -----------------------
+            	 * 最终confp的值会和ngx_http_conf_ctx_t结构体中的 xxx_conf 指针相等,具体等于哪个,则依赖于cmd->conf的值。
+            	 * 最终conf的值就是xxx_conf[ngx_modules[i]->ctx_index],也就是各个自定义的http模块对应的配置信息结构体。
             	 *
             	 */
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
@@ -518,7 +625,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 }
             }
 
-            // 回调指令的set方法
+            // 回调指令绑定的方法
             rv = cmd->set(cf, cmd, conf);
 
             if (rv == NGX_CONF_OK) {
@@ -564,11 +671,9 @@ invalid:
  * 开始解析单词,这个单词并不是传统意义上的单词,也可以理解为一个内容块,
  * 比如worker算是一个单词, "abc 465 sfd"双引号中的内容也算一个单词
  *
- * 解析文件中的指令和参数
- *
- * 每成功解析出一个指令就会返回:
+ * 每成功解析出一个指令就会返回(一个指令会包含一个或多个单词):
  * 	1.对于普通指令,解析到“;”符号(如: use epoll;)
- * 	2.对于带花括号的,解析到指令名(如: events {}),剩下的花括号有events绑定发方法来完成
+ * 	2.对于带花括号的,解析到"{"符号(如: events {}),剩下的花括号有events绑定发方法来完成
  *
  */
 static ngx_int_t
@@ -794,7 +899,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
                     return NGX_ERROR;
                 }
 
-                if (ch == '{') {
+                if (ch == '{') {// 多此一举的判断?
                 	/*
                 	 * 如果单词的第一个字符是'{',则直接返回
                 	 * 花括号的解析交给 '{' 字符前面的指令去解析
@@ -934,7 +1039,8 @@ ngx_conf_read_token(ngx_conf_t *cf)
                     }
                     *dst++ = *src++;
                 }
-                // 为毛搞一个'\0' TODO
+
+                // 为字符串加一个结束符,这样这个字符串也可以脱离ngx的字符串结构体
                 *dst = '\0';
                 word->len = len;
 

@@ -3393,6 +3393,7 @@ ngx_http_core_type(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
 
     value = cf->args->elts;
 
+    // 判断是否解析到了include指令
     if (ngx_strcmp(value[0].data, "include") == 0) {
         if (cf->args->nelts != 2) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,

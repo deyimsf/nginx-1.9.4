@@ -41,9 +41,13 @@
 
 #define NGX_CONF_ARGS_NUMBER 0x000000ff
 #define NGX_CONF_BLOCK       0x00000100
+/* TODO */
 #define NGX_CONF_FLAG        0x00000200
+/* 可以带任意多个参数 */
 #define NGX_CONF_ANY         0x00000400
+/* 可以带一个以上的参数 */
 #define NGX_CONF_1MORE       0x00000800
+/* 可以带两个以上的参数 */
 #define NGX_CONF_2MORE       0x00001000
 #define NGX_CONF_MULTI       0x00000000  /* compatibility */
 
@@ -88,7 +92,12 @@ struct ngx_command_s {
     // 还可以指定命令的参数个数(NGX_CONF_NOARGS、NGX_CONF_TAKE1)等
     ngx_uint_t            type;
 
-    // 解析到该命令后要执行的方法
+    /*
+     * 解析到该命令后要执行的方法
+     * *cf: 可以理解为指令配置信息上下文,包含了指令名和指令入参
+     * *cmd: 当前指令的定义信息
+     * *conf: 当前指令所在模块的配置信息结构体
+     */
     char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
     // 使用的是哪个方法(create_main|server|loc_conf)创建的结构体

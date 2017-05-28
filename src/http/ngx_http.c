@@ -115,8 +115,23 @@ ngx_module_t  ngx_http_module = {
     NGX_MODULE_V1_PADDING
 };
 
-/**
+/*
+ * 该指令方法有/src/core/ngx_conf_file.c/ngx_conf_handler方法负责调用
+ *
+ * cf->ctx: cycle->conf_ctx
+ *
+ * *conf: 该值是核心http模块在cycle->conf_ctx中第二层指针的位置的值:
+ *   cf->ctx      	     conf
+ *   -----          	-----
+ *	 | * |              | * |
+ *	 -----              -----
+ *	 \                 	/
+ *	  ------------------
+ *	  | * | * | * | *# |
+ *    ------------------
+ *
  * conf 是一个NULL值的地址,实际值是 &cycle->conf_ctx[ngx_http_module.index]
+ *
  */
 static char *
 ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -130,18 +145,53 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_core_srv_conf_t   **cscfp;
     ngx_http_core_main_conf_t   *cmcf;
 
+    /*
+     * 此时*ctx的内存结构如下:(*号代表指针类型;#号代表空;*#代表指针类型并且是空)
+     * 	   ctx
+     * 	  ------
+     * 	  | *# |
+     * 	  ------
+     */
     if (*(ngx_http_conf_ctx_t **) conf) {
         return "is duplicate";
     }
 
     /* the main http context */
-
+    /*
+     * 分配完内存后ctx的结构如下
+     *   ctx
+     *  -----
+     *  | * |
+     *  -----
+     *  \
+     *   -----------------------
+     *   | ngx_http_conf_ctx_t |
+     *   -----------------------
+     */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
     // 为cycle->conf_ctx[ngx_http_module.index]赋值ctx
+    /*
+     * 这里这样赋值,则只用到了cycle->conf_ctx中的两层指针,如下图:
+     * (其中cf->ctx 等于 cycle->conf_ctx)
+     *
+     *   cf->ctx             conf
+	 *   -----              -----
+	 *	 | * |              | * |
+	 *	 -----              -----
+	 *	 \                 /      				   ctx
+	 *	  -----------------       				  -----
+	 *	  | * | * | * | * |       				  | * |
+	 *    -----------------       				  -----
+	 *    				  \      				  /
+	 *    				   -----------------------
+     *				       | ngx_http_conf_ctx_t |
+     *				       -----------------------
+     *
+     */
     *(ngx_http_conf_ctx_t **) conf = ctx;
 
 

@@ -1027,7 +1027,11 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             // 设置有数据可读
             rev->ready = 1;
 
-            // TODO 延迟事件?
+            /*
+             * post事件,和/src/event/ngx_event.c/ngx_accept_mutex_held变量配合使用,
+             * 该值为1,则falgs就会被打上NGX_POST_EVENTS标。
+             */
+
             if (flags & NGX_POST_EVENTS) {
                 queue = rev->accept ? &ngx_posted_accept_events
                                     : &ngx_posted_events;
