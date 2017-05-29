@@ -238,17 +238,26 @@ main(int argc, char *const *argv)
 
     ngx_debug_init();
 
-    // 初始化数组ngx_sys_errlist
+    /*
+     *  初始化数组ngx_sys_errlist
+     *  把系统错误码全部拷贝到ngx_sys_errlist数组中
+     */
     if (ngx_strerror_init() != NGX_OK) {
         return 1;
     }
 
-    // 解析启动nginx时指定的入参,也就是获取用户输入的命令
+    /*
+     * 解析启动nginx时指定的入参,也就是获取用户输入的命令
+     * 解析出来后会放入到静态变量中,比如ngx_show_version变量
+     */
     if (ngx_get_options(argc, argv) != NGX_OK) {
         return 1;
     }
 
-    // 凡是展示的信息都会先显示版本号, 如ngx_show_help和ngx_show_configure
+    /*
+     *  凡是展示的信息都会先显示版本号, 如ngx_show_help和ngx_show_configure
+     *  显示版本信息。
+     */
     if (ngx_show_version) {
         ngx_write_stderr("nginx version: " NGINX_VER_BUILD NGX_LINEFEED);
 
@@ -317,6 +326,7 @@ main(int argc, char *const *argv)
     }
 
     /* TODO */ ngx_max_sockets = -1;
+
     //初始化nginx运行过程中用的的时间,在运行过程中如果需要时间的话,都是直接从这里的缓存中获取的
     ngx_time_init();
 
@@ -327,6 +337,7 @@ main(int argc, char *const *argv)
     // 获取进程id
     ngx_pid = ngx_getpid();
 
+    // 如果ngx_prefix没有值,这一步会为其设置
     log = ngx_log_init(ngx_prefix);
     if (log == NULL) {
         return 1;
@@ -358,8 +369,10 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    // 主要用来设置文件路劲和前缀等,如cycle->conf_prefix、conf_file等
-    // 这个方法处理完之后cycle->conf_file就变成了完整的路径
+    /*
+     * 主要用来设置文件路径和前缀等,如cycle->conf_prefix、conf_file等
+     * 这个方法处理完之后cycle->conf_file就变成了完整的路径
+     */
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -392,12 +405,14 @@ main(int argc, char *const *argv)
     }
 
     /*
-     * 很重要的一个方法,慢慢看 TODO
+     * 走到这里才开始去读配置文件
      *
-     * 1.初始化各个NGX_CORE_MODULE模块的init_cycle->conf_ctx等
-     * 2.调用NGX_CONF_MODLUE模块的ngx_conf_parse方法
+     * 1.初始化各个NGX_CORE_MODULE模块的init_cycle->conf_ctx
+     * 2.调用NGX_CONF_MODLUE模块的ngx_conf_parse方法去解析配置文件
      *
      * init_cycle只用来传递一些配置文件路径信息,临时使用,返回的cycle才是真正的后续要用到的
+     *
+     * 该方法是各个模块创建和初始化自己结构的入口
      */
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
@@ -441,9 +456,13 @@ main(int argc, char *const *argv)
     	 * 因为下面的方法用到了nginx的主进程id(在文件nginx.pid中)。
     	 *
     	 * 信号函数有ngx_init_signals方法负责绑定。
+    	 *
+    	 * 发送完信号之后该进程就退出了,前面一系列操作的意义就是验证配置的正确性,如果不正确就不应该发信息号。
     	 */
         return ngx_signal_process(cycle, ngx_signal);
     }
+
+    /* 走到这里说明本次操作是要启动nginx */
 
     ngx_os_status(cycle->log);
 
@@ -462,11 +481,16 @@ main(int argc, char *const *argv)
         return 1;
     }
 
+    /*
+     * 如果nginx要以守护进程的形式启动,那么ngx_daemon方法会fork一个子进程,主进程则直接返回。
+     *
+     */
     if (!ngx_inherited && ccf->daemon) {
         if (ngx_daemon(cycle->log) != NGX_OK) {
             return 1;
         }
 
+        // deamon成功则标记当前进程已经是守护进程了
         ngx_daemonized = 1;
     }
 
@@ -494,9 +518,11 @@ main(int argc, char *const *argv)
     ngx_use_stderr = 0;
 
     if (ngx_process == NGX_PROCESS_SINGLE) {
+    	// 单进程模式
         ngx_single_process_cycle(cycle);
 
     } else {
+    	// master-worker模式
         ngx_master_process_cycle(cycle);
     }
 
@@ -1050,7 +1076,7 @@ ngx_process_options(ngx_cycle_t *cycle)
         }
     }
 
-    // ngx_conf_params保存的是-g选项指定的值 TODO 做什么用的?
+    // ngx_conf_params保存的是-g选项指定的指令
     if (ngx_conf_params) {
         cycle->conf_param.len = ngx_strlen(ngx_conf_params);
         cycle->conf_param.data = ngx_conf_params;

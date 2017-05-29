@@ -100,16 +100,13 @@ struct ngx_command_s {
      */
     char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
-    // 使用的是哪个方法(create_main|server|loc_conf)创建的结构体
-    // 该值可以是NGX_HTTP_MAIN_CONF_OFFSET、NGX_HTTP_SRV_CONF_OFFSET、NGX_HTTP_LOC_CONF_OFFSET
-    // 对应的值是 offsetof(ngx_http_conf_ctx_t, main|srv|loc_conf)
-
     /*
-     * 某个字段(xxx)在cf->ctx结构体中的偏移量
-     * 比如loc_conf在ngx_http_conf_ctx_t结构体中偏移量
+     * 该字段在 /src/core/ngx_conf_file.c/ngx_conf_handler("}else if (cf->ctx) {")方法中使用
+     *
+     * 如果是http模块,则代表xxx_conf在ngx_http_conf_ctx_t结构体中偏移量
      */
     ngx_uint_t            conf;
-    // 某个字段(yyy)在xxx中的偏移量
+    // 某个字段在当前模块的配置信息结构体中的偏移量
     ngx_uint_t            offset;
     void                 *post;
 };
@@ -140,6 +137,27 @@ struct ngx_module_s {
 
     ngx_uint_t            version;
 
+    /*
+     * 可以用来扩展模块,一般情况用来指定要扩展的模块的接口上下文
+     *
+     * 比如核心模块是:
+     *  typedef struct {
+     *		ngx_str_t          name;
+     *		void               *(*create_conf)(ngx_cycle_t *cycle);
+     *		char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+	 *	} ngx_core_module_t;
+	 *
+	 * 比如事件模块是:
+	 * 	typedef struct {
+     *		ngx_str_t            *name;
+	 *
+     *		void                 *(*create_conf)(ngx_cycle_t *cycle);
+     *		char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+     *
+     *		// 实现该模块必须定义ngx_event_actions_t中规定的10个抽象方法
+     *		ngx_event_actions_t     actions;
+	 *	} ngx_event_module_t;
+     */
     void                 *ctx;
     ngx_command_t        *commands;
     ngx_uint_t            type;
@@ -173,6 +191,7 @@ typedef struct {
 	// 核心模块的名字
     ngx_str_t             name;
     void               *(*create_conf)(ngx_cycle_t *cycle);
+    // *conf是当前模块配置信息结构体指针(比如ngx_core_conf_t)
     char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
 } ngx_core_module_t;
 
@@ -198,6 +217,10 @@ typedef char *(*ngx_conf_handler_pt)(ngx_conf_t *cf,
     ngx_command_t *dummy, void *conf);
 
 
+/*
+ * 解析配置文件是会用到该结构体
+ * 贯穿整个文件解析过程中的一个信息载体
+ */
 struct ngx_conf_s {
     char                 *name;
     /*
@@ -220,18 +243,23 @@ struct ngx_conf_s {
     void                 *ctx;
     // 模块类型(如NGX_CORE_MODULE、NGX_HTTP_MODULE等)
     ngx_uint_t            module_type;
-    // 一般在调用ngx_conf_parse方法前,会设置
-    // 命令类型(如NGX_MAIN_CONF、NGX_HTTP_MAIN_CONF、NGX_HTTP_SRV_CONF、NGX_HTTP_SIF_CONF等)
-    // NGX_MAIN_CONF:
-    //		代表当前正在main块下解析指令
-    // NGX_HTTP_MAIN_CONF:
-    //		代表当前正在http{}块下解析指令
-    // NGX_HTTP_SRV_CONF:
-    //		代表当前正在server{}块下解析指令
-    // NGX_HTTP_SIF_CONF:
-    //		代表当前正在server{}块下的if{}中解析指令
-    // NGX_HTTP_LIF_CONF
-    //		代表当前正在loction{}块下的if{}中解析指令
+    /* 在调用ngx_conf_parse方法前,会设置
+     *
+     * 命令类型:
+     * NGX_MAIN_CONF:
+     *		代表当前正在main块下解析指令
+     * NGX_EVENT_CONF:
+     * 		代表events{}下的指令
+     * NGX_HTTP_MAIN_CONF:
+     *		代表当前正在http{}块下解析指令
+     * NGX_HTTP_SRV_CONF:
+     *		代表当前正在server{}块下解析指令
+     * NGX_HTTP_SIF_CONF:
+     *		代表当前正在server{}块下的if{}中解析指令
+     * NGX_HTTP_LIF_CONF
+     *		代表当前正在loction{}块下的if{}中解析指令
+     *
+     */
     ngx_uint_t            cmd_type;
 
     ngx_conf_handler_pt   handler;

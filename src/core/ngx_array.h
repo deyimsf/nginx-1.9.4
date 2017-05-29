@@ -28,7 +28,7 @@ typedef struct {
     ngx_uint_t   nelts;
     // 每个元素所占字节大小
     size_t       size;
-    // 数组大小
+    // 数组可容纳的元素个数(可动态扩容)
     ngx_uint_t   nalloc;
     ngx_pool_t  *pool;
 } ngx_array_t;

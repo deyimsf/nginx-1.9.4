@@ -21,7 +21,9 @@
 
 
 #define NGX_PROCESS_SINGLE     0
+// master-worker模式
 #define NGX_PROCESS_MASTER     1
+// 非master-worker模式
 #define NGX_PROCESS_SIGNALLER  2
 #define NGX_PROCESS_WORKER     3
 #define NGX_PROCESS_HELPER     4

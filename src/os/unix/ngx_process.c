@@ -295,9 +295,10 @@ ngx_execute_proc(ngx_cycle_t *cycle, void *data)
 }
 
 
-/**
- * 为当前进程绑定信号函数
+/*
+ * 为当前进程绑定内置的信号函数
  *
+ * 需要绑定的信号,和信号关联的方法,都放在了signals[]数组中
  */
 ngx_int_t
 ngx_init_signals(ngx_log_t *log)

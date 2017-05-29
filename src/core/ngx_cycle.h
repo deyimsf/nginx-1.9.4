@@ -93,8 +93,29 @@ struct ngx_cycle_s {
     ngx_queue_t               reusable_connections_queue;
 
     ngx_array_t               listening;
+    /*
+     * 存放各个模块的目录结构体(ngx_path_t)
+     * 各个模块可以向该数组中添加ngx_path_t对象,然后在/src/core/ngx_cycle.c/ngx_init_cycle方法中
+     * 会调用ngx_create_paths方法来创建这些目录,这些目录会创建在nginx的安装目录下。
+     *
+     * 目前有五个模块用到了这个功能,他们的目录如下:
+     * 	ngx_http_core_module模块的client_body_temp目录
+     * 	ngx_http_proxy_module模块的proxy_temp目录
+     *	ngx_http_fastcgi_module模块的fastcgi_temp目录
+     *	ngx_http_uwsgi_module模块的uwsgi_temp目录
+     *	ngx_http_scgi_module模块的scgi_temp目录
+     */
     ngx_array_t               paths;
     ngx_array_t               config_dump;
+    /*
+     * 存放各个模块ngx_open_file_t结构体
+     * 各个模块可以向该链表中添加ngx_open_file_t对象,然后在src/core/ngx_cycle.c/ngx_init_cycle方法中
+     * 会遍历cycle->open_files链表,然后将其代表的文件打开。
+     *
+     * 目前使用到这个链表的模块有:
+     *   /src/core/ngx_log.c/ngx_errlog_module模块的error_log指令
+     * 	 /src/http/modules/ngx_http_log_module.c模块的access_log指令
+     */
     ngx_list_t                open_files;
     ngx_list_t                shared_memory;
 
@@ -113,14 +134,15 @@ struct ngx_cycle_s {
 
     ngx_cycle_t              *old_cycle;
 
-    // 配置文件nginx.conf的绝对路劲
+    // 配置文件nginx.conf的绝对路劲(/usr/local/nginx/conf/nginx.conf)
     ngx_str_t                 conf_file;
     ngx_str_t                 conf_param;
-    // 配置文件nginx.conf所在的目录
+    // 配置文件nginx.conf所在的目录(/usr/local/nginx/conf/)
     ngx_str_t                 conf_prefix;
-    // 安装路径
+    // 安装路径(/usr/local/nginx/)
     ngx_str_t                 prefix;
     ngx_str_t                 lock_file;
+    // 本地机器名字
     ngx_str_t                 hostname;
 };
 

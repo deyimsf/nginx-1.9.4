@@ -54,6 +54,11 @@ static ngx_connection_t  dumb;
  * 14.清理老old_cycle中的数据,比如打开的文件描述符(监听连接)等
  * 15.释放临时内存
  *
+ *
+ * *old_cycle: 如果是master-worker形式,并且是在运行时,那么当做reload操作时
+ * 			   在/src/os/unix/ngx_process_cycle.c/ngx_master_process_cycle方法中
+ * 			   会用到这个方法,这个时候传入的cycle对应就是一个老的cycle。
+ *
  */
 ngx_cycle_t *
 ngx_init_cycle(ngx_cycle_t *old_cycle)
@@ -74,6 +79,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_core_module_t   *module;
     char                 hostname[NGX_MAXHOSTNAMELEN];
 
+    // TODO 更新时区?
     ngx_timezone_update();
 
     /* force localtime update with a new timezone */
@@ -81,17 +87,20 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     tp = ngx_timeofday();
     tp->sec = 0;
 
+    // 更新缓存时间
     ngx_time_update();
 
 
     log = old_cycle->log;
 
+    // 为cycle创建一个内存池
     pool = ngx_create_pool(NGX_CYCLE_POOL_SIZE, log);
     if (pool == NULL) {
         return NULL;
     }
     pool->log = log;
 
+    // 为cycl分配内存空间
     cycle = ngx_pcalloc(pool, sizeof(ngx_cycle_t));
     if (cycle == NULL) {
         ngx_destroy_pool(pool);
@@ -102,6 +111,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->log = log;
     cycle->old_cycle = old_cycle;
 
+    // 配置文件所在的目录
     cycle->conf_prefix.len = old_cycle->conf_prefix.len;
     cycle->conf_prefix.data = ngx_pstrdup(pool, &old_cycle->conf_prefix);
     if (cycle->conf_prefix.data == NULL) {
@@ -109,6 +119,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
+    // nginx安装目录
     cycle->prefix.len = old_cycle->prefix.len;
     cycle->prefix.data = ngx_pstrdup(pool, &old_cycle->prefix);
     if (cycle->prefix.data == NULL) {
@@ -116,6 +127,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
+    // 配置文件绝对路径
     cycle->conf_file.len = old_cycle->conf_file.len;
     cycle->conf_file.data = ngx_pnalloc(pool, old_cycle->conf_file.len + 1);
     if (cycle->conf_file.data == NULL) {
@@ -154,6 +166,14 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
+    /*
+     * 计算需要打开的配置文件个数
+     * 从老的cycle中读出打开的文件个数
+     *
+     * 如果当前nginx是启动状态,那么当reload时,cycle就肯定是一个老的cycle
+     *
+     * 如果当前是在启动nginx,那么old_cycle也就啥也没有
+     */
     if (old_cycle->open_files.part.nelts) {
         n = old_cycle->open_files.part.nelts;
         for (part = old_cycle->open_files.part.next; part; part = part->next) {
@@ -161,9 +181,15 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
 
     } else {
+    	// nginx第一次启动,默认open_files链表大小为20
         n = 20;
     }
 
+    /*
+     * 初始化open_files链表,链表里面存放的是需要打开的文件(和cycle->paths类似)
+     *
+     * 这个时候新的cycle->open_files里面还没有打开的文件
+     */
     if (ngx_list_init(&cycle->open_files, pool, n, sizeof(ngx_open_file_t))
         != NGX_OK)
     {
@@ -190,6 +216,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
+    // 用于存放监听连接的动态数组,默认数组大小10
     n = old_cycle->listening.nelts ? old_cycle->listening.nelts : 10;
 
     cycle->listening.elts = ngx_pcalloc(pool, n * sizeof(ngx_listening_t));
@@ -208,21 +235,15 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
 
     /*
-     * 这里是为每一个模块都分配了一个指针空间
-     * 刚开始的时候 ****conf_ctx的一级指针的值都是NULL
-     * 执行这句之后相当于为一级指针分配了一个ngx_max_module个(void *)大小的空间
-     * 实际上相当与为每个二级指针分配了一个空间,且这个空间的值是NULL
      * 分配后cycle->conf_ctx的内存空间图如下:
 	 *	conf_ctx
-	 *	-------
-	 *	|  *  |
-	 *	-------
-	 *	 |
+	 *	-----
+	 *	| * |
+	 *	-----
 	 *	 \
 	 *	  ---------------------------
-	 *	  |  *  |  *  |  *  |  总共有ngx_max_moudle个(目前都是NULL值)
+	 *	  | *# | *# | *# |  总共有ngx_max_moudle个(目前都是NULL值)
 	 *	  ---------------------------
-	 *
      */
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
@@ -239,6 +260,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     /* on Linux gethostname() silently truncates name that does not fit */
 
+    // 本地机器名字,最多255个字符,多余的会被丢掉
     hostname[NGX_MAXHOSTNAMELEN - 1] = '\0';
     cycle->hostname.len = ngx_strlen(hostname);
 
@@ -252,32 +274,40 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
 
     /*
-       处理核心模块的逻辑:
-       调用所有核心模块的create_conf方法
-       nginx的核心模块包括:
-    		nginx.c
-			ngx_log.c
-			ngx_regex.c
-			ngx_thread_pool.c
-			ngx_event.c
-			ngx_event_openssl.c
-			ngx_http.c
-			ngx_google_perftools_module.c
-			ngx_stream.c
-	*/
+     *  调用所有核心模块的create_conf方法,为核心模块创建配置信息结构体
+     *  nginx的核心模块包括,但是并不是所有的核心模块有create_conf方法。
+     *		nginx.c
+	 *		ngx_log.c
+	 *		ngx_regex.c
+	 *		ngx_thread_pool.c
+	 *		ngx_event.c
+	 *		ngx_event_openssl.c
+	 *		ngx_http.c
+	 *		ngx_google_perftools_module.c
+	 *		ngx_stream.c
+	 */
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
         }
 
-        // 每个核心模块的接口,比如事件核心模块接口ngx_events_module_ctx、http核心模块接口ngx_http_module_ctx
-        // ngx_modules[i]->ctx中的ctx就是定义各个模块行为的约束(可以看成一种协议)
+        /*
+         * 定义核心模块的接口上下文如下:
+         *  typedef struct {
+    	 *		ngx_str_t          name;
+    	 *		void               *(*create_conf)(ngx_cycle_t *cycle);
+    	 *		char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+		 *	} ngx_core_module_t;
+         *
+         * 每个核心模块的接口,比如核心事件模块接口ngx_events_module_ctx、核心http模块接口ngx_http_module_ctx
+         * ngx_modules[i]->ctx中的ctx就是定义各个模块行为的约束(可以看成一种协议)
+         */
         module = ngx_modules[i]->ctx;
 
         /*
          *  执行所有核心模块的create_conf方法,但是不是所有的核心模块都有该方法。
-         *	比如代表事件核心模块(ngx_events_module)的上下文结构体(ngx_events_module_ctx)就没有定义create_conf方法。
-         *	再比如http核心模块(ngx_http_module)的上下文结构体(ngx_http_module_ctx)也没有定义create_conf方法。
+         *	比如核心事件模块(ngx_events_module)的上下文结构体(ngx_events_module_ctx)就没有定义create_conf方法。
+         *	比如核心http模块(ngx_http_module)的上下文结构体(ngx_http_module_ctx)也没有定义create_conf方法。
          *	所以这两个核心模块在 cycle->conf_ctx的第二层指针变量的值仍然是空。
          */
         if (module->create_conf) {
@@ -288,41 +318,41 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             }
 
             /*
-               目前只用到了第二层指针
-               核心模块对****conf_ctx的使用如下:
-			    conf_ctx
-				---------
-				|   *   |
-				---------
-					| ngx_core_conf_t  | ngx_xxx_conf_t
-					\				   \
-				 	 -----------------------------------------
-				 	 |       *         |       *        |
-				 	 -----------------------------------------
-				 	   |
-				 	   \ 真正的结构体
-				  	  	-------------------
-				  	  	| ngx_core_conf_t |
-				  	  	-------------------
-
-			   从上图可以看到,对变量****conf_ctx,核心模块只用到了前两层指针,使用时强转成两层指针就可以了
-			   所以 *(ngx_core_conf_t **)conf_ctx 就是指向ngx_core_conf_t的指针
-			   以此类推,拿第二个核心模块的配置指针需要这样:
-			   	   *(ngx_xxx_conf_t **)(conf_ctx+1)
-			   实际上如果不关心指针类型,只关心指针的值是不需要强转的,像这样:
-			   	   *conf_ctx
-			   和强转之后效果一样
-            */
+             *  目前只用到了第二层指针
+             *  核心模块对****conf_ctx的使用如下:
+			 *  conf_ctx
+			 *	+---+
+			 *	| * |
+			 *	+---+
+			 *	\
+			 *	 -------------------
+			 *	 | * | *# | * | ...
+			 *	 -------------------
+			 *	  \ 真正的结构体
+			 *	   -------------------
+			 *	   | ngx_core_conf_t |
+			 *	   -------------------
+			 *
+			 *  从上图可以看到,对变量****conf_ctx,核心模块只用到了前两层指针,使用时强转成两层指针就可以了
+			 *  所以 *(ngx_core_conf_t **)conf_ctx 就是指向ngx_core_conf_t的指针
+			 *  以此类推,拿第二个核心模块的配置指针需要这样:
+			 *  	   *(ngx_xxx_conf_t **)(conf_ctx+1)
+			 *  实际上如果不关心指针类型,只关心指针的值是不需要强转的,像这样:
+			 *  	   *(conf_ctx + 1)
+			 *  和强转之后效果一样
+             */
             cycle->conf_ctx[ngx_modules[i]->index] = rv;
         }
     }
 
 
+    // 系统环境变量
     senv = environ;
 
 
     ngx_memzero(&conf, sizeof(ngx_conf_t));
     /* STUB: init array ? */
+    // 初始化用来临时存储指令信息的数组
     conf.args = ngx_array_create(pool, 10, sizeof(ngx_str_t));
     if (conf.args == NULL) {
         ngx_destroy_pool(pool);
@@ -337,10 +367,6 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
 
     /*
-     * 此时conf.ctx中的指针就是最终指向各个模块的配置信息结构体的指针
-     *
-     * 这里用了一个1级(一个*)指针来接收一个4级指针(四个*)
-     *
      * 此时conf_ctx实际上已经用到了两层指针(比如核心模块ngx_core_module在第二层有一个指向ngx_core_conf_t的指针)
      *
      * 所以conf.ctx(cycle->conf_ctx)的目前实际内存分配是这样:
@@ -352,6 +378,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
      *		 ------------------
      *		 | * | * | * | ngx_max_module个
      *		 -------------------
+     *		 \
+     *		  -----------------
+     *		  |ngx_core_conf_t|
+     *		  -----------------
      */
     conf.ctx = cycle->conf_ctx;
     conf.cycle = cycle;
@@ -359,7 +389,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     conf.log = log;
     // 接下来要解析的模块类型(ngx主框架只关心NGX_CORE_MODULE和NGX_CONF_MODULE两种模块)
     conf.module_type = NGX_CORE_MODULE;
-    // 接下来要解析的命令类型
+    // 接下来要解析的命令类型(命令可以出现在哪个区域)
     conf.cmd_type = NGX_MAIN_CONF;
 
 #if 0
@@ -373,31 +403,51 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
-    // 解析nginx.conf配置文件
-    // 该方法执行完后,所有的模块指令就都被解析完了
+    /*
+     * 解析nginx.conf配置文件
+     * 该方法执行完后,所有的模块指令就都被解析完了
+     */
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
         return NULL;
     }
 
+    /*
+     * 能走到这里说明可以正确解析nginx.conf配置文件,各个模块的配置信息结构体已经被
+     * 创建并初始化完毕。
+     *
+     * 如果只是为了测试配置文件是否正确, 到这里则说明配置文件的语法是没有问题的。
+     * 配置的内容是否逻辑正确则需要继续往下走。
+     */
     if (ngx_test_config && !ngx_quiet_mode) {
         ngx_log_stderr(0, "the configuration file %s syntax is ok",
                        cycle->conf_file.data);
     }
 
-    // 调用所有核心模块的init_conf方法
+    /*
+     * 调用所有核心模块的init_conf方法
+     *
+     * 核心模块的上下文接口规则如下:
+     *  typedef struct {
+     *		ngx_str_t             name;
+     *		void               *(*create_conf)(ngx_cycle_t *cycle);
+     *		char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+	 *	} ngx_core_module_t;
+     */
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
         }
 
+        // 取出具体核心模块的上下文接口
         module = ngx_modules[i]->ctx;
 
         if (module->init_conf) {
             if (module->init_conf(cycle, cycle->conf_ctx[ngx_modules[i]->index])
                 == NGX_CONF_ERROR)
             {
+            	// TODO
                 environ = senv;
                 ngx_destroy_cycle_pools(&conf);
                 return NULL;
@@ -406,6 +456,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
     if (ngx_process == NGX_PROCESS_SIGNALLER) {
+    	// 非master-worker模式则直接返回
         return cycle;
     }
 
@@ -447,6 +498,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
 
+    /*
+     * 创建各个模块自定义的临时目录
+     * 比如http核心模块(ngx_http_core_module)的client_body_temp_path指令指定的client_body_temp目录
+     */
     if (ngx_create_paths(cycle, ccf->user) != NGX_OK) {
         goto failed;
     }
@@ -457,7 +512,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
     /* open the new files */
-
+    // 打开各个模块存放在open_files链表中文件
     part = &cycle->open_files.part;
     file = part->elts;
 
@@ -1168,6 +1223,7 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
         return 1;
     }
 
+    // 向进程发送响应的信号
     return ngx_os_signal_process(cycle, sig, pid);
 
 }

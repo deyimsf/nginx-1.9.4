@@ -1176,6 +1176,7 @@ ngx_conf_open_file(ngx_cycle_t *cycle, ngx_str_t *name)
             }
 
             if (ngx_strcmp(full.data, file[i].name.data) == 0) {
+            	// 如果文件已经存在则直接返回
                 return &file[i];
             }
         }
