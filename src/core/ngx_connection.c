@@ -362,8 +362,13 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 
 /**
  * 打开cycle->listening中的socket
- * 设置非阻塞
- * 调用listen方法开始监听
+ *
+ * 1.创建socket套接字
+ * 2.直接调用setsockopt方法为套接字设置一些参数
+ * 3.调用ngx_nonblocking方法将套接字设置为非阻塞
+ * 4.将套接字绑定到网络地址(要监听的ip和端口)上
+ * 5.调用listen方法将套接字设置为监听状态
+ * 6.ls[i].fd = s
  */
 ngx_int_t
 ngx_open_listening_sockets(ngx_cycle_t *cycle)
@@ -384,6 +389,9 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 
     /* TODO: configurable try number */
 
+    /*
+     * 最多重试5次去操作(bind、listen)socket
+     */
     for (tries = 5; tries; tries--) {
         failed = 0;
 
@@ -408,6 +416,13 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 
                 int  reuseport = 1;
 
+                /*
+				 * 为这个套接字设置一些参数
+				 * 在SOL_SOCKET层设置SO_REUSEPORT的值为reuseport
+				 *
+				 * SO_REUSEPORT: TODO 这个选项还是不太明白
+				 *
+				 */
                 if (setsockopt(ls[i].fd, SOL_SOCKET, SO_REUSEPORT,
                                (const void *) &reuseport, sizeof(int))
                     == -1)
@@ -421,6 +436,11 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             }
 #endif
 
+            /*
+             * 如果该监听连接已经被打开了,则不做任何事情
+             * 连接被打开也就代表文件描述符已经和socket绑定上了
+             * 而对于SO_REUSEADDR参数,监听连接和socket绑定上后再设置是无效的
+             */
             if (ls[i].fd != (ngx_socket_t) -1) {
                 continue;
             }
@@ -434,6 +454,14 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 continue;
             }
 
+            /*
+             * 调用系统函数socket创建一个套接字
+             *
+             * int socket(int domain, int type, int protocol)
+             * 	domain: AF_INET(因特网)
+             * 	type: SOCK_STREAM(因特网的一个端点)
+             * 	protocal: 0
+             */
             s = ngx_socket(ls[i].sockaddr->sa_family, ls[i].type, 0);
 
             if (s == (ngx_socket_t) -1) {
@@ -442,6 +470,10 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 return NGX_ERROR;
             }
 
+            /*
+             * 为这个套接字设置一些参数
+             * 在SOL_SOCKET层设置SO_REUSEADDR的值为reuseaddr(允许socket绑定处于TIME_WAIT状态的连接)
+             */
             if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR,
                            (const void *) &reuseaddr, sizeof(int))
                 == -1)
@@ -466,6 +498,13 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 
                 reuseport = 1;
 
+                /*
+				 * 为这个套接字设置一些参数
+				 * 在SOL_SOCKET层设置SO_REUSEPORT的值为reuseport
+				 *
+				 * SO_REUSEPORT: TODO 这个选项还是不太明白
+				 *
+				 */
                 if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT,
                                (const void *) &reuseport, sizeof(int))
                     == -1)
@@ -505,6 +544,8 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             /* TODO: close on exit */
 
             if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
+
+            	/* 在这里把监听套接字设置为非阻塞的 */
                 if (ngx_nonblocking(s) == -1) {
                     ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
                                   ngx_nonblocking_n " %V failed",
@@ -523,6 +564,10 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             ngx_log_debug2(NGX_LOG_DEBUG_CORE, log, 0,
                            "bind() %V #%d ", &ls[i].addr_text, s);
 
+            /*
+             * 套接字绑定一个网络地址
+             * sockaddr和socklen已经有各个模块指令设置完毕,比如http核心模块的listen指令对应的ngx_http_core_listen方法
+             */
             if (bind(s, ls[i].sockaddr, ls[i].socklen) == -1) {
                 err = ngx_socket_errno;
 
@@ -571,6 +616,9 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             }
 #endif
 
+            /*
+             * 绑定完套接字后就可以将该socket描述符变成监听状态了
+             */
             if (listen(s, ls[i].backlog) == -1) {
                 err = ngx_socket_errno;
 
@@ -603,17 +651,20 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 continue;
             }
 
+            // 处于监听状态
             ls[i].listen = 1;
 
             ls[i].fd = s;
         }
 
+        //  如果没有失败则直接跳出循环
         if (!failed) {
             break;
         }
 
         /* TODO: delay configurable */
 
+        // 如果有操作(bind、listen等)失败的连接则休息500ms
         ngx_log_error(NGX_LOG_NOTICE, log, 0,
                       "try again to bind() after 500ms");
 

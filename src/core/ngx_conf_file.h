@@ -164,6 +164,10 @@ struct ngx_module_s {
 
     ngx_int_t           (*init_master)(ngx_log_t *log);
 
+    /*
+     * 模块的初始化方法,该方法有ngx框架在/src/core/ngx_cycle.c/ngx_init_cycle中调用
+     * 在调用该方法之前配置文件都已经被解析完毕了
+     */
     ngx_int_t           (*init_module)(ngx_cycle_t *cycle);
 
     ngx_int_t           (*init_process)(ngx_cycle_t *cycle);

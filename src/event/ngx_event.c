@@ -1021,7 +1021,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     for (i = 0; i < cycle->listening.nelts; i++) {
 
 #if (NGX_HAVE_REUSEPORT)
-    	// TODO reuseport(复用端口号?)
+    	// reuseport(复用端口号?),不建议使用
         if (ls[i].reuseport && ls[i].worker != ngx_worker) {
             continue;
         }

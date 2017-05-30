@@ -17,6 +17,7 @@ typedef struct ngx_listening_s  ngx_listening_t;
 
 // 用于监听的连接
 struct ngx_listening_s {
+	// socket描述符
     ngx_socket_t        fd;
 
     // 该链接的内核socket地址
@@ -28,9 +29,10 @@ struct ngx_listening_s {
     // 文本形式的ip
     ngx_str_t           addr_text;
 
+    // 套接字类型(TCP是 SOCK_STREAM)
     int                 type;
 
-    //
+    // 监听连接的队列大小
     int                 backlog;
     // socket接收缓冲区大小
     int                 rcvbuf;
@@ -56,19 +58,50 @@ struct ngx_listening_s {
     /* should be here because of the deferred accept */
     ngx_msec_t          post_accept_timeout;
 
+    /*
+     * 指向老的监听连接
+     *
+     * 实际上当前的监听连接描述符就是从previous中获取的
+     *
+     * 在/event/ngx_event.c/ngx_event_process_init方法中会用到
+     * 在/os/unix/ngx_process_cycle.c/ngx_worker_process_init方法中会设置该值为NULL
+     */
     ngx_listening_t    *previous;
     ngx_connection_t   *connection;
 
     // 当前worker编号,启动worker时给出
     ngx_uint_t          worker;
 
+    /*
+     * 为ngx的热启动而设计
+     *
+     * 貌似只有在需要回滚的时候会用到,比如升级失败要回滚
+     *
+     * 0代表可以关闭
+     * 1代表该文件描述符不可关闭
+     *
+     * 在/src/core/ngx_cycle.c/ngx_init_cycle方法中会用到
+     *
+     * 其它模块不需要
+     */
     unsigned            open:1;
+
+    /*
+     * 为ngx的热启动而设计
+     *
+     * 0表示不需要保留当前文件描述,1表示要保留当前文件描述符,不可以close
+     *
+     * 在/src/core/ngx_cycle.c/ngx_init_cycle方法中会用到
+     *
+     * 貌似在reload时会用到,其它模块不需要
+     */
     unsigned            remain:1;
     unsigned            ignore:1;
 
     unsigned            bound:1;       /* already bound */
     unsigned            inherited:1;   /* inherited from previous process */
     unsigned            nonblocking_accept:1;
+    // 1表示处于监听状态
     unsigned            listen:1;
     unsigned            nonblocking:1;
     unsigned            shared:1;    /* shared between threads or processes */
@@ -79,7 +112,7 @@ struct ngx_listening_s {
     unsigned            ipv6only:1;
 #endif
 #if (NGX_HAVE_REUSEPORT)
-    // TODO
+    // TODO 不建议使用
     unsigned            reuseport:1;
     unsigned            add_reuseport:1;
 #endif

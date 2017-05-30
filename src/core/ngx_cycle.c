@@ -466,11 +466,13 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     if (ngx_test_config) {
 
+    	// 创建pid文件,多worker下各个worker可以通过该文件获取到master的pid
         if (ngx_create_pidfile(&ccf->pid, log) != NGX_OK) {
             goto failed;
         }
 
     } else if (!ngx_is_init_cycle(old_cycle)) {
+    	// 如果是ngx第一次启动,则不会进这里,因为第一次启动时穿过来的old_cycle什么也没有
 
         /*
          * we do not create the pid file in the first ngx_init_cycle() call
@@ -482,12 +484,16 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         if (ccf->pid.len != old_ccf->pid.len
             || ngx_strcmp(ccf->pid.data, old_ccf->pid.data) != 0)
         {
+        	// 如果新进程的pid文件路径个老的进程文件pid不一致,则创建新进程的pid文件,然后删除老的。
+
             /* new pid file name */
 
+        	// 创建pid文件,多worker下各个worker可以通过该文件获取到master的pid
             if (ngx_create_pidfile(&ccf->pid, log) != NGX_OK) {
                 goto failed;
             }
 
+            // 删除老的进程pid文件
             ngx_delete_pidfile(old_cycle);
         }
     }
@@ -512,7 +518,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
     /* open the new files */
-    // 打开各个模块存放在open_files链表中文件
+    // 打开各个模块存放在open_files链表中文件,类似ngx_create_paths方法
     part = &cycle->open_files.part;
     file = part->elts;
 
@@ -531,6 +537,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             continue;
         }
 
+        // 以追加的模式打开文件
         file[i].fd = ngx_open_file(file[i].name.data,
                                    NGX_FILE_APPEND,
                                    NGX_FILE_CREATE_OR_OPEN,
@@ -563,6 +570,12 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     /* create shared memory */
 
+    /*
+     * 创建共享变量,跟cycle->open_files链表相似,有其它模块向链表中添加ngx_shm_zone_t结构体,
+     * 然后在这里统一创建。
+     *
+     * 为了方便向shared_memeory中添加元素,ngx封装了一个ngx_shared_memory_add方法。
+     */
     part = &cycle->shared_memory.part;
     shm_zone = part->elts;
 
@@ -600,10 +613,12 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                 n = 0;
             }
 
+            // 比较新老共享内存名字的长度是否一致
             if (shm_zone[i].shm.name.len != oshm_zone[n].shm.name.len) {
                 continue;
             }
 
+            // 比较新老共享内存的名字内容是否一致
             if (ngx_strncmp(shm_zone[i].shm.name.data,
                             oshm_zone[n].shm.name.data,
                             shm_zone[i].shm.name.len)
@@ -611,6 +626,12 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             {
                 continue;
             }
+
+            /*
+             * 如果老进程中已经存在新进程要创建的共享内存,则直接把老的共享内存信息赋值给新的进程,
+             * 这样可以保证,共享内存不会因为ngx的reload而重新创建,所以只要master不死,共享内存
+             * 就不会死。
+             */
 
             if (shm_zone[i].tag == oshm_zone[n].tag
                 && shm_zone[i].shm.size == oshm_zone[n].shm.size
@@ -630,11 +651,13 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                 goto shm_zone_found;
             }
 
+            // 如果新老共享内存的名字一致, 但是并没有匹配上面的if语句,则释放共享内存
             ngx_shm_free(&oshm_zone[n].shm);
 
             break;
         }
 
+        // 创建共享内存
         if (ngx_shm_alloc(&shm_zone[i].shm) != NGX_OK) {
             goto failed;
         }
@@ -655,9 +678,16 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     /* handle the listening sockets */
 
+    /*
+     * 第一次启动ngx时listening中不会有元素
+     * 下面的remain、open等标记都是为ngx热启动设计的
+     *
+     * TODO 后续有精力再看
+     */
     if (old_cycle->listening.nelts) {
         ls = old_cycle->listening.elts;
         for (i = 0; i < old_cycle->listening.nelts; i++) {
+        	// 0表示不需要保留当前文件描述,1表示要保留当前文件描述符,不可以close
             ls[i].remain = 0;
         }
 
@@ -677,8 +707,15 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                                      ls[i].sockaddr, ls[i].socklen, 1)
                     == NGX_OK)
                 {
+                	/*
+                	 * 如果这老的监听连接描述符的ip和端口号跟新的相同,则直接将老的监听文件描述符
+                	 * 赋值给新的监听连接结构体ngx_listening_t
+                	 */
+
                     nls[n].fd = ls[i].fd;
+                    // 指向的是老的ngx_listening_t结构体,没看明白这个是干啥的
                     nls[n].previous = &ls[i];
+                    // 0表示不需要保留当前文件描述,1表示要保留当前文件描述符,不可以close
                     ls[i].remain = 1;
 
                     if (ls[i].backlog != nls[n].backlog) {
@@ -732,6 +769,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             }
 
             if (nls[n].fd == (ngx_socket_t) -1) {
+            	// 设置标志,升级失败回滚时会用到,表示不可以关闭这个文件描述符
                 nls[n].open = 1;
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
                 if (nls[n].accept_filter) {
@@ -749,6 +787,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     } else {
         ls = cycle->listening.elts;
         for (i = 0; i < cycle->listening.nelts; i++) {
+        	// 将open置为1,表示不可以关闭这个文件描述符,回滚时会用到
             ls[i].open = 1;
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
             if (ls[i].accept_filter) {
@@ -763,9 +802,11 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
     }
 
-    /* 打开cycle->listening中的socket
+    /*
+     * 打开cycle->listening中的socket
      * 设置非阻塞
      * 调用listen方法开始监听
+     * 但是这个时候并没有把监听连接放入到epoll中
      */
     if (ngx_open_listening_sockets(cycle) != NGX_OK) {
         goto failed;
@@ -1109,6 +1150,9 @@ ngx_init_zone_pool(ngx_cycle_t *cycle, ngx_shm_zone_t *zn)
 }
 
 
+/*
+ * 创建pid文件
+ */
 ngx_int_t
 ngx_create_pidfile(ngx_str_t *name, ngx_log_t *log)
 {

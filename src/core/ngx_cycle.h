@@ -64,6 +64,8 @@ struct ngx_shm_zone_s {
     ngx_shm_t                 shm;
     ngx_shm_zone_init_pt      init;
     void                     *tag;
+
+    // 是否可以重复使用
     ngx_uint_t                noreuse;  /* unsigned  noreuse:1; */
 };
 
@@ -107,6 +109,7 @@ struct ngx_cycle_s {
      */
     ngx_array_t               paths;
     ngx_array_t               config_dump;
+
     /*
      * 存放各个模块ngx_open_file_t结构体
      * 各个模块可以向该链表中添加ngx_open_file_t对象,然后在src/core/ngx_cycle.c/ngx_init_cycle方法中
@@ -117,6 +120,26 @@ struct ngx_cycle_s {
      * 	 /src/http/modules/ngx_http_log_module.c模块的access_log指令
      */
     ngx_list_t                open_files;
+
+    /*
+     * 存放各个模块的ngx_shm_zone_t结构体
+     * 各个模块可以向该链表中添加ngx_shm_zone_t对象,然后在ngx_init_cycle方法中统一创建共享内存。
+     *
+     * 目前使用到这个链表的模块有:
+     * 		/http/modules/ngx_http_fastcgi_module.c
+     * 		/http/modules/ngx_http_limit_conn_module.c
+     * 		/http/modules/ngx_http_limit_req_module.c
+     * 		/http/modules/ngx_http_proxy_module.c
+     * 		/http/modules/ngx_http_scgi_module.c
+     * 		/http/modules/ngx_http_ssl_module.c
+     * 		/http/modules/ngx_http_upstream_zone_module.c
+     * 		/http/modules/ngx_http_uwsgi_module.c
+     * 		/http/ngx_http_file_cache.c
+     * 		/mail/ngx_mail_ssl_module.c
+     * 		/stream/ngx_stream_limit_conn_module.c
+     * 		/stream/ngx_stream_ssl_module.c
+     * 		/stream/ngx_stream_upstream_zone_module.c
+     */
     ngx_list_t                shared_memory;
 
     // 可创建连接的最大个数,也就是connections数组的大小
