@@ -197,6 +197,7 @@ static ngx_uint_t   ngx_show_configure;
 static u_char      *ngx_prefix;
 static u_char      *ngx_conf_file;
 static u_char      *ngx_conf_params;
+// 存储命令参数如reload、stop等
 static char        *ngx_signal;
 
 
@@ -249,6 +250,7 @@ main(int argc, char *const *argv)
     /*
      * 解析启动nginx时指定的入参,也就是获取用户输入的命令
      * 解析出来后会放入到静态变量中,比如ngx_show_version变量
+     * 比如ngx_process:当前是什么流程
      */
     if (ngx_get_options(argc, argv) != NGX_OK) {
         return 1;
@@ -455,14 +457,15 @@ main(int argc, char *const *argv)
     	 * 处理 stop、quit、reopen、reload这四个信号,这四个信号要求当前nginx是已启动状态的,
     	 * 因为下面的方法用到了nginx的主进程id(在文件nginx.pid中)。
     	 *
-    	 * 信号函数有ngx_init_signals方法负责绑定。
+    	 * 信号函数已经有/src/os/unix/ngx_process.c/ngx_init_signals方法负责绑定。
     	 *
     	 * 发送完信号之后该进程就退出了,前面一系列操作的意义就是验证配置的正确性,如果不正确就不应该发信息号。
+    	 *
+    	 * 信号有主进程的/src/os/unix/ngx_process_cycle.c/ngx_master_process_cycle方法负责处理(master-worker模式)
     	 */
         return ngx_signal_process(cycle, ngx_signal);
     }
 
-    /* 走到这里说明本次操作是要启动nginx */
 
     ngx_os_status(cycle->log);
 
@@ -470,13 +473,26 @@ main(int argc, char *const *argv)
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
+    /*
+     * TODO 为啥在这里比较ngx_process
+     * 疑问:在什么情况下ccf->master == 1 但是 ngx_process != NGX_PROCESS_SINGLE
+     */
     if (ccf->master && ngx_process == NGX_PROCESS_SINGLE) {
         ngx_process = NGX_PROCESS_MASTER;
     }
 
 #if !(NGX_WIN32)
 
-    // 为当前进程绑定信号函数(调用系统函数sigaction)
+    /*
+     * 为master进程绑定signals[]数组中定义的信号
+     * 其中有四种信号,对应了ngx中的四个参数命令
+     * 	reload:SIGHUP
+     * 	reopen:SIGUSR1
+     * 	stop:SIGTERM
+     *	quit:SIGQUIT
+     *
+     * 调用系统函数sigaction
+     */
     if (ngx_init_signals(cycle->log) != NGX_OK) {
         return 1;
     }
@@ -517,6 +533,7 @@ main(int argc, char *const *argv)
 
     ngx_use_stderr = 0;
 
+    // 这里为啥不用ccf->master标记来判断 TODO
     if (ngx_process == NGX_PROCESS_SINGLE) {
     	// 单进程模式
         ngx_single_process_cycle(cycle);
@@ -530,12 +547,12 @@ main(int argc, char *const *argv)
 }
 
 
-/**
+/*
  * 继承环境变量NGINX_VAR中的一些数据
  *
  * 用它初始化cycle->listening
  *
- * TODO 细节
+ * TODO 细节 平滑升级? 二进制升级?
  */
 static ngx_int_t
 ngx_add_inherited_sockets(ngx_cycle_t *cycle)
@@ -690,6 +707,9 @@ tz_found:
 }
 
 
+/*
+ * 平滑升级用 TODO
+ */
 ngx_pid_t
 ngx_exec_new_binary(ngx_cycle_t *cycle, char *const *argv)
 {
@@ -730,6 +750,7 @@ ngx_exec_new_binary(ngx_cycle_t *cycle, char *const *argv)
 
     *p = '\0';
 
+    // 这边设置了一个环境变量
     env[n++] = var;
 
 #if (NGX_SETPROCTITLE_USES_ENV)
@@ -892,7 +913,7 @@ ngx_get_options(int argc, char *const *argv)
                 ngx_log_stderr(0, "option \"-g\" requires parameter");
                 return NGX_ERROR;
 
-            // 入参以 -s 开始
+            // 入参以 -s(信号) 开始
             case 's':
                 if (*p) {
                 	// -sreload(命令未加空格)

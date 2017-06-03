@@ -438,7 +438,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 
             /*
              * 如果该监听连接已经被打开了,则不做任何事情
-             * 连接被打开也就代表文件描述符已经和socket绑定上了
+             * 连接被打开也就代表文件描述符已经和socket绑定上了(比如从老进程继承过来的描述符)
              * 而对于SO_REUSEADDR参数,监听连接和socket绑定上后再设置是无效的
              */
             if (ls[i].fd != (ngx_socket_t) -1) {
@@ -680,6 +680,14 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 }
 
 
+/*
+ * 1.通过调用setsockopt方法,为监听连接设置一些参数,比如连接的缓冲区大小等
+ * 2.对ls.listen标志位为1的描述符调用listen方法(主要是为了改变backlog大小)
+ *
+ * 这些参数都是具体模块负责提前设置的,比如http模块在向cycle->listening链表中
+ * 增加监听连接时,会调用ngx_http_add_listening方法,该方法会设置当前模块需要的参数
+ *
+ */
 void
 ngx_configure_listening_sockets(ngx_cycle_t *cycle)
 {
@@ -691,11 +699,19 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
     struct accept_filter_arg   af;
 #endif
 
+    // 遍历所有的监听连接
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
+    	/*
+    	 * logp有具体模块设置,比如:
+    	 * 	/http/ngx_http.c:1883:    ls->logp = clcf->error_log;
+    	 * 	/mail/ngx_mail.c:362:            ls->logp = cscf->error_log;
+    	 * 	/stream/ngx_stream.c:377:            ls->logp = cscf->error_log;
+    	 */
         ls[i].log = *ls[i].logp;
 
+        // 设置连接的数据接收缓冲区大小
         if (ls[i].rcvbuf != -1) {
             if (setsockopt(ls[i].fd, SOL_SOCKET, SO_RCVBUF,
                            (const void *) &ls[i].rcvbuf, sizeof(int))
@@ -707,6 +723,7 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
             }
         }
 
+        // 设置连接的数据发送缓冲区大小
         if (ls[i].sndbuf != -1) {
             if (setsockopt(ls[i].fd, SOL_SOCKET, SO_SNDBUF,
                            (const void *) &ls[i].sndbuf, sizeof(int))
@@ -718,6 +735,7 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
             }
         }
 
+        // 开启连接的保活探测
         if (ls[i].keepalive) {
             value = (ls[i].keepalive == 1) ? 1 : 0;
 
@@ -822,6 +840,13 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
 #endif
 
         if (ls[i].listen) {
+        	/*
+        	 * 如果该监听连接处于监听状态,则可以通过再次调用listen方法来改变等待队列(backlog)大小,
+        	 * 其实就是把所有的监听连接重新调用了一遍listen方法
+        	 *
+        	 * 比如reload的时候,如果新的监听连接和老的监听连接的backlog不相等,则重新调用listen方法
+        	 * 设置backlog大小。
+        	 */
 
             /* change backlog via listen() */
 

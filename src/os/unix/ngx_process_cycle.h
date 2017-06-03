@@ -20,11 +20,14 @@
 #define NGX_CMD_REOPEN         5
 
 
+// 非master-worker类型
 #define NGX_PROCESS_SINGLE     0
-// master-worker模式
+// master-worker类型
 #define NGX_PROCESS_MASTER     1
-// 非master-worker模式
+
+// 表示当前进程类型只为发送stop、quit、reopen、reload这四种信号
 #define NGX_PROCESS_SIGNALLER  2
+// 当前进程是woker类型
 #define NGX_PROCESS_WORKER     3
 #define NGX_PROCESS_HELPER     4
 

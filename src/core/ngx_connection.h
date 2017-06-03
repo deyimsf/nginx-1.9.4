@@ -73,27 +73,17 @@ struct ngx_listening_s {
     ngx_uint_t          worker;
 
     /*
-     * 为ngx的热启动而设计
+     * TODO
      *
      * 貌似只有在需要回滚的时候会用到,比如升级失败要回滚
-     *
-     * 0代表可以关闭
-     * 1代表该文件描述符不可关闭
-     *
      * 在/src/core/ngx_cycle.c/ngx_init_cycle方法中会用到
-     *
-     * 其它模块不需要
      */
     unsigned            open:1;
 
     /*
-     * 为ngx的热启动而设计
-     *
-     * 0表示不需要保留当前文件描述,1表示要保留当前文件描述符,不可以close
-     *
+     * 0表示不需要保留当前socket描述符,1表示要保留当前socket描述符,不可以close
      * 在/src/core/ngx_cycle.c/ngx_init_cycle方法中会用到
-     *
-     * 貌似在reload时会用到,其它模块不需要
+     * 只有在reload的时候会用到,用来关闭和新进程不一致的socket监听描述符
      */
     unsigned            remain:1;
     unsigned            ignore:1;
@@ -101,7 +91,7 @@ struct ngx_listening_s {
     unsigned            bound:1;       /* already bound */
     unsigned            inherited:1;   /* inherited from previous process */
     unsigned            nonblocking_accept:1;
-    // 1表示处于监听状态
+    // 1表示该socket描述符处于监听状态,在reload和启动ngx时,ngx会对该标记为1的描述符调用listen函数
     unsigned            listen:1;
     unsigned            nonblocking:1;
     unsigned            shared:1;    /* shared between threads or processes */

@@ -28,7 +28,12 @@ static void ngx_cache_manager_process_handler(ngx_event_t *ev);
 static void ngx_cache_loader_process_handler(ngx_event_t *ev);
 
 
+/*
+ * 代表当前进程类型:
+ *   NGX_PROCESS_SIGNALLER: 表示当前进程只为发送stop、quit、reopen、reload这四种信号
+ */
 ngx_uint_t    ngx_process;
+
 // 当前worker编号
 ngx_uint_t    ngx_worker;
 ngx_pid_t     ngx_pid;
@@ -43,6 +48,7 @@ ngx_uint_t    ngx_exiting;
 sig_atomic_t  ngx_reconfigure;
 sig_atomic_t  ngx_reopen;
 
+// 收到启动二进制升级的信号 TODO
 sig_atomic_t  ngx_change_binary;
 ngx_pid_t     ngx_new_binary;
 ngx_uint_t    ngx_inherited;
@@ -70,6 +76,11 @@ static ngx_log_t        ngx_exit_log;
 static ngx_open_file_t  ngx_exit_log_file;
 
 
+/*
+ * 启动master-worker模式
+ *
+ * master会一直循环阻塞在sigsuspend函数上等待信号
+ */
 void
 ngx_master_process_cycle(ngx_cycle_t *cycle)
 {
@@ -180,6 +191,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_master_process_exit(cycle);
         }
 
+        // 处理stop对应的信号
         if (ngx_terminate) {
             if (delay == 0) {
                 delay = 50;
@@ -202,6 +214,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             continue;
         }
 
+        // 处理quit对应的信号
         if (ngx_quit) {
         	// 向所有worker发送信号
             ngx_signal_worker_processes(cycle,
@@ -220,9 +233,11 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             continue;
         }
 
+        // 收到了reload触发的信号
         if (ngx_reconfigure) {
             ngx_reconfigure = 0;
 
+            // 二进制升级 TODO ?
             if (ngx_new_binary) {
                 ngx_start_worker_processes(cycle, ccf->worker_processes,
                                            NGX_PROCESS_RESPAWN);
@@ -263,6 +278,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             live = 1;
         }
 
+        // 处理reopen对应的信号
         if (ngx_reopen) {
             ngx_reopen = 0;
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "reopening logs");
@@ -271,6 +287,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
                                         ngx_signal_value(NGX_REOPEN_SIGNAL));
         }
 
+        // 二进制升级 TODO
         if (ngx_change_binary) {
             ngx_change_binary = 0;
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "changing binary");
@@ -287,6 +304,9 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 }
 
 
+/*
+ * 单进程模式,非master-worker模式
+ */
 void
 ngx_single_process_cycle(ngx_cycle_t *cycle)
 {
@@ -346,6 +366,9 @@ ngx_single_process_cycle(ngx_cycle_t *cycle)
 }
 
 
+/*
+ * 启动n个woker进程
+ */
 static void
 ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 {
@@ -360,6 +383,9 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 
     for (i = 0; i < n; i++) {
 
+    	/*
+    	 * 真正fork出woker的方法,其中ngx_worker_process_cycle方法是真正循环事件的方法
+    	 */
         ngx_spawn_process(cycle, ngx_worker_process_cycle,
                           (void *) (intptr_t) i, "worker process", type);
 
@@ -732,13 +758,16 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
 }
 
 /**
- * worker工作循环方法 
+ * worker工作循环方法
+ *
+ * 真正干活的函数 
  */
 static void
 ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 {
     ngx_int_t worker = (intptr_t) data;
 
+    // 当前是worker进程
     ngx_process = NGX_PROCESS_WORKER;
     ngx_worker = worker;
 

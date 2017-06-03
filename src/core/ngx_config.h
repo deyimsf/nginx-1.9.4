@@ -57,16 +57,21 @@
 #define ngx_random               random
 
 /* TODO: #ifndef */
+// 对应quit命令参数和 ngx_quit=1全局变量
 #define NGX_SHUTDOWN_SIGNAL      QUIT
+// 对应stop命令参数和 ngx_terminate=1全局变量
 #define NGX_TERMINATE_SIGNAL     TERM
 #define NGX_NOACCEPT_SIGNAL      WINCH
+// 对应reload命令参数和 ngx_reconfigure=1全局变量
 #define NGX_RECONFIGURE_SIGNAL   HUP
 
 #if (NGX_LINUXTHREADS)
 #define NGX_REOPEN_SIGNAL        INFO
 #define NGX_CHANGEBIN_SIGNAL     XCPU
 #else
+// 对应reopen命令参数和 ngx_reopen=1全局变量
 #define NGX_REOPEN_SIGNAL        USR1
+// 用来支持nginx二进制升级
 #define NGX_CHANGEBIN_SIGNAL     USR2
 #endif
 

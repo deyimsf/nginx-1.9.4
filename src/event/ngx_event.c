@@ -1472,6 +1472,7 @@ ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 ecf->use = ngx_modules[m]->ctx_index;
                 ecf->name = module->name->data;
 
+                // TODO 单进程模式
                 if (ngx_process == NGX_PROCESS_SINGLE
                     && old_ecf
                     && old_ecf->use != ecf->use)

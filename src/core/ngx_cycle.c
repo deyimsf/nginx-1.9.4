@@ -36,7 +36,7 @@ static ngx_connection_t  dumb;
 
 
 /**
- * 初始化工作
+ * 初始化工作,ngx启动和reload的时候会调用该方法
  *
  * 1.更新缓存时间
  * 2.创建ngx_cycle_t对象,并初始化一些基本参数
@@ -455,24 +455,33 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
     }
 
+    /*
+     * 判断当前进程存在的目的
+     *
+     * 如果当前进程的启动只是为了发送信号(stop、quit、reopen、reload),则直接返回cycle
+     * 返回后在main主函数中会调用ngx_signal_process发送信号,信号发送完毕后当前进程的使命也就结束了
+     */
     if (ngx_process == NGX_PROCESS_SIGNALLER) {
-    	// 非master-worker模式则直接返回
+
         return cycle;
     }
 
-    // ----------------------多worker模式才会执行下面的代码
+    //-----------nginx第一次启动和reload会走这里---------
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
     if (ngx_test_config) {
 
-    	// 创建pid文件,多worker下各个worker可以通过该文件获取到master的pid
+    	// 测试pid文件,多worker下各个worker可以通过该文件获取到master的pid
         if (ngx_create_pidfile(&ccf->pid, log) != NGX_OK) {
             goto failed;
         }
 
     } else if (!ngx_is_init_cycle(old_cycle)) {
-    	// 如果是ngx第一次启动,则不会进这里,因为第一次启动时穿过来的old_cycle什么也没有
+    	/*
+    	 * 如果是ngx第一次启动,则不会进这里,因为第一次启动时穿过来的old_cycle什么也没有
+    	 * 如果是reload会走这里,这一步骤为了确保生成正确的pid文件
+    	 */
 
         /*
          * we do not create the pid file in the first ngx_init_cycle() call
@@ -484,7 +493,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         if (ccf->pid.len != old_ccf->pid.len
             || ngx_strcmp(ccf->pid.data, old_ccf->pid.data) != 0)
         {
-        	// 如果新进程的pid文件路径个老的进程文件pid不一致,则创建新进程的pid文件,然后删除老的。
+        	// 如果新进程的pid文件路径和老的进程文件pid不一致,则创建新进程的pid文件,然后删除老的。
 
             /* new pid file name */
 
@@ -679,18 +688,26 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     /* handle the listening sockets */
 
     /*
-     * 第一次启动ngx时listening中不会有元素
-     * 下面的remain、open等标记都是为ngx热启动设计的
+     * 第一次启动ngx时listening中不会有元素,所有只有reload时才会走这个逻辑
      *
-     * TODO 后续有精力再看
+     * 该if语句主要工作是把老的cycle中的监听连接赋值给新的监听连接
      */
     if (old_cycle->listening.nelts) {
         ls = old_cycle->listening.elts;
         for (i = 0; i < old_cycle->listening.nelts; i++) {
-        	// 0表示不需要保留当前文件描述,1表示要保留当前文件描述符,不可以close
+        	/*
+        	 * 0表示不需要保留当前文件描述,1表示要保留当前文件描述符
+        	 *
+        	 * 这里暂时把所有老的监听连接设置为不需要保留,下面的循环会和新要打开的连接作比较,
+        	 * 如果一致则将老的赋值给新的,然后remain标记为1,表示保留老的连接,如果不一致则后续
+        	 * 会把老的描述符给关掉。
+        	 */
             ls[i].remain = 0;
         }
 
+        /*
+         * 下面这两层循环主要工作是把老的cycle中的监听连接赋值给新的监听连接,
+         */
         nls = cycle->listening.elts;
         for (n = 0; n < cycle->listening.nelts; n++) {
 
@@ -703,21 +720,39 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                     continue;
                 }
 
+                // 比较新老内核socket地址是否代表的链接相同
                 if (ngx_cmp_sockaddr(nls[n].sockaddr, nls[n].socklen,
                                      ls[i].sockaddr, ls[i].socklen, 1)
                     == NGX_OK)
                 {
                 	/*
-                	 * 如果这老的监听连接描述符的ip和端口号跟新的相同,则直接将老的监听文件描述符
+                	 * 如果这老的监听连接描述符的ip和端口号跟新的要监听的相同,则直接将老的监听文件描述符
                 	 * 赋值给新的监听连接结构体ngx_listening_t
                 	 */
 
                     nls[n].fd = ls[i].fd;
-                    // 指向的是老的ngx_listening_t结构体,没看明白这个是干啥的
+                    // 指向的是老的ngx_listening_t结构体,没看明白这个是干啥的 TODO
                     nls[n].previous = &ls[i];
-                    // 0表示不需要保留当前文件描述,1表示要保留当前文件描述符,不可以close
+                    /*
+                     * 0表示不需要保留当前socket描述符,1表示要保留当前socket描述符,不可以close
+                     * 因为新的进程也用到了这个描述符
+                     */
                     ls[i].remain = 1;
 
+                    /*
+                     * 如果等待队列新老不相等,则新的listen设置为1
+                     *
+                     * 这里把nls[n].listen设置为1的目的是为了让其在ngx_configure_listening_sockets方法中
+                     * 被listen方法调用,从而可以重新设置backlog大小
+                     *
+                     * 因为该socket描述符是从老的进程进程继承过来的,所以nls.fd肯定是有值的,但是在
+                     * 方法ngx_open_listening_sockets中,是不会处理nls.fd有值的描述符的,因为他
+                     * 只用来为全新的socket描述符调用listen方法。
+                     *
+                     * 而ngx_configure_listening_sockets方法会对nls.listen标记为1的描述符再次
+                     * 调用listen方法,所以这里是借用了这个标记来更改backlog大小
+                     *
+                     */
                     if (ls[i].backlog != nls[n].backlog) {
                         nls[n].listen = 1;
                     }
@@ -769,7 +804,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             }
 
             if (nls[n].fd == (ngx_socket_t) -1) {
-            	// 设置标志,升级失败回滚时会用到,表示不可以关闭这个文件描述符
+            	// 设置标志,升级失败回滚时会用到,表示不可以关闭这个文件描述符 TODO
                 nls[n].open = 1;
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
                 if (nls[n].accept_filter) {
@@ -787,7 +822,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     } else {
         ls = cycle->listening.elts;
         for (i = 0; i < cycle->listening.nelts; i++) {
-        	// 将open置为1,表示不可以关闭这个文件描述符,回滚时会用到
+        	// 将open置为1,表示不可以关闭这个文件描述符,回滚时会用到 TODO
             ls[i].open = 1;
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
             if (ls[i].accept_filter) {
@@ -812,6 +847,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         goto failed;
     }
 
+    /*
+     * 通过调用setsockopt方法,为监听连接设置一些参数,比如连接的缓冲区大小等
+     * 对ls.listen标志位为1的描述符调用listen方法(主要是为了改变backlog大小)
+     */
     if (!ngx_test_config) {
         ngx_configure_listening_sockets(cycle);
     }
@@ -819,6 +858,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     /* commit the new cycle configuration */
 
+    // TODO 是否使用了新的错误日志文件 ?
     if (!ngx_use_stderr) {
         (void) ngx_log_redirect_stderr(cycle);
     }
@@ -843,6 +883,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     /* free the unnecessary shared memory */
 
+    /* 清理跟新配置不一致的共享缓存 */
     opart = &old_cycle->shared_memory.part;
     oshm_zone = opart->elts;
 
@@ -893,6 +934,7 @@ old_shm_zone_done:
 
     /* close the unnecessary listening sockets */
 
+	/* 关闭和新配置不一致的socket描述符 */
     ls = old_cycle->listening.elts;
     for (i = 0; i < old_cycle->listening.nelts; i++) {
 
@@ -927,7 +969,7 @@ old_shm_zone_done:
 
 
     /* close the unnecessary open files */
-
+    /* 关闭不需要的文件,关闭老的文件描述符,新的已经重新打开了 */
     part = &old_cycle->open_files.part;
     file = part->elts;
 
@@ -956,6 +998,7 @@ old_shm_zone_done:
     ngx_destroy_pool(conf.temp_pool);
 
     if (ngx_process == NGX_PROCESS_MASTER || ngx_is_init_cycle(old_cycle)) {
+    	// TODO
 
         /*
          * perl_destruct() frees environ, if it is not the same as it was at
@@ -1430,6 +1473,10 @@ ngx_reopen_files(ngx_cycle_t *cycle, ngx_uid_t user)
 }
 
 
+/*
+ * 向cycle->shared_memory中添加共享内存
+ *
+ */
 ngx_shm_zone_t *
 ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)
 {

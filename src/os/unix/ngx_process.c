@@ -12,9 +12,13 @@
 
 
 typedef struct {
+	// 系统信号值
     int     signo;
+    // 字符形式系统信号,如SIGHUP
     char   *signame;
+    // nginx命令参数名字,如reload
     char   *name;
+    // 处理信号的方法
     void  (*handler)(int signo);
 } ngx_signal_t;
 
@@ -77,19 +81,40 @@ ngx_signal_t  signals[] = {
       "",
       ngx_signal_handler },
 
-    { SIGALRM, "SIGALRM", "", ngx_signal_handler },
+    { SIGALRM,
+      "SIGALRM",
+	  "",
+	  ngx_signal_handler },
 
-    { SIGINT, "SIGINT", "", ngx_signal_handler },
+    { SIGINT,
+      "SIGINT",
+	  "",
+	  ngx_signal_handler },
 
-    { SIGIO, "SIGIO", "", ngx_signal_handler },
+    { SIGIO,
+      "SIGIO",
+	  "",
+	  ngx_signal_handler },
 
-    { SIGCHLD, "SIGCHLD", "", ngx_signal_handler },
+    { SIGCHLD,
+      "SIGCHLD",
+	  "",
+	  ngx_signal_handler },
 
-    { SIGSYS, "SIGSYS, SIG_IGN", "", SIG_IGN },
+    { SIGSYS,
+      "SIGSYS, SIG_IGN",
+	  "",
+	  SIG_IGN },
 
-    { SIGPIPE, "SIGPIPE, SIG_IGN", "", SIG_IGN },
+    { SIGPIPE,
+      "SIGPIPE, SIG_IGN",
+	  "",
+	  SIG_IGN },
 
-    { 0, NULL, "", NULL }
+    { 0,
+      NULL,
+	  "",
+	  NULL }
 };
 
 
@@ -296,9 +321,14 @@ ngx_execute_proc(ngx_cycle_t *cycle, void *data)
 
 
 /*
- * 为当前进程绑定内置的信号函数
+ * 为master进程绑定signals[]数组中定义的信号
+ * 其中有四种信号,对应了ngx中的四个参数命令
+ * 	reload:SIGHUP
+ * 	reopen:SIGUSR1
+ * 	stop:SIGTERM
+ *	quit:SIGQUIT
  *
- * 需要绑定的信号,和信号关联的方法,都放在了signals[]数组中
+ * 调用系统函数sigaction
  */
 ngx_int_t
 ngx_init_signals(ngx_log_t *log)
@@ -350,6 +380,7 @@ ngx_signal_handler(int signo)
 
     switch (ngx_process) {
 
+    // 当前进程是master-worker类型和非master-worker类型都走下面的逻辑
     case NGX_PROCESS_MASTER:
     case NGX_PROCESS_SINGLE:
         switch (signo) {
@@ -397,6 +428,7 @@ ngx_signal_handler(int signo)
                 break;
             }
 
+        	// 收到启动二级制升级的信号 TODO
             ngx_change_binary = 1;
             action = ", changing binary";
             break;
@@ -416,6 +448,7 @@ ngx_signal_handler(int signo)
 
         break;
 
+    // 当前进程时worker进程
     case NGX_PROCESS_WORKER:
     case NGX_PROCESS_HELPER:
         switch (signo) {
