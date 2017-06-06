@@ -119,7 +119,7 @@ ngx_signal_t  signals[] = {
 
 
 /**
- * fork出worker进程
+ * fork出一个worker进程
  */
 ngx_pid_t
 ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
@@ -134,6 +134,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
 
     } else {
         for (s = 0; s < ngx_last_process; s++) {
+        	// 寻找一个空闲的下标
             if (ngx_processes[s].pid == -1) {
                 break;
             }
@@ -152,6 +153,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
 
         /* Solaris 9 still has no AF_LOCAL */
 
+    	// 创建一个unix套接字,用来通信; 创建失败后用信号? TODO
         if (socketpair(AF_UNIX, SOCK_STREAM, 0, ngx_processes[s].channel) == -1)
         {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,

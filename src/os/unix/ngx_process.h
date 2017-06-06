@@ -29,9 +29,16 @@ typedef struct {
     char               *name;
 
     unsigned            respawn:1;
+
+    /*
+     * 1表示进程是刚fork出来的(比如reload的时候)ngx_start_worker_processes方法
+     * 不会向该标志位为1的进程发送reload信号,判断完该标志位后就会将它置为0
+     */
     unsigned            just_spawn:1;
     unsigned            detached:1;
+    // 1表示进程正在退出;
     unsigned            exiting:1;
+    // 1表示进程已经退出;0进程没有退出
     unsigned            exited:1;
 } ngx_process_t;
 

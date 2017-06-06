@@ -18,6 +18,8 @@ typedef int               ngx_err_t;
 #define NGX_EPERM         EPERM
 #define NGX_ENOENT        ENOENT
 #define NGX_ENOPATH       ENOENT
+
+// No such process
 #define NGX_ESRCH         ESRCH
 
 /**

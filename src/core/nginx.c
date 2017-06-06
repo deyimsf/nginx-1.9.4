@@ -11,15 +11,11 @@
  * 如:NGX_CORE_MODULE(核心模块)、NGX_HTTP_MODULE(http模块).
  *
  * 每种模块类型都可以定义他自己的一些行为规范,比如核心模块使用ngx_core_module_t
- * 结构体来制定所以核心模块需要遵守的规则;http模块使用ngx_http_module_t结构图体
+ * 结构体来制定所以核心模块需要遵守的规则;http模块使用ngx_http_module_t结构体
  * 来指定所有http模块需要遵守的规则;
  *
  * 非要和面向对象语言对比的话,ngx_moudle_t像是超级抽象类,ngx_core_module_t、ngx_http_module_t等
  * 就想是继承了超类的子类.
- *
- *
- *
- *
  *
  */
 
@@ -516,15 +512,21 @@ main(int argc, char *const *argv)
 
 #endif
 
+    // 创建用于存放主进程pid的文件,并把ngx_pid放入该文件
     if (ngx_create_pidfile(&ccf->pid, cycle->log) != NGX_OK) {
         return 1;
     }
 
+    // 将标准错误输出定位到log指定的文件描述符中
     if (ngx_log_redirect_stderr(cycle) != NGX_OK) {
         return 1;
     }
 
     if (log->file->fd != ngx_stderr) {
+    	/*
+    	 * 因为已经把标准错误文件描述符定位到fd代表的error.log文件了,所有这个fd就没有了
+    	 * 想输出错误信息到error.log文件,则直接用标准错误文件描述符就可以了
+    	 */
         if (ngx_close_file(log->file->fd) == NGX_FILE_ERROR) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           ngx_close_file_n " built-in log failed");

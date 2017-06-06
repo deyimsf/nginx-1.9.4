@@ -438,6 +438,9 @@ ngx_log_open_default(ngx_cycle_t *cycle)
 }
 
 
+/*
+ * 将标准错误输出定位到log指定的文件描述符中
+ */
 ngx_int_t
 ngx_log_redirect_stderr(ngx_cycle_t *cycle)
 {
@@ -448,10 +451,12 @@ ngx_log_redirect_stderr(ngx_cycle_t *cycle)
     }
 
     /* file log always exists when we are called */
+    // 获取/export/servers/nginx/logs/error.log文件的描述符
     fd = ngx_log_get_file_log(cycle->log)->file->fd;
 
     if (fd != ngx_stderr) {
-        if (ngx_set_stderr(fd) == NGX_FILE_ERROR) {
+        // 调用dup2方法,将标准错误输出描述符定位到fd这个文件描述符中
+    	if (ngx_set_stderr(fd) == NGX_FILE_ERROR) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           ngx_set_stderr_n " failed");
 
