@@ -21,6 +21,7 @@ ngx_write_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size,
 
 #if (NGX_HAVE_MSGHDR_MSG_CONTROL)
 
+    // msghdr结构体的辅助消息
     union {
         struct cmsghdr  cm;
         char            space[CMSG_SPACE(sizeof(int))];
@@ -37,7 +38,9 @@ ngx_write_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size,
         ngx_memzero(&cmsg, sizeof(cmsg));
 
         cmsg.cm.cmsg_len = CMSG_LEN(sizeof(int));
+        // 协议级别
         cmsg.cm.cmsg_level = SOL_SOCKET;
+        // 附属数据对象是一个文件描述符(文件指针)
         cmsg.cm.cmsg_type = SCM_RIGHTS;
 
         /*
@@ -92,6 +95,9 @@ ngx_write_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size,
 }
 
 
+/**
+ * 从通道读取消息
+ */
 ngx_int_t
 ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
 {
@@ -121,10 +127,12 @@ ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
     msg.msg_control = (caddr_t) &cmsg;
     msg.msg_controllen = sizeof(cmsg);
 #else
+    // 兼容老的msg结构体
     msg.msg_accrights = (caddr_t) &fd;
     msg.msg_accrightslen = sizeof(int);
 #endif
 
+    // 执行完毕该方法后cmsg.cm中的数据区域(cmsg_data[])就变成了本地文件描述符,但是和发送方指向的是同一个文件
     n = recvmsg(s, &msg, 0);
 
     if (n == -1) {
@@ -152,6 +160,8 @@ ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
 
     if (ch->command == NGX_CMD_OPEN_CHANNEL) {
 
+    	/* 各种检查 */
+
         if (cmsg.cm.cmsg_len < (socklen_t) CMSG_LEN(sizeof(int))) {
             ngx_log_error(NGX_LOG_ALERT, log, 0,
                           "recvmsg() returned too small ancillary data");
@@ -169,6 +179,7 @@ ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
 
         /* ch->fd = *(int *) CMSG_DATA(&cmsg.cm); */
 
+        // 将发送方的fd代表的文件描述符赋值给ch->fd
         ngx_memcpy(&ch->fd, CMSG_DATA(&cmsg.cm), sizeof(int));
     }
 

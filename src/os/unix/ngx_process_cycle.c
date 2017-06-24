@@ -100,7 +100,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     // 清空信号集合
     sigemptyset(&set);
 
-    // 添加一个信号signo到信号集合set中
+    // 添加信号signo到信号集合set中
     sigaddset(&set, SIGCHLD);
     sigaddset(&set, SIGALRM);
     sigaddset(&set, SIGIO);
@@ -141,15 +141,22 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         p = ngx_cpystrn(p, (u_char *) ngx_argv[i], size);
     }
 
-    // TODO 干啥的
+    // 设置进程名字(比如所有nginx进程名字都加上nginx: 前缀)
     ngx_setproctitle(title);
 
 
+    // 核心模块(ngx_core_module)的配置信息结构体
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
-    // 启动ccf->worker_processes个worker进程
+    /*
+     * 这个方法用来启动worker进程
+     *
+     * 启动ccf->worker_processes个worker进程
+     */
     ngx_start_worker_processes(cycle, ccf->worker_processes,
                                NGX_PROCESS_RESPAWN);
+
+    // 启动cache进程(如果配置了cache指令)
     ngx_start_cache_manager_processes(cycle, 0);
 
     ngx_new_binary = 0;
@@ -393,6 +400,9 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 
     ngx_memzero(&ch, sizeof(ngx_channel_t));
 
+    /*
+     * 设置通道(channel)携带的命令
+     */
     ch.command = NGX_CMD_OPEN_CHANNEL;
 
     for (i = 0; i < n; i++) {
@@ -403,11 +413,17 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
         ngx_spawn_process(cycle, ngx_worker_process_cycle,
                           (void *) (intptr_t) i, "worker process", type);
 
-        // 隧道是干啥用的 TODO
+        // 刚生成的worker的进程id
         ch.pid = ngx_processes[ngx_process_slot].pid;
+        // 刚生成的woker进程在ngx_processes中的位置
         ch.slot = ngx_process_slot;
+        // 主进程中用来和刚生成worker进程通信的fd
         ch.fd = ngx_processes[ngx_process_slot].channel[0];
 
+        /*
+         * 向ngx_process_slot之前刚生成的worker发送一个NGX_CMD_OPEN_CHANNEL命令
+         * 用来把刚生成的worker进程的pid和主进程通信的描述符填充到前面生成的子进程中ngx_processes[]数组中
+         */
         ngx_pass_open_channel(cycle, &ch);
     }
 }
@@ -469,6 +485,11 @@ ngx_start_cache_manager_processes(ngx_cycle_t *cycle, ngx_uint_t respawn)
 }
 
 
+/*
+ * 向所有之前生成的worker发送NGX_CMD_OPEN_CHANNEL命令
+ * 主要是用来回填ngx_processes[]数组元素的pid和channel[0]
+ *
+ */
 static void
 ngx_pass_open_channel(ngx_cycle_t *cycle, ngx_channel_t *ch)
 {
@@ -491,6 +512,7 @@ ngx_pass_open_channel(ngx_cycle_t *cycle, ngx_channel_t *ch)
 
         /* TODO: NGX_AGAIN */
 
+        // 向通道写命令
         ngx_write_channel(ngx_processes[i].channel[0],
                           ch, sizeof(ngx_channel_t), cycle->log);
     }
@@ -499,6 +521,8 @@ ngx_pass_open_channel(ngx_cycle_t *cycle, ngx_channel_t *ch)
 
 /**
  * 向所有worker发送信号
+ *
+ * 先用通道发信息,如果隧道发送失败再用kill发信号
  *
  */
 static void
@@ -567,7 +591,11 @@ ngx_signal_worker_processes(ngx_cycle_t *cycle, int signo)
         }
 
         if (ch.command) {
-        	// TODO 似乎使用的这个来关闭的worker,优先使用套接字来传递信息？
+        	/*
+        	 * 使用通道发送命令
+        	 * NGX_CMD_QUIT|NGX_CMD_TERMINATE|NGX_CMD_REOPEN这三种命令使用通道向子进程发送
+        	 * 其它则使用信号向子进程发送
+        	 */
             if (ngx_write_channel(ngx_processes[i].channel[0],
                                   &ch, sizeof(ngx_channel_t), cycle->log)
                 == NGX_OK)
@@ -789,10 +817,13 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     ngx_process = NGX_PROCESS_WORKER;
     ngx_worker = worker;
 
+    // 初始化worker
     ngx_worker_process_init(cycle, worker);
 
+    // 设置worker进程名字(标题)
     ngx_setproctitle("worker process");
 
+    // 主循环处理事件
     for ( ;; ) {
 
         if (ngx_exiting) {
@@ -808,6 +839,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "worker cycle");
 
+        // 处理各种事件
         ngx_process_events_and_timers(cycle);
 
         if (ngx_terminate) {
@@ -838,6 +870,13 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 }
 
 
+/*
+ * 1.设置指令值
+ *   cpu亲和性等
+ * 2.调用初始化方法
+ * 	 ngx_modules[i]->init_process(cycle)
+ * 3.关闭其它worker的ngx_processes[n].channel[1]描述符
+ */
 static void
 ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
 {
@@ -980,12 +1019,14 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
             continue;
         }
 
+        // 关闭其它worker的channel[1]文件描述符,因为当前worker不会接收主进程发给其它worker的信息
         if (close(ngx_processes[n].channel[1]) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "close() channel failed");
         }
     }
 
+    // 关闭当前worker的channel[0],因为channel[0]代表主进程的文件描述符,没有操作的意义
     if (close(ngx_processes[ngx_process_slot].channel[0]) == -1) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "close() channel failed");
@@ -994,6 +1035,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
 #if 0
     ngx_last_process = 0;
 #endif
+
 
     if (ngx_add_channel_event(cycle, ngx_channel, NGX_READ_EVENT,
                               ngx_channel_handler)
@@ -1131,7 +1173,21 @@ ngx_channel_handler(ngx_event_t *ev)
                            "get channel s:%i pid:%P fd:%d",
                            ch.slot, ch.pid, ch.fd);
 
+            /*
+             * 发送方发过来的新生成的worekr的pid,这个pid用来填充ch.slot位置的进程id号
+             *
+             * 当第一个worekr创建完成之后,ngx_processes[0]会保存第一个worker的相关信息(比如channel[])
+             *
+             * 当第二个worker创建成功后,因为子进程会继承父进程的信息,所以第二个worker中也会保存第一个worekr的信息,
+             * 但是此时因为第一个worker已经创建完毕了,所以就需要把第二个worker的信息回填到第一个worker的ngx_processes[]
+             * 数组中,下面的两行代码就是在做回填操作,其中slot是第二个worker在ngx_processes[]数组中的位置,pid是
+             * 第二个worker的进程id号,fd表示主进程用来和第二个worker通信的文件描述符(和主进程的fd值不一定相同,但都代表同一个文件)。
+             *
+             */
             ngx_processes[ch.slot].pid = ch.pid;
+            /*
+			 * 主进程用来和slot位置的子进程通信的文件描述符(和主进程的fd值不一定相同,但都代表同一个文件)
+             */
             ngx_processes[ch.slot].channel[0] = ch.fd;
             break;
 

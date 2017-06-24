@@ -14,10 +14,21 @@
 #include <ngx_event.h>
 
 
+/*
+ * 主进程和子进程通信的一个结构体
+ */
 typedef struct {
+	 // 携带的命令
      ngx_uint_t  command;
+     // 对端进程id
      ngx_pid_t   pid;
+     // 对端进程在ngx_processes中的位置
      ngx_int_t   slot;
+     /*
+      * 用来和对端通信的文件描述符
+      * 主进程向channel[0]中写
+      * 子进程向channel[1]中读
+      */
      ngx_fd_t    fd;
 } ngx_channel_t;
 

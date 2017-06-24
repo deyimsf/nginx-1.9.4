@@ -46,6 +46,7 @@ ngx_os_init(ngx_log_t *log)
     }
 #endif
 
+    // 为修改进程名字做一些初始化工作
     if (ngx_init_setproctitle(log) != NGX_OK) {
         return NGX_ERROR;
     }

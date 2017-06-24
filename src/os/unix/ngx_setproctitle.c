@@ -31,6 +31,12 @@ extern char **environ;
 
 static char *ngx_os_argv_last;
 
+/*
+ * 为修改进程名字做一些初始化工作
+ *
+ * 1.拷贝一份environ变量,并将environ中的指针指向新拷贝的内容(如果argv和environ内存连续存放)
+ * 2.ngx_os_argv_last指向argv或者environ的最后一个有效字符的后面(也就是不包含最后的NULL)
+ */
 ngx_int_t
 ngx_init_setproctitle(ngx_log_t *log)
 {
@@ -40,15 +46,20 @@ ngx_init_setproctitle(ngx_log_t *log)
 
     size = 0;
 
+    // 计算当前进程存放环境变量需要的内存大小
     for (i = 0; environ[i]; i++) {
         size += ngx_strlen(environ[i]) + 1;
     }
 
+    // 创建的内存用来存储环境变量
     p = ngx_alloc(size, log);
     if (p == NULL) {
         return NGX_ERROR;
     }
 
+    /*
+     * ngx_os_argv_last最终会指向argv或者environ的最后一个有效字符的后面
+     */
     ngx_os_argv_last = ngx_os_argv[0];
 
     for (i = 0; ngx_os_argv[i]; i++) {
@@ -57,7 +68,15 @@ ngx_init_setproctitle(ngx_log_t *log)
         }
     }
 
+    /*
+     * 如果可以完全确认argv和environ内存是连续的,则上面的循环就是多余的。
+     *
+     * 如果argv和environ不是连续存放的,则下面这个for循环中的if语句可以确保,
+     * ngx_os_argv_last不会指向非法的地址。
+     */
     for (i = 0; environ[i]; i++) {
+
+    	// 如果不相等则说明argv和environ没有存放在连续的空间中
         if (ngx_os_argv_last == environ[i]) {
 
             size = ngx_strlen(environ[i]) + 1;
@@ -69,12 +88,19 @@ ngx_init_setproctitle(ngx_log_t *log)
         }
     }
 
+    /*
+     * 指向argv或者environ的最后一个有效字符的后面,这里 -- 是为了去掉NULL
+     * 因为不管是argv还是environ最后都是NULL
+     */
     ngx_os_argv_last--;
 
     return NGX_OK;
 }
 
 
+/*
+ * 设置当前进程的名字
+ */
 void
 ngx_setproctitle(char *title)
 {
@@ -87,8 +113,13 @@ ngx_setproctitle(char *title)
 
 #endif
 
+    // TODO 感觉没必要呢? 什么特殊操作系统需要将argv[1]设置为NULL
     ngx_os_argv[1] = NULL;
 
+    /*
+     * 为进程名字加上nginx: 前缀
+     * 在该方法中,如果在第二参数中遇到'\0'则结束拷贝
+     */
     p = ngx_cpystrn((u_char *) ngx_os_argv[0], (u_char *) "nginx: ",
                     ngx_os_argv_last - ngx_os_argv[0]);
 
@@ -124,6 +155,7 @@ ngx_setproctitle(char *title)
 
 #endif
 
+    // 剩下的内存清空(都设置为'\0')
     if (ngx_os_argv_last - (char *) p) {
         ngx_memset(p, NGX_SETPROCTITLE_PAD, ngx_os_argv_last - (char *) p);
     }

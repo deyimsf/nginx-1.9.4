@@ -20,14 +20,38 @@ typedef pid_t       ngx_pid_t;
 typedef void (*ngx_spawn_proc_pt) (ngx_cycle_t *cycle, void *data);
 
 typedef struct {
+	// 进程id
     ngx_pid_t           pid;
     int                 status;
+    /*
+     * 主进程和子进程通信所用的通道
+     * 	channel[0]主进程中文件描述符
+     * 	channel[1]子进程中文件描述符
+     *
+     * 对于在ngx_processes[]数组中位置相同的元素,不关它处于哪个worekr进程中,他们代表的
+     * worker是相同的,比如woker0中的ngx_processes[5]和worker2中的ngx_processes[5]
+     * 都代表worker5,他们的pid都是相同的,但是channel[0]的值不一定相同。
+     *
+     * 上面说到,channel[0]是主进程中的文件描述符,更准确的描述应该是主进程描述符指向的那个"文件"(文件指针)
+     * 主进程在创建完子进程后,后续主进程创建的文件描述符子进程是感知不到的,为了让子进程能够感知到
+     * 父进程创建的"文件",ngx利用匿名Unix域套接字来实现(即socketpair()和sendmsg/recvmsg),主进程的文件
+     * 指针向子进程的传递,比如在主进程中fd等于5,而到子进程中fd可能就等于6,但是他们指向同一个"文件"。
+     */
     ngx_socket_t        channel[2];
 
+    /*
+     * worker工作循环方法
+     * ngx_worker_process_cycle
+     */
     ngx_spawn_proc_pt   proc;
+
+    // 进程编号?
     void               *data;
+
+    // 子进程名字
     char               *name;
 
+    // 在主进程的ngx_processes数组中该变量都是1 TODO
     unsigned            respawn:1;
 
     /*
@@ -57,6 +81,8 @@ typedef struct {
 #define NGX_PROCESS_JUST_SPAWN    -2
 #define NGX_PROCESS_RESPAWN       -3
 #define NGX_PROCESS_JUST_RESPAWN  -4
+
+// 二进制升级用? TODO
 #define NGX_PROCESS_DETACHED      -5
 
 

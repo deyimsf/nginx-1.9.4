@@ -32,11 +32,14 @@ static void ngx_unlock_mutexes(ngx_pid_t pid);
 
 // 下面这三个变量用于存储启动nginx时候的入参值
 int              ngx_argc;
+// 入参argv内容的一份拷贝
 char           **ngx_argv;
+// 指向入参argv,其中ngx_os_argv[0]指向的内容会被改成nginx自定义的进程名字
 char           **ngx_os_argv;
 
-// 当前操作的进程在ngx_processes数组中的下标
+// 存放正在生成worker进程在ngx_processes数组中的下标
 ngx_int_t        ngx_process_slot;
+// 和主进程通信的文件描述符
 ngx_socket_t     ngx_channel;
 // ngx_processes中有意义的ngx_process_t的最大下标
 ngx_int_t        ngx_last_process;
@@ -134,7 +137,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
 
     } else {
         for (s = 0; s < ngx_last_process; s++) {
-        	// 寻找一个空闲的下标
+        	// 寻找一个空闲的下标来存放要创建的子woker
             if (ngx_processes[s].pid == -1) {
                 break;
             }
@@ -153,7 +156,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
 
         /* Solaris 9 still has no AF_LOCAL */
 
-    	// 创建一个unix套接字,用来通信; 创建失败后用信号? TODO
+    	// 创建一对unix套接字,用来通信
         if (socketpair(AF_UNIX, SOCK_STREAM, 0, ngx_processes[s].channel) == -1)
         {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
@@ -166,6 +169,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
                        ngx_processes[s].channel[0],
                        ngx_processes[s].channel[1]);
 
+        // 主进程用的channel设置成非阻塞
         if (ngx_nonblocking(ngx_processes[s].channel[0]) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           ngx_nonblocking_n " failed while spawning \"%s\"",
@@ -174,6 +178,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
             return NGX_INVALID_PID;
         }
 
+        // worker进程用到的channel设置成非阻塞
         if (ngx_nonblocking(ngx_processes[s].channel[1]) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           ngx_nonblocking_n " failed while spawning \"%s\"",
@@ -213,6 +218,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
             return NGX_INVALID_PID;
         }
 
+        // 和主进程通信的文件描述符
         ngx_channel = ngx_processes[s].channel[1];
 
     } else {
@@ -220,6 +226,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
         ngx_processes[s].channel[1] = -1;
     }
 
+    // 一个全局变量,存放正在生成的worker在ngx_processes中的下标
     ngx_process_slot = s;
 
 

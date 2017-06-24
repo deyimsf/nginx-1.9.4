@@ -196,7 +196,7 @@ static u_char      *ngx_conf_params;
 // 存储命令参数如reload、stop等
 static char        *ngx_signal;
 
-
+// 环境变量,指向environ(内置全局环境变量)
 static char **ngx_os_environ;
 
 
@@ -457,7 +457,7 @@ main(int argc, char *const *argv)
     	 *
     	 * 发送完信号之后该进程就退出了,前面一系列操作的意义就是验证配置的正确性,如果不正确就不应该发信息号。
     	 *
-    	 * 信号有主进程的/src/os/unix/ngx_process_cycle.c/ngx_master_process_cycle方法负责处理(master-worker模式)
+    	 * 信号有主进程的/src/os/unix/ngx_process_cycle.c/ngx_master_process_cycle方法接收处理(master-worker模式)
     	 */
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -471,7 +471,7 @@ main(int argc, char *const *argv)
 
     /*
      * TODO 为啥在这里比较ngx_process
-     * 疑问:在什么情况下ccf->master == 1 但是 ngx_process != NGX_PROCESS_SINGLE
+     * 疑问:在什么情况下ccf->master == 1 并且 ngx_process != NGX_PROCESS_SINGLE
      */
     if (ccf->master && ngx_process == NGX_PROCESS_SINGLE) {
         ngx_process = NGX_PROCESS_MASTER;
@@ -524,7 +524,7 @@ main(int argc, char *const *argv)
 
     if (log->file->fd != ngx_stderr) {
     	/*
-    	 * 因为已经把标准错误文件描述符定位到fd代表的error.log文件了,所有这个fd就没有了
+    	 * 因为已经把标准错误文件描述符定位到fd代表的error.log文件了,所以这个fd就没有了
     	 * 想输出错误信息到error.log文件,则直接用标准错误文件描述符就可以了
     	 */
         if (ngx_close_file(log->file->fd) == NGX_FILE_ERROR) {
@@ -991,10 +991,12 @@ ngx_save_argv(ngx_cycle_t *cycle, int argc, char *const *argv)
         (void) ngx_cpystrn((u_char *) ngx_argv[i], (u_char *) argv[i], len);
     }
 
+    // 入参argv最后一个值是NULL
     ngx_argv[i] = NULL;
 
 #endif
 
+    // 环境变量最后一个值也是NULL
     ngx_os_environ = environ;
 
     return NGX_OK;

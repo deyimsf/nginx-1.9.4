@@ -29,6 +29,13 @@ ngx_strlow(u_char *dst, u_char *src, size_t n)
 }
 
 
+/*
+ * 将src拷贝到dst中,最多拷贝n个字符
+ *
+ * 如果src遇到'\0'字符,则提前结束拷贝
+ *
+ * 拷贝截结束后dst最后一个字符一定是'\0'
+ */
 u_char *
 ngx_cpystrn(u_char *dst, u_char *src, size_t n)
 {
