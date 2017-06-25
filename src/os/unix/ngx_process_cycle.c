@@ -803,9 +803,9 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
     exit(0);
 }
 
-/**
+/*
+ * 刚fork出子进程后,在子进程中执行该方法
  * worker工作循环方法
- *
  * 真正干活的函数 
  */
 static void

@@ -41,7 +41,7 @@ char           **ngx_os_argv;
 ngx_int_t        ngx_process_slot;
 // 和主进程通信的文件描述符
 ngx_socket_t     ngx_channel;
-// ngx_processes中有意义的ngx_process_t的最大下标
+// ngx_processes中有意义的ngx_process_t的最大下标的下一个
 ngx_int_t        ngx_last_process;
 // 存储所有子进程
 ngx_process_t    ngx_processes[NGX_MAX_PROCESSES];
@@ -49,7 +49,7 @@ ngx_process_t    ngx_processes[NGX_MAX_PROCESSES];
 
 /**
  * 对操作系统信号的映射
- * ngx_signal_value方法用户获取操作系统的信号值
+ * ngx_signal_value方法用来获取操作系统的信号值
  *
  * 比如该方法可以返回 信号SIGHUP代表的值
  */

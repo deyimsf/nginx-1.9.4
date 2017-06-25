@@ -14,9 +14,77 @@
 #include <ngx_http.h>
 
 
+/*
+ * 用来存储核心http模块配置信息的结构体。
+ *
+ * 该结构体算是核心http模块的主配置结构体,但是http核心模块也用到了该结构体来关联各个http模块,但它
+ * 不是http核心模块的主配置信息结构体,http核心模块的主配置信息结构体有三个,是ngx_http_core_main|srv|loc_conf_t。
+ *
+ * 有三个地方用到了该结构体
+ * 1.核心http模块(ngx_http_module)在遇到http{}指令后,会创建ngx_http_conf_ctx_t结构体,
+ *   所以一个http{}区域对应一个ngx_http_conf_ctx_t结构体。
+ *
+ *   http指令对应的方法是/src/http/ngx_http.c/ngx_http_block()
+ *
+ * 	 cycle->conf_ctx
+ *   -----
+ *	 | * |
+ *	 -----
+ *	  \            ngx_http_module.index
+ *	   -----------------
+ *	   | * | * | * | * |
+ *     -----------------
+ *    				 \
+ *    			     -----------------------
+ *    			     | ngx_http_conf_ctx_t |
+ *			         -----------------------
+ *
+ *
+ * 2.http核心模块(ngx_http_core_module)在遇到server指令后会创建ngx_http_conf_ctx_t结构体,
+ *   同http{}区域一样,一个server{}区域也会对应一个ngx_http_conf_ctx_t结构体,不同的是可以有多个
+ *   server{}区域,所以在server这一层有多少个server{}块就有多少个ngx_http_conf_ctx_t结构体。
+ *
+ *	 server指令对应的方法是/src/http/ngx_http_core_module.c/ngx_http_core_server()
+ *	 TODO 内存结构图
+ *
+ *
+ * 3.http核心模块(ngx_http_core_module)在遇到location指令后会创建ngx_http_conf_ctx_t结构体,
+ *   有多少个location{}区域就会创建多少个ngx_http_conf_ctx_t结构体。
+ *
+ *   location指令对应的方法是/src/http/ngx_http_core_module.c/ngx_http_core_location()
+ *	 TODO 内存结构图
+ *
+ *
+ * http核心模块(ngx_http_core_module)本身使用ngx_http_core_main_conf_t、ngx_http_core_srv_conf_t
+ * 、ngx_http_core_loc_conf_t这个三个配置信息结构体来关联各个http模块的配置信息结构体,因为会有多个server{}
+ * 和location{},所以也会有多个ngx_http_core_srv|loc_conf_t结构体。
+ *
+ */
 typedef struct {
+
+	/*
+	 * 存储http模块在http{}区域的配置信息
+	 *
+	 *  main_conf
+	 *   -----
+	 *   | * |
+	 *   -----
+	 *   \
+	 *    -----------------
+	 *    | * | * | * | 各个http模块的位置
+	 *    -----------------
+	 *
+	 */
     void        **main_conf;
+
+    /*
+     * 存储http模块在server{}区域的配置信息
+     */
     void        **srv_conf;
+
+    /*
+     * 存储http模块在location{}区域的配置信息
+     */
     void        **loc_conf;
 } ngx_http_conf_ctx_t;
 

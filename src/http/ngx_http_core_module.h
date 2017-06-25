@@ -198,6 +198,7 @@ typedef struct {
     /* server ctx */
     // 主要用来存储所有http模块，在server{}块的配置项结构体(各个自定义模块的srv_conf和loc_conf结构体)
     // 当然包括核心http模块的ngx_http_core_srv|loc_conf结构体
+    // 用到了 **srv_conf和**loc_conf
     ngx_http_conf_ctx_t        *ctx;
 
     ngx_str_t                   server_name;
@@ -219,6 +220,21 @@ typedef struct {
     unsigned                    captures:1;
 #endif
 
+    /*
+     * 关联当前server{}块下的所有http模块的location{}块
+     * named_locations
+     * -----
+     * | * |
+     * -----
+     *  \
+     *   -------------------------------------------
+     *   |   *    |          ...        |     *    | 所有http模块的位置
+     *   -------------------------------------------
+     *     \								\
+     *   --------------------------		 ---------------------------
+     *   |ngx_http_core_loc_conf_t|      |ngx_http_hello_loc_conf_t|
+     *   --------------------------	     ---------------------------
+     */
     ngx_http_core_loc_conf_t  **named_locations;
 } ngx_http_core_srv_conf_t;
 

@@ -17,6 +17,28 @@
  * 非要和面向对象语言对比的话,ngx_moudle_t像是超级抽象类,ngx_core_module_t、ngx_http_module_t等
  * 就想是继承了超类的子类.
  *
+ *
+ * ngx中每个模块都有一个结构体,这个结构体用来保存该模块的一些配置信息,我们管他叫做配置信息结构体,
+ * 具体每个模块需要创建多少个配置信息结构体则由他们的管理模块来决定。
+ * 	 核心主模块(ngx_core_module)只需要一个ngx_core_conf_t配置信息结构体
+ *
+ *	 事件核心模块(ngx_event_core_module)只需要一个ngx_event_conf_t配置信息结构体
+ *
+ *	 核心http模块(ngx_http_module)需要一个ngx_http_conf_ctx_t结构体
+ *
+ *	 http核心模块(ngx_http_core_module)多个ngx_http_conf_ctx_t结构体,具体多少个取决于
+ *	 有多少个server{}指令块和多少个location{}指令块
+ *
+ *	 在核心http模块(ngx_http_module)的ngx_http_block方法中,会调用所有http模块的
+ *	 create_main_conf、create_srv_conf、create_loc_conf这三个方法。
+ *	 在http核心模块(ngx_http_core_module)的ngx_http_core_server方法中,会再次调用所有http模块的
+ *	 create_srv_conf、create_loc_conf这两个方法。
+ *   在http核心模块(ngx_http_core_module)的ngx_http_core_location方法中,会再次调用所有http模块
+ *   的create_loc_conf方法。
+ *
+ *
+ *
+ *
  */
 
 

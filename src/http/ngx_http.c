@@ -115,10 +115,31 @@ ngx_module_t  ngx_http_module = {
     NGX_MODULE_V1_PADDING
 };
 
+
 /*
- * 该指令方法有/src/core/ngx_conf_file.c/ngx_conf_handler方法负责调用
+ * 指令http对应的方法,整个http模块的入口,用来管理所有的http模块
  *
- * cf->ctx: cycle->conf_ctx
+ * 调用该方法之前conf_ctx的内存分配到了第二层
+ *
+ * cf的值最初是由ngx_init_cycle()方法调用ngx_conf_parse()方法传过来的,cf内容如下：
+ * 	 cf->ctx: cycle->conf_ctx
+ *	 cf->module_type = NGX_CORE_MODULE
+ *	 cf->cmd_type = NGX_MAIN_CONF
+ * ngx_conf_parse()方法在调用完ngx_conf_read_token()解析出一个指令"http"后
+ * 调用/src/core/ngx_conf_file.c/ngx_conf_handler()方法来执行指令.
+ * ngx_conf_handler()方法遍历所有的模块指令,从中查找匹配的指令,其中一个比较就是
+ * 当前要查找的指令区域(cf->cmd_type)是否和指令(http)应该在的区域(cmd->type)相同,
+ * 这样可以区分出相同指令名,但所在区域不同的指令(也就是说不同模块之间可以有相同的指令名)。
+ *
+ * 该指令的配置信息:
+ * 	  ngx_string("http"),
+ *    NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
+ *
+ * 因为http指令有NGX_MAIN_CONF配置,所以conf值走的是ngx_conf_handler()方法的
+ * 		} else if (cmd->type & NGX_MAIN_CONF) {
+ * 			conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
+ * 逻辑。
+ *
  *
  * *conf: 该值是核心http模块在cycle->conf_ctx中第二层指针的位置的值:
  *   cf->ctx      	     conf
@@ -130,7 +151,7 @@ ngx_module_t  ngx_http_module = {
  *	  | * | * | * | *# |
  *    ------------------
  *
- * conf 是一个NULL值的地址,实际值是 &cycle->conf_ctx[ngx_http_module.index]
+ * conf值是 &cycle->conf_ctx[ngx_http_module.index]
  *
  */
 static char *
@@ -151,6 +172,9 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * 	  ------
      * 	  | *# |
      * 	  ------
+     *
+     * 如果conf存在,则表示已经为核心http模块(ngx_http_module)创建过存储配置信息的结构体,
+     * 不应该再次进入到该指令方法,也就是说不应该存在一个以上的http指令
      */
     if (*(ngx_http_conf_ctx_t **) conf) {
         return "is duplicate";
@@ -259,6 +283,29 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         module = ngx_modules[m]->ctx;
         mi = ngx_modules[m]->ctx_index;
 
+        /*
+         * 创建完毕后,内存结构如下:
+         * 	 cycle->conf_ctx
+         *   -----
+         *	 | * |
+         *	 -----
+         *	  \            ngx_http_module.index
+         *	   -----------------
+         *	   | * | * | * | * |
+         *     -----------------
+         *    				 \         ngx_http_conf_ctx_t
+         *    			     -----------------------------------------
+         *    			     | **main_conf | **srv_conf | **loc_conf |
+         *			         -----------------------------------------
+         *			           \
+         *			            ---------------
+         *			            | * | * | 所有http模块的位置
+         *			            ---------------
+         *			              \
+         *						  ---------------------------
+         *						  |ngx_http_core_main_conf_t|
+         *						  ---------------------------
+         */
         if (module->create_main_conf) {
             ctx->main_conf[mi] = module->create_main_conf(cf);
             if (ctx->main_conf[mi] == NULL) {
@@ -266,6 +313,30 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             }
         }
 
+
+        /*
+		 * 创建完毕后,内存结构如下:
+		 * 	 cycle->conf_ctx
+		 *   -----
+		 *	 | * |
+		 *	 -----
+		 *	  \     ngx_http_module.index
+		 *	   ---------
+		 *	   | * | * |
+		 *     ---------
+		 *    		 \         ngx_http_conf_ctx_t
+		 *    		 -----------------------------------------
+		 *    		 | **main_conf | **srv_conf | **loc_conf |
+		 *			 -----------------------------------------
+		 *			   				 \
+		 *			    		 	 ---------------
+		 *			    		 	 | * | * | 所有http模块的位置
+		 *			    		 	 ---------------
+		 *			              	   \
+		 *						  	   --------------------------
+		 *						  	   |ngx_http_core_srv_conf_t|
+		 *						  	   --------------------------
+		 */
         if (module->create_srv_conf) {
             ctx->srv_conf[mi] = module->create_srv_conf(cf);
             if (ctx->srv_conf[mi] == NULL) {
@@ -273,6 +344,30 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             }
         }
 
+
+        /*
+		 * 创建完毕后,内存结构如下:
+		 * 	 cycle->conf_ctx
+		 *   -----
+		 *	 | * |
+		 *	 -----
+		 *	  \     ngx_http_module.index
+		 *	   ---------
+		 *	   | * | * |
+		 *     ---------
+		 *    		 \         ngx_http_conf_ctx_t
+		 *    		 -----------------------------------------
+		 *    		 | **main_conf | **srv_conf | **loc_conf |
+		 *			 -----------------------------------------
+		 *			   				 				\
+		 *			    		 	 				---------------
+		 *			    		 	 				| * | * | 所有http模块的位置
+		 *			    		 	 				---------------
+		 *			              	  				  \
+		 *						  	  				  --------------------------
+		 *						  	   				  |ngx_http_core_loc_conf_t|
+		 *						  	   				  --------------------------
+		 */
         if (module->create_loc_conf) {
             ctx->loc_conf[mi] = module->create_loc_conf(cf);
             if (ctx->loc_conf[mi] == NULL) {
