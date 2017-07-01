@@ -40,6 +40,7 @@
                               |NGX_CONF_TAKE4)
 
 #define NGX_CONF_ARGS_NUMBER 0x000000ff
+/* 带花括号的配置信息,如果http{}、server{}等 */
 #define NGX_CONF_BLOCK       0x00000100
 /* TODO */
 #define NGX_CONF_FLAG        0x00000200
@@ -49,7 +50,7 @@
 #define NGX_CONF_1MORE       0x00000800
 /* 可以带两个以上的参数 */
 #define NGX_CONF_2MORE       0x00001000
-#define NGX_CONF_MULTI       0x00000000  /* compatibility */
+#define NGX_CONF_MULTI       0x00000000  /* compatibility kəmˌpætəˈbɪlətɪ 通用 */
 
 #define NGX_DIRECT_CONF      0x00010000
 

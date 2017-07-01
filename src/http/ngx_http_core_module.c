@@ -2981,6 +2981,51 @@ ngx_http_get_forwarded_addr_internal(ngx_http_request_t *r, ngx_addr_t *addr,
 }
 
 
+/*
+ * 在解析http{}块内指令的时候会解析到该方法并调用
+ *
+ *
+ * cf的值有ngx_http_block方法传递过来:
+ * 	  cf->module_type = NGX_HTTP_MODULE
+ * 	  cf->cmd_type = NGX_HTTP_MAIN_CONF
+ * 	  cf->ctx: 一个指针,指向ngx_http_conf_ctx_t结构体,该结构体的整体位置如下:
+ * 	  	 cycle->conf_ctx
+ *	 	    -----
+ *		 	| * |
+ *		 	-----
+ *		 	 \     ngx_http_module.index				cf->ctx
+ *		 	  ---------									 -----
+ *		 	  | * | * | ngx_max_module个					 | * |
+ *		      ---------									 -----
+ *		     		 \         ngx_http_conf_ctx_t			/
+ *		     		 -----------------------------------------
+ *		     		 | **main_conf | **srv_conf | **loc_conf |
+ *		 			 -----------------------------------------
+ *		 			    |               |             |
+ *					---------		---------		---------
+ *					| * | * |		| * | * |		| * | * | 都是ngx_http_max_module个
+ *					---------		---------		---------
+ *
+ * cmd:对应指令的配置信息
+ *	   { ngx_string("server"),
+ *     	 NGX_HTTP_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
+ *     	 ngx_http_core_server,
+ *     	 0, //conf
+ *       0, //offset
+ *       NULL }
+ *
+ *
+ * dummy: /'dʌmi/ n 假人;傀儡;
+ *		该方法不会用到这个这个变量。
+ *		实际上走的是下面的逻辑:
+ *			} else if (cf->ctx) {
+ *				confp = *(void **) ((char *) cf->ctx + cmd->conf);
+ *				if (confp) {
+ *                   conf = confp[ngx_modules[i]->ctx_index];
+ *              }
+ *          }
+ *
+ */
 static char *
 ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 {

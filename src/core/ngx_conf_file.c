@@ -395,7 +395,7 @@ done:
 }
 
 /*
- * 真正执行指令绑定的方法
+ * 执行指令绑定的方法
  *
  * 1.遍历所有模块的所有指令和解析到的指令对比
  * 2.如果对比成功则执行该指令对应的方法
@@ -448,7 +448,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             // 走到这里说明在模块ngx_modules[i]中,有和当前指令同名的指令
 
             /* is the directive's location right ? */
-            // 判断指令的位置是否正确,不正确则忽略
+            // 判断指令的位置是否正确,不正确则忽略。cmd->type定义了指令可以出现的地方
             if (!(cmd->type & cf->cmd_type)) {
                 continue;
             }
@@ -465,7 +465,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
              * 如果是块指令,但是ngx_conf_read_token()没有返回NGX_CONF_BLOCK_START,则
              * 指令格式错误。
              *
-             * 比如events {} 指令
+             * 比如events {}、server{} 指令
              *
              */
             if ((cmd->type & NGX_CONF_BLOCK) && last != NGX_CONF_BLOCK_START) {
@@ -532,7 +532,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 				 * 以上这几个模块都是核心模块,其他模块都没有使用该标记。
 				 *
 				 * 下面的操作取出的conf如下图:
-				 *   cf->ctx
+				 *   cf->ctx|cycle->conf_ctx
 				 *   -----
 				 *	 | * |
 				 *	 -----
@@ -559,14 +559,14 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             	 * 没有使用NGX_DIRECT_CONF标记,则代表当前命令所在的模块使用到了cycle->conf_ctx的四层指针。
             	 *
             	 * 下面的操作是取出当前模块在第二层指针的位置,然后在取出该位置的地址,如下图:
-            	 *   cf->ctx             conf
-				 *   -----              -----
-				 *	 | * |              | * |
-				 *	 -----              -----
-				 *	 \                 /
-				 *	  -----------------
-            	 *	  | * | * | * | * |
-            	 *	  -----------------
+            	 * cf->ctx|cycle->conf_ctx  conf
+				 *   -----                 -----
+				 *	 | * |                 | * |
+				 *	 -----                 -----
+				 *	 	\                 /
+				 *	  	-----------------
+            	 *	  	| * | * | * | * |
+            	 *	  	-----------------
             	 * 如果ngx_modules[i]->index 的值等于3,那么conf的值就是第二层中第四个星号变量的地址
             	 */
                 conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
@@ -584,7 +584,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             	 *
             	 *
             	 * 1.如果当前是具体的事件模块,那么ctx的内存结构是这样的:
-            	 *	     ctx
+            	 *	    cf->ctx
             	 *	------------
             	 *	    | * |     cycle->conf_ctx的第二层指针
             	 *	------------
@@ -605,23 +605,42 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             	 *
             	 *
             	 *
-            	 * 2.如果当前是具体的http模块,那么ctx的内存结构是这样的:
-            	 *	     ctx
-            	 *	------------
-            	 *	    | * |     cycle->conf_ctx的第二层指针
-            	 *	------------
-            	 *	     \
-            	 *	 	  -----------------------
-            	 *	 	  | ngx_http_conf_ctx_t |
-            	 *	 	  -----------------------
-            	 * 最终confp的值会和ngx_http_conf_ctx_t结构体中的 xxx_conf 指针相等,具体等于哪个,则依赖于cmd->conf的值。
-            	 * 最终conf的值就是xxx_conf[ngx_modules[i]->ctx_index],也就是各个自定义的http模块对应的配置信息结构体。
+            	 * 2.如果当前是http核心模块(ngx_http_core_module),解析到了server{}指令,那么ctx的内存结构是这样的:
+            	 *  cycle->conf_ctx
+				 *   -----
+				 *	 | * |
+				 *	 -----
+				 *	  \        ngx_http_module.index					 	   ctx
+				 *	   ---------------										  -----
+				 *	   | * | ... | * | ngx_max_module个						  | * |
+				 *     ---------------										  -----
+				 *    		 		\         ngx_http_conf_ctx_t				/
+				 *    		 	   -----------------------------------------------
+				 *    		 	   |  **main_conf  |  **srv_conf  |  **loc_conf  |
+				 *			 	   -----------------------------------------------
+			     * 			    	 /           	      /                      \
+			 	 *				---------			   ---------			      ---------
+			 	 *				| * | * |			   | * | * |			      | * | * | 都是ngx_http_max_module个
+			 	 *				---------			   ---------			      ---------
+				 *				  |  					 |							|
+				 *  ---------------------------	  ---------------------------	  --------------------------
+				 *	|ngx_http_core_main_conf_t|	  |ngx_http_core_main_conf_t|	  |ngx_http_core_loc_conf_t|
+				 *	---------------------------	  ---------------------------	  --------------------------
+            	 *
+            	 *	server{}指令的ngx_http_core_server方法中不会用到conf这个入参,所以这里传递与否都无所谓。
+            	 *
+            	 *
+            	 * 在http模块中:
+            	 *  最终confp的值会和ngx_http_conf_ctx_t结构体中的 xxx_conf 指针相等,具体等于哪个,则依赖于cmd->conf的值。
+            	 *  最终conf的值就是xxx_conf[ngx_modules[i]->ctx_index],也就是各个自定义的http模块对应的配置信息结构体。
             	 *
             	 */
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
-
+                printf("-------->%s\n",cmd->name.data);
                 if (confp) {
+                	printf("=========>%s\n",cmd->name.data);
                     conf = confp[ngx_modules[i]->ctx_index];
+                    printf("+++++++++>%s\n",cmd->name.data);
                 }
             }
 

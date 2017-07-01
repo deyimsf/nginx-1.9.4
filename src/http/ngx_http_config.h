@@ -71,7 +71,7 @@ typedef struct {
 	 *   -----
 	 *   \
 	 *    -----------------
-	 *    | * | * | * | 各个http模块的位置
+	 *    | * | * | * | 各个http模块在main块位置存放各自配置信息结构体的下标
 	 *    -----------------
 	 *
 	 */
@@ -106,12 +106,19 @@ typedef struct {
 
 #define NGX_HTTP_MODULE           0x50545448   /* "HTTP" */
 
+// 出现在http{}块内的配置信息
 #define NGX_HTTP_MAIN_CONF        0x02000000
+// 出现在server{}块内的配置信息
 #define NGX_HTTP_SRV_CONF         0x04000000
+// 出现在location{}块内的配置信息
 #define NGX_HTTP_LOC_CONF         0x08000000
+// 出现在 upstream{}块的配置信息
 #define NGX_HTTP_UPS_CONF         0x10000000
+// 出现在 server{}内的if{}内的配置信息
 #define NGX_HTTP_SIF_CONF         0x20000000
+// 出现在 location{}块内的if{}内的配置信息
 #define NGX_HTTP_LIF_CONF         0x40000000
+// TODO
 #define NGX_HTTP_LMT_CONF         0x80000000
 
 

@@ -117,36 +117,44 @@ ngx_module_t  ngx_http_module = {
 
 
 /*
+ * 在解析ngx顶层配置文件时会解析到http{}指令,该指令对调用该方法
+ *
  * 指令http对应的方法,整个http模块的入口,用来管理所有的http模块
  *
  * 调用该方法之前conf_ctx的内存分配到了第二层
+ *
  *
  * cf的值最初是由ngx_init_cycle()方法调用ngx_conf_parse()方法传过来的,cf内容如下：
  * 	 cf->ctx: cycle->conf_ctx
  *	 cf->module_type = NGX_CORE_MODULE
  *	 cf->cmd_type = NGX_MAIN_CONF
+ *
  * ngx_conf_parse()方法在调用完ngx_conf_read_token()解析出一个指令"http"后
  * 调用/src/core/ngx_conf_file.c/ngx_conf_handler()方法来执行指令.
  * ngx_conf_handler()方法遍历所有的模块指令,从中查找匹配的指令,其中一个比较就是
  * 当前要查找的指令区域(cf->cmd_type)是否和指令(http)应该在的区域(cmd->type)相同,
  * 这样可以区分出相同指令名,但所在区域不同的指令(也就是说不同模块之间可以有相同的指令名)。
  *
- * 该指令的配置信息:
- * 	  ngx_string("http"),
- *    NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
  *
- * 因为http指令有NGX_MAIN_CONF配置,所以conf值走的是ngx_conf_handler()方法的
+ * cmd: 该指令的配置信息
+ * 	    ngx_string("http"),
+ *      NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
+ *
+ *
+ * conf:
+ *   因为http指令有NGX_MAIN_CONF配置,所以conf值走的是ngx_conf_handler()方法的
  * 		} else if (cmd->type & NGX_MAIN_CONF) {
  * 			conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
- * 逻辑。
+ *   逻辑。
  *
+ *   该值是核心http模块在cycle->conf_ctx中第二层指针的位置的值:
+ *   (此时cycle->conf_ctx等于cf->ctx)
  *
- * *conf: 该值是核心http模块在cycle->conf_ctx中第二层指针的位置的值:
  *   cf->ctx      	     conf
  *   -----          	-----
  *	 | * |              | * |
  *	 -----              -----
- *	 \                 	/
+ *	  \                  /
  *	  ------------------
  *	  | * | * | * | *# |
  *    ------------------
@@ -173,12 +181,14 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * 	  | *# |
      * 	  ------
      *
+     *
      * 如果conf存在,则表示已经为核心http模块(ngx_http_module)创建过存储配置信息的结构体,
      * 不应该再次进入到该指令方法,也就是说不应该存在一个以上的http指令
      */
     if (*(ngx_http_conf_ctx_t **) conf) {
         return "is duplicate";
     }
+
 
     /* the main http context */
     /*
@@ -197,7 +207,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    // 为cycle->conf_ctx[ngx_http_module.index]赋值ctx
+    // 为cycle->conf_ctx[ngx_http_module.index]=ctx
     /*
      * 这里这样赋值,则只用到了cycle->conf_ctx中的两层指针,如下图:
      * (其中cf->ctx 等于 cycle->conf_ctx)
@@ -208,7 +218,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	 *	 -----              -----
 	 *	 \                 /      				   ctx
 	 *	  -----------------       				  -----
-	 *	  | * | * | * | * |       				  | * |
+	 *	  | * |  ...  | * |       				  | * |
 	 *    -----------------       				  -----
 	 *    				  \      				  /
 	 *    				   -----------------------
@@ -220,6 +230,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
     /* count the number of the http modules and set up their indices */
+    /* 计算http模块个数,并且为所有http模块设置索引值 */
 
     ngx_http_max_module = 0;
     for (m = 0; ngx_modules[m]; m++) {
@@ -227,12 +238,33 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        // 计算http模块个数并设置索引值
         ngx_modules[m]->ctx_index = ngx_http_max_module++;
     }
 
 
     /* the http main_conf context, it is the same in the all http contexts */
 
+    /*
+     *  ctx->main_conf用于存放所有http模块在http{}块下的配置信息结构体,内存分配完毕后结构如下:
+     *  cf->ctx | cycle->conf_ctx
+	 *   -----
+	 *	 | * |
+	 *	 -----
+	 *	  \            ngx_http_module.index					 ctx
+	 *	   -----------------									-----
+	 *	   | * |  ...  | * |									| * |
+	 *     -----------------									-----
+	 *    				 \         ngx_http_conf_ctx_t			 /
+	 *    			     -----------------------------------------
+	 *    			     | **main_conf | **srv_conf | **loc_conf |
+	 *			         -----------------------------------------
+	 *			             \
+	 *			             ---------------
+	 *			             | * | ... | * |  ngx_http_max_module个
+     *						 ---------------
+     *
+     */
     ctx->main_conf = ngx_pcalloc(cf->pool,
                                  sizeof(void *) * ngx_http_max_module);
     if (ctx->main_conf == NULL) {
@@ -245,6 +277,33 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * the server{}s' srv_conf's
      */
 
+    /*
+     * ctx->srv_conf用于存放所有http模块在server{}级指令的合并信息。
+     *
+	 * 在http{}块下可以有多个server{}块,对于同一个指令,在不同的server{}块内可以有不同的值,很显然一个
+	 * ctx->srv_conf是无法存放多个server{}块内指令信息的,那ctx->srv_conf作用究竟是什么呢?我们假设
+	 * 有一个指令,它在多个server{}块内的值都是相同的,此时我们在所有server{}快内把该指令都设置一遍就产生
+	 * 了很多的冗余,解决这个问题的办法就是把该指令设置在server{}的上一层,即http{}块内,这样在解析各个
+	 * server{}块时就可以从http{}内继承该指令,从而解决指令配置冗余的问题。
+	 *
+	 * 分配完毕后内存结构如下:
+	 *   cf->ctx | cycle->conf_ctx
+	 *   -----
+	 *	 | * |
+	 *	 -----
+	 *	  \            ngx_http_module.index					 ctx
+	 *	   -----------------									-----
+	 *	   | * |  ...  | * |									| * |
+	 *     -----------------									-----
+	 *    				 \         ngx_http_conf_ctx_t			 /
+	 *    			     -----------------------------------------
+	 *    			     | **main_conf | **srv_conf | **loc_conf |
+	 *			         -----------------------------------------
+	 *			             				\
+	 *			             			---------------
+	 *			             			| * | ... | * |  ngx_http_max_module个
+     *						 			---------------
+     */
     ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->srv_conf == NULL) {
         return NGX_CONF_ERROR;
@@ -256,6 +315,30 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * the server{}s' loc_conf's
      */
 
+    /*
+     * ctx->loc_conf用于存放所有http模块在location{}级指令的合并信息。
+     *
+     * 同server{}块一样,location{}块在server{}块内同样可以有多个,所以ctx->loc_conf的作用
+     * 同ctx->srv_conf一样,可以解决某个http模块在location{}块内的指令冗余问题。
+	 *
+	 * 分配完毕后内存结构如下:
+	 *   cf->ctx | cycle->conf_ctx
+	 *   -----
+	 *	 | * |
+	 *	 -----
+	 *	  \            ngx_http_module.index					 ctx
+	 *	   -----------------									-----
+	 *	   | * |  ...  | * |									| * |
+	 *     -----------------									-----
+	 *    				 \         ngx_http_conf_ctx_t			 /
+	 *    			     -----------------------------------------
+	 *    			     | **main_conf | **srv_conf | **loc_conf |
+	 *			         -----------------------------------------
+	 *			             							\
+	 *			             						---------------
+	 *			             						| * | ... | * |  ngx_http_max_module个
+     *						 						---------------
+     */
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
@@ -269,11 +352,16 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     /*
      * 回调所有HTTP模块的 create_main|srv|loc_conf 方法
-     * 这时候只是在http{}块，为每个模块创建了各自的自定义配置项
+     * 这时候只是在http{}块为每个http模块创建了各自的自定义配置信息结构体
      *
-     * 每个模块在server{}块的自定义配置项还没有创建,在后续调用的ngx_conf_parse()方法中
-     * 如果解析到server指令,就会先回调server指令的ngx_http_core_module.c/ngx_http_core_server回调方法来处理server指令
-     * ngx_http_core_server会调用所有HTTP模块create_srv|loc_conf方法，为每个模块在server{}块创建各自的自定义配置项
+     * 每个模块在server{}块的自定义配置项还没有创建,在后续调用的ngx_conf_parse()方法中如果解析到server指令,
+     * 就会先回调server指令的ngx_http_core_module.c/ngx_http_core_server()回调方法来处理server指令,
+     * ngx_http_core_server()会调用所有HTTP模块create_srv|loc_conf方法,为每个模块在server{}块创建各自的
+     * 自定义配置信息结构体。
+     *
+     * 下面这个循环完毕之后,所有http模块的create_main_conf|create_srv_conf|create_loc_conf方法都会被调用,
+     * 也就是说在http{}块内,每个http模块都有可能被创建三个配置信息结构体,来存放他们的指令信息。
+     *
      */
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
@@ -285,21 +373,21 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         /*
          * 创建完毕后,内存结构如下:
-         * 	 cycle->conf_ctx
+         * 	 cf->ctx | cycle->conf_ctx
          *   -----
          *	 | * |
          *	 -----
-         *	  \            ngx_http_module.index
-         *	   -----------------
-         *	   | * | * | * | * |
-         *     -----------------
-         *    				 \         ngx_http_conf_ctx_t
+         *	  \            ngx_http_module.index					  ctx
+         *	   -----------------									 -----
+         *	   | * |  ...  | * | ngx_max_module个					 | * |
+         *     -----------------									 -----
+         *    				 \         ngx_http_conf_ctx_t			 /
          *    			     -----------------------------------------
          *    			     | **main_conf | **srv_conf | **loc_conf |
          *			         -----------------------------------------
          *			           \
          *			            ---------------
-         *			            | * | * | 所有http模块的位置
+         *			            | * | ... | * | ngx_http_max_module个
          *			            ---------------
          *			              \
          *						  ---------------------------
@@ -316,21 +404,21 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         /*
 		 * 创建完毕后,内存结构如下:
-		 * 	 cycle->conf_ctx
+		 * 	 cf->ctx | cycle->conf_ctx
 		 *   -----
 		 *	 | * |
 		 *	 -----
-		 *	  \     ngx_http_module.index
-		 *	   ---------
-		 *	   | * | * |
-		 *     ---------
-		 *    		 \         ngx_http_conf_ctx_t
+		 *	  \     ngx_http_module.index					  ctx
+		 *	   ---------									 -----
+		 *	   | * | * | ngx_max_module个					 | * |
+		 *     ---------									 -----
+		 *    		 \         ngx_http_conf_ctx_t			 /
 		 *    		 -----------------------------------------
 		 *    		 | **main_conf | **srv_conf | **loc_conf |
 		 *			 -----------------------------------------
 		 *			   				 \
 		 *			    		 	 ---------------
-		 *			    		 	 | * | * | 所有http模块的位置
+		 *			    		 	 | * | ... | * | ngx_http_max_module个
 		 *			    		 	 ---------------
 		 *			              	   \
 		 *						  	   --------------------------
@@ -347,21 +435,21 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         /*
 		 * 创建完毕后,内存结构如下:
-		 * 	 cycle->conf_ctx
+		 * 	 cf->ctx | cycle->conf_ctx
 		 *   -----
 		 *	 | * |
 		 *	 -----
-		 *	  \     ngx_http_module.index
-		 *	   ---------
-		 *	   | * | * |
-		 *     ---------
-		 *    		 \         ngx_http_conf_ctx_t
+		 *	  \     ngx_http_module.index					 ctx
+		 *	   ---------									-----
+		 *	   | * | * | ngx_max_module个					| * |
+		 *     ---------									-----
+		 *    		 \         ngx_http_conf_ctx_t			/
 		 *    		 -----------------------------------------
 		 *    		 | **main_conf | **srv_conf | **loc_conf |
 		 *			 -----------------------------------------
 		 *			   				 				\
 		 *			    		 	 				---------------
-		 *			    		 	 				| * | * | 所有http模块的位置
+		 *			    		 	 				| * | ... | * | ngx_http_max_module个
 		 *			    		 	 				---------------
 		 *			              	  				  \
 		 *						  	  				  --------------------------
@@ -376,9 +464,15 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+
+    /* 下面这两句执行完毕后 pcf和cf的区别仅仅是 ->ctx的值不一样 */
     pcf = *cf;
     cf->ctx = ctx;
 
+
+    /*
+     * 执行所有http模块的module->preconfiguration()方法
+     */
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -386,6 +480,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         module = ngx_modules[m]->ctx;
 
+        // 如果方法存在则回调该方法
         if (module->preconfiguration) {
             if (module->preconfiguration(cf) != NGX_OK) {
                 return NGX_CONF_ERROR;
@@ -395,16 +490,19 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     /* parse inside the http{} block */
 
+    // 解析http模块
     cf->module_type = NGX_HTTP_MODULE;
+    // 解析http{}块内的指令
     cf->cmd_type = NGX_HTTP_MAIN_CONF;
 
     /*
-     * 解析htto{}内的所有指令
+     * 解析http{}内的所有指令
      * 每解析到一个指令就会调用该指令的handler方法
      * 每个指令的handler方法一般负责为该指令赋值
      * 指令的handler方法可以是自定义的,也可以使用nginx提供的预设方法
      *
-     * 当该方法执行完后,所有的http{}块内的指令都被执行完了. (包块server{}s,location{}s)
+     * 当该方法执行完后,所有的http{}块内的指令都被执行完了. (包块server{}s,location{}s,算是一个递归执行)
+     * 遇见server{}指令就会执行/src/http/ngx_http_core_server()方法
      */
     rv = ngx_conf_parse(cf, NULL);
 

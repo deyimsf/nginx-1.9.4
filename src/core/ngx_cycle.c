@@ -370,7 +370,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
      * 此时conf_ctx实际上已经用到了两层指针(比如核心模块ngx_core_module在第二层有一个指向ngx_core_conf_t的指针)
      *
      * 所以conf.ctx(cycle->conf_ctx)的目前实际内存分配是这样:
-     *		 ctx
+     *		 ctx|cycle->conf_ctx
      *		-----
      *		| * |
      *		-----
