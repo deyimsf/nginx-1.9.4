@@ -2993,18 +2993,23 @@ ngx_http_get_forwarded_addr_internal(ngx_http_request_t *r, ngx_addr_t *addr,
  *	 	    -----
  *		 	| * |
  *		 	-----
- *		 	 \     ngx_http_module.index				cf->ctx
- *		 	  ---------									 -----
- *		 	  | * | * | ngx_max_module个					 | * |
- *		      ---------									 -----
- *		     		 \         ngx_http_conf_ctx_t			/
- *		     		 -----------------------------------------
- *		     		 | **main_conf | **srv_conf | **loc_conf |
- *		 			 -----------------------------------------
- *		 			    |               |             |
- *					---------		---------		---------
- *					| * | * |		| * | * |		| * | * | 都是ngx_http_max_module个
- *					---------		---------		---------
+ *	  		  \        ngx_http_module.index					 	 cf->ctx
+ *		 	   ---------------------								  -----
+ *		 	   | * | ... | * | ... | ngx_max_module个				  | * |
+ *		       ---------------------								  -----
+ *		     		 		\         ngx_http_conf_ctx_t				/
+ *		     		 	   -----------------------------------------------
+ *		     		 	   |  **main_conf  |  **srv_conf  |  **loc_conf  |
+ *		 			 	   -----------------------------------------------
+ *		  			    	 /           	      /                      \
+ *		 			-------------		   -------------			   -------------
+ *		 			| * |...| * |		   | * |...| * |			   | * |...| * | 都是ngx_http_max_module个
+ *		 			-------------		   -------------			   -------------
+ *		 			  |  					 |							 |
+ *		    ---------------------------	  ---------------------------	--------------------------
+ *		 	|ngx_http_core_main_conf_t|	  |ngx_http_core_main_conf_t|	|ngx_http_core_loc_conf_t|
+ *		 	---------------------------	  ---------------------------	--------------------------
+ *
  *
  * cmd:对应指令的配置信息
  *	   { ngx_string("server"),
@@ -3025,6 +3030,10 @@ ngx_http_get_forwarded_addr_internal(ngx_http_request_t *r, ngx_addr_t *addr,
  *              }
  *          }
  *
+ *
+ * 约定:
+ * 		在图中,如果是用"+"表示的则表示在内存中是同一个结构体
+ *
  */
 static char *
 ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
@@ -3040,23 +3049,98 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ngx_http_core_srv_conf_t    *cscf, **cscfp;
     ngx_http_core_main_conf_t   *cmcf;
 
+    /*
+     * 分配完毕后,ctx结构如下
+     * ctx
+     * -----
+     * | * |
+     * -----
+     *	 \         ngx_http_conf_ctx_t
+     *	  -----------------------------------------
+     *	  | **main_conf | **srv_conf | **loc_conf |
+     *    -----------------------------------------
+     */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
+
+    /*
+     * 执行完下面代码后,ctx结构如下:
+	 *						     cycle->conf_ctx
+	 *								-----
+	 *								| * |
+	 *								-----
+	 *	 ctx						  \   ngx_http_module.index				   cf->ctx | http_ctx
+	 *	-----					---------------------								 -----
+	 *	| * |					| * | ... | * | ... |ngx_max_module个				 | * |
+	 *	-----					---------------------								 -----
+	 *	 \	ngx_http_conf_ctx_t		        \            ngx_http_conf_ctx_t	       /
+	 *    ---------------------	 	       -----------------------------------------------
+	 *    | **main_conf | ... |	   	       |  **main_conf  |  **srv_conf  |  **loc_conf  |
+	 *    ---------------------		       -----------------------------------------------
+	 *				 \			 	 	   /           	      /                      \
+	 *				 -----------------------		   -------------			   -------------
+	 *				 | * |     ...     | * |		   | * |...| * |			   | * |...| * | 都是ngx_http_max_module个
+	 *				 -----------------------		   -------------			   -------------
+	 *				   |  					             |							 |
+	 *				+-------------------------+	   ---------------------------	  --------------------------
+	 *				|ngx_http_core_main_conf_t|	   |ngx_http_core_main_conf_t|	  |ngx_http_core_loc_conf_t|
+	 *				+-------------------------+	   ---------------------------	  --------------------------
+     *
+     */
     http_ctx = cf->ctx;
     ctx->main_conf = http_ctx->main_conf;
 
     /* the server{}'s srv_conf */
 
+    /*
+     * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
+     * 	 			   ctx
+	 *				  -----
+	 *				  | * |
+	 *				  -----
+	 *	 			 	\	        ngx_http_conf_ctx_t
+	 *    				-----------------------------------------
+	 *    				| **main_conf | **srv_conf | **loc_conf |
+	 *    				-----------------------------------------
+	 *				 	/					|
+	 *		  ---------------			---------------
+	 *		  | * | ... | * |			| * | ... | * |  都是ngx_http_max_module个
+	 *		  ---------------			---------------
+	 *	        |
+	 *	  +-------------------------+
+	 *	  |ngx_http_core_main_conf_t| 和上图中带"+"边的在内存中是同一个结构体
+	 *	  +-------------------------+
+     *
+     */
     ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->srv_conf == NULL) {
         return NGX_CONF_ERROR;
     }
 
     /* the server{}'s loc_conf */
-
+    /*
+	 * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
+	 * 	 			   ctx
+	 *				  -----
+	 *				  | * |
+	 *				  -----
+	 *	 			 	\	        ngx_http_conf_ctx_t
+	 *    				-----------------------------------------
+	 *    				| **main_conf | **srv_conf | **loc_conf |
+	 *    				-----------------------------------------
+	 *				 	/					|				  |
+	 *		  ---------------		 ---------------	 ---------------
+	 *		  | * | ... | * |		 | * | ... | * |  	 | * | ... | * | 都是ngx_http_max_module个
+	 *		  ---------------		 ---------------	 ---------------
+	 *	        |
+	 *	  +-------------------------+
+	 *	  |ngx_http_core_main_conf_t|
+	 *	  +-------------------------+
+	 *
+	 */
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
@@ -3081,6 +3165,26 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
                 return NGX_CONF_ERROR;
             }
 
+            /*
+			 * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
+			 * 	 			   			ctx
+			 *				  			-----
+			 *				  			| * |
+			 *				  			-----
+			 *	 			 				\	        ngx_http_conf_ctx_t
+			 *    							-----------------------------------------
+			 *    							| **main_conf | **srv_conf | **loc_conf |
+			 *    							-----------------------------------------
+			 *				 				/					|				  |
+			 *		  			---------------		 	---------------	 	---------------
+			 *		  			| * | ... | * |		 	| * | ... | * |  	| * | ... | * | 都是ngx_http_max_module个
+			 *		  			---------------		 	---------------	    ---------------
+			 *	       			  |						  |
+			 *	  +-------------------------+		---------------------------
+			 *	  |ngx_http_core_main_conf_t|		|ngx_http_core_srv_conf_t|
+			 *	  +-------------------------+		---------------------------
+			 *
+			 */
             ctx->srv_conf[ngx_modules[i]->ctx_index] = mconf;
         }
 
@@ -3090,6 +3194,26 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
                 return NGX_CONF_ERROR;
             }
 
+            /*
+			 * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
+			 * 	 			   			ctx
+			 *				  			-----
+			 *				  			| * |
+			 *				  			-----
+			 *	 			 				\	        ngx_http_conf_ctx_t
+			 *    							-----------------------------------------
+			 *    							| **main_conf | **srv_conf | **loc_conf |
+			 *    							-----------------------------------------
+			 *				 				/					|				  |
+			 *		  			---------------		 	---------------	 		---------------
+			 *		  			| * | ... | * |		 	| * | ... | * |  		| * | ... | * | 都是ngx_http_max_module个
+			 *		  			---------------		 	---------------	    	---------------
+			 *	       			  |						  |						  |
+			 *	  +-------------------------+	 --------------------------		--------------------------
+			 *	  |ngx_http_core_main_conf_t|	 |ngx_http_core_srv_conf_t|		|ngx_http_core_loc_conf_t|
+			 *	  +-------------------------+	 --------------------------		--------------------------
+			 *
+			 */
             ctx->loc_conf[ngx_modules[i]->ctx_index] = mconf;
         }
     }
@@ -3097,22 +3221,84 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
     /* the server configuration context */
 
+    /*
+     * 下面三行代码执行完毕后,ctx、cscf、cmcf结构指针如下:
+     * 	 			   			 ctx(该指针变量和下面ngx_http_core_srv_conf_t结构体中的ctx指针变量相同)
+	 *				  			-----
+	 *				  			| * |
+	 *				  			-----
+	 *	 			 				\	         ngx_http_conf_ctx_t
+	 *    							-----------------------------------------------------
+	 *    							|   **main_conf   |   **srv_conf   |   **loc_conf   |
+	 *    							-----------------------------------------------------
+	 *		 cmcf		 			/		cscf				|				  	   |
+	 *	    -----	  	---------------	 	----- 		---------------	 			---------------
+	 *	 	| * |  		| * | ... | * |		| * | 		| * | ... | * |  			| * | ... | * | 都是ngx_http_max_module个
+	 *		-----		---------------		----- 		---------------	    		---------------
+	 *	      |			  |						\  	    / ngx_http_core_srv_conf_t	  |
+	 *	  +-------------------------+	 		----------------------------		 --------------------------
+	 *	  |ngx_http_core_main_conf_t|	 		| * | *ctx |      ...	   |	     |ngx_http_core_loc_conf_t|
+	 *	  +-------------------------+	 		----------------------------		 --------------------------
+	 *
+     */
     cscf = ctx->srv_conf[ngx_http_core_module.ctx_index];
     cscf->ctx = ctx;
 
-
+    // ngx_http_core_srv_conf_t
     cmcf = ctx->main_conf[ngx_http_core_module.ctx_index];
 
+    // cmcf->servers数组中元素是指针
     cscfp = ngx_array_push(&cmcf->servers);
     if (cscfp == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    /*
+     * 将server{}块的配置结构体信息(ngx_http_core_srv_conf_t)放入数组元素中
+     * cmcf->servers的指针结构如下:
+     * 										cscfp
+     * 										-----
+     *										| * |
+     *										-----
+     *						 cmcf->servers /
+     *						-----------------
+     *						| * |  ...  | * |
+     *						-----------------
+     *						 /			 \
+     *	--------------------------	   --------------------------
+     *	|ngx_http_core_srv_conf_t|     |ngx_http_core_srv_conf_t|
+     *	--------------------------     --------------------------
+     */
     *cscfp = cscf;
 
 
     /* parse inside server{} */
-
+    /*
+     * 执行完下面三行语句后,cf->ctx内存结构如下:
+     *
+     *
+	 *																				cycle->conf_ctx
+	 *																					 -----
+	 *																					 | * |
+	 *																				     -----
+	 * 	 			   		   cf->ctx														\
+	 *				  			-----												  ---------------------
+	 *				  			| * |												  | * | ... | * | ... | ngx_max_module个
+	 *				  			-----												  ---------------------
+	 *	 			 			 \	         ngx_http_conf_ctx_t							       \			ngx_http_conf_ctx_t
+	 *    						-----------------------------------------------------			   -----------------------------------------------------
+	 *    						|   **main_conf   |   **srv_conf   |   **loc_conf   |			   |   **main_conf   |   **srv_conf   |   **loc_conf   |
+	 *    						-----------------------------------------------------			   -----------------------------------------------------
+	 *		 			 			/				|				  	   |						   |				 |					|
+	 *	         	  	---------------	 	 ---------------	 		---------------			 +------------+	  ---------------	 ---------------
+	 *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 |_main_conf_t|	  | * | ... | * |	 | * | ... | * |都是ngx_http_max_module个
+	 *					---------------		 ---------------	    	---------------			 +------------+	  ---------------	 ---------------
+	 *	      			  |					  / ngx_http_core_srv_conf_t   \												|					|
+	 *	 +-------------------------+		----------------------------	--------------------------		 --------------------------		--------------------------
+	 *	 |ngx_http_core_main_conf_t|		| * | *ctx |      ...  	   |	|ngx_http_core_loc_conf_t|		 |ngx_http_core_srv_conf_t|		|ngx_http_core_loc_conf_t|
+	 *	 +-------------------------+ 	 	----------------------------	--------------------------		 --------------------------		--------------------------
+	 *
+     */
     pcf = *cf;
     cf->ctx = ctx;
     cf->cmd_type = NGX_HTTP_SRV_CONF;
@@ -3166,6 +3352,65 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 }
 
 
+
+
+/*
+ * 在解析server{}块内指令的时候会解析到该方法并调用
+ *
+ *
+ * cf的值有ngx_http_core_server方法传递过来:
+ * 	  cf->module_type = NGX_HTTP_MODULE
+ * 	  cf->cmd_type = NGX_HTTP_SRV_CONF
+ * 	  cf->ctx: 一个指针,指向ngx_http_conf_ctx_t结构体,该结构体的整体位置如下:
+ *
+ *																				cycle->conf_ctx
+ *																					 -----
+ *																					 | * |
+ *																				     -----
+ * 	 			   		   cf->ctx														\
+ *				  			-----												  ---------------------
+ *				  			| * |												  | * | ... | * | ... | ngx_max_module个
+ *				  			-----												  ---------------------
+ *	 			 			 \	         ngx_http_conf_ctx_t							       \			ngx_http_conf_ctx_t
+ *    						-----------------------------------------------------			   -----------------------------------------------------
+ *    						|   **main_conf   |   **srv_conf   |   **loc_conf   |			   |   **main_conf   |   **srv_conf   |   **loc_conf   |
+ *    						-----------------------------------------------------			   -----------------------------------------------------
+ *		 			 			/				|				  	   |						   |				 |					|
+ *	         	  	---------------	 	 ---------------	 		---------------			 +------------+	  ---------------	 ---------------
+ *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 |_main_conf_t|	  | * | ... | * |	 | * | ... | * |都是ngx_http_max_module个
+ *					---------------		 ---------------	    	---------------			 +------------+	  ---------------	 ---------------
+ *	      			  |					  / ngx_http_core_srv_conf_t   \												|					|
+ *	 +-------------------------+		----------------------------	--------------------------		 --------------------------		--------------------------
+ *	 |ngx_http_core_main_conf_t|		| * | *ctx |      ...  	   |	|ngx_http_core_loc_conf_t|		 |ngx_http_core_srv_conf_t|		|ngx_http_core_loc_conf_t|
+ *	 +-------------------------+ 	 	----------------------------	--------------------------		 --------------------------		--------------------------
+ * servers数组关联http{}内的所有_srv_conf_t
+ *
+ *
+ * cmd:对应指令的配置信息
+ *	   { ngx_string("location"),
+ *     	 NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_BLOCK|NGX_CONF_TAKE12,
+ *     	 ngx_http_core_location,
+ *       NGX_HTTP_SRV_CONF_OFFSET,//conf
+ *       0,//offset
+ *       NULL },
+ *
+ *
+ * dummy: /'dʌmi/ n 假人;傀儡;
+ *		该方法不会用到这个这个变量。
+ *		实际上走的是下面的逻辑:
+ *			} else if (cf->ctx) {
+ *				confp = *(void **) ((char *) cf->ctx + cmd->conf);
+ *				if (confp) {
+ *                   conf = confp[ngx_modules[i]->ctx_index];
+ *              }
+ *          }
+ *       所以dummy是一个指向ngx_http_core_srv_conf_t结构体的指针
+ *
+ *
+ * 约定:
+ * 		在图中,如果是用"+"表示的则表示在内存中是同一个结构体
+ *
+ */
 static char *
 ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 {
@@ -3520,6 +3765,11 @@ ngx_http_core_create_main_conf(ngx_conf_t *cf)
         return NULL;
     }
 
+    /*
+     * 初始化用于存放server{}块的数组
+     * 初始化数组个数是4
+     * 数组中每个元素的字节个数是存放一个指针的所需字节个数
+     */
     if (ngx_array_init(&cmcf->servers, cf->pool, 4,
                        sizeof(ngx_http_core_srv_conf_t *))
         != NGX_OK)

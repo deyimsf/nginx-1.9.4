@@ -1198,7 +1198,9 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
 
 //  rv = (*cf->handler)(cf, NULL, cf->handler_conf);
 /*
- * events指令对应的方法
+ * 在解析ngx顶层配置文件时会解析到events{}指令,该指定对应该方法
+ *
+ * events{}指令对应的方法
  *
  * 1.为事件模块编号
  * 2.为事件模块分配存放各个事件模块配置信息的指针空间
@@ -1206,17 +1208,37 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
  * 4.解析所有事件模块
  * 5.调用所有事件模块的init_conf方法来初始化配置信息结构体
  *
- * cf->ctx: cycle->conf_ctx
  *
- * *conf: 该值是核心事件模块在cycle->conf_ctx中第二层指针的位置的值
+ * cf的值最初是由ngx_init_cycle()方法调用ngx_conf_parse()方法传过来的,cf内容如下：
+ * 	 cf->ctx: cycle->conf_ctx
+ *	 cf->module_type = NGX_CORE_MODULE
+ *	 cf->cmd_type = NGX_MAIN_CONF
+ *
+ *
+ * cmd: 该指令的配置信息
+ * 		{ ngx_string("events"),
+ *     	  NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
+ *     	  ngx_events_block,
+ *     	  0,
+ *     	  0,
+ *     	  NULL }
+ *
+ * conf:
+ * 		因为events指令有NGX_MAIN_CONF配置,所以conf值走的是ngx_conf_handler()方法的
+ *			} else if (cmd->type & NGX_MAIN_CONF) {
+ * 			conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
+ *   	逻辑。
+ *
+ * conf: 该值是核心事件模块在cycle->conf_ctx中第二层指针的位置的地址
+ * (此时cycle->conf_ctx等于cf->ctx)
  *   cf->ctx      	     conf
  *   -----          	-----
  *	 | * |              | * |
  *	 -----              -----
- *	 \                 	/
- *	  ------------------
- *	  | * | * | * | *# |
- *    ------------------
+ *	  \                 /
+ *	   ------------------
+ *	   | * |  ...  | *# | ngx_events_module.index
+ *     ------------------
  */
 static char *
 ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -1279,9 +1301,9 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * 	 | * |
      *   -----
      *    \
-     *     -------------------
-     *     | *# | *# | *# | ....
-     *     -------------------
+     *     ---------------
+     *     | * | ... | * |
+     *     ---------------
      */
     *ctx = ngx_pcalloc(cf->pool, ngx_event_max_module * sizeof(void *));
     if (*ctx == NULL) {
@@ -1291,22 +1313,22 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     /*
      * 直接 *conf=ctx 这样也行吧(是行，但是因为ctx是指针，*conf不是指针, 这样赋值不太好看)
      * 这样赋值后四层指针就全部用到了:其中cf->ctx 等于 cycle->conf_ctx
-     *   cf->ctx             conf
-	 *   -----              -----
-	 *	 | * |              | * |
-	 *	 -----              -----
-	 *	 \                 /       ctx
-	 *	  -----------------       -----
-	 *	  | * | * | * | * |       | * |
-	 *    -----------------       -----
-	 *    				  \      /
-	 *    				   -----
-     *				       | * |
-     *				       -----
-     *				       \
-     *				       ------------------
-     *				       | *# | *# | *# |	 ...
-     *				       ------------------
+     *   cf->ctx      	  		   conf
+	 *   -----           		  -----
+	 *	 | * |           		  | * |
+	 *	 -----           		  -----
+	 *	  \               		    /				     ctx
+	 *	   --------------------------------------	    -----
+	 *	   | * |  ...  |*ngx_events_module.index| 		| * |
+	 *     --------------------------------------		-----
+	 *     				  					  \          /
+	 *					   					 --------------
+	 *					   				     |     *      |
+	 *					   					 --------------
+	 *					   	  				   \
+	 *					   	   				    ---------------
+	 *					   	   				    | * | ... | * | 存放各个事件模块的配置结构体指针
+	 *					   	   				    ---------------
      */
     *(void **) conf = ctx;
 
@@ -1319,27 +1341,28 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         m = ngx_modules[i]->ctx;
 
         if (m->create_conf) {
-        	/* 第三层指针存放的是各个事件模块的配置项结构体,指针图形如下:
-			   ctx
-			   -----
-			   | * | 该内存空间在变量定义时给出(void ***ctx); 值是ngx_pcalloc(cf->pool, sizeof(void *))方法的返回值。
-			   -----
-			   |设 *(ctx+0) 为ctx0
-			   \*(ctx+0)
-			   	-----
-			    | * | 这一层指针有具体的核心模块负责创建。该内存空间有ngx_pcalloc(cf->pool, sizeof(void *))方法分配; 值是ngx_pcalloc(cf->pool, ngx_event_max_module * sizeof(void *))方法的返回值。
-			    -----
-				|设*(ctx0+0)为ctx00	|设*(ctx0+1)为ctx01
-				\*(ctx0+0)   		\*(ctx0+1)
-				 -----------------------------
-				 |     *       |       *     | 该内存空间有ngx_pcalloc(cf->pool, ngx_event_max_module * sizeof(void *))方法分配; 值是m->create_conf(cf->cycle)方法的返回值。
-				 -----------------------------
-				 |					   	  |
-				 \*(ctx00+0)	  		  \*(ctx01+0)
-				  ------------------       ------------------
-				  |ngx_event_conf_t|       |ngx_epoll_conf_t| 该内存空间有m->create_conf(cf->cycle)方法创建
-				  ------------------       ------------------
-        	*/
+        	/* ctx的第三层指针存放的是各个事件模块的配置项结构体,指针图形如下:
+        	 *  cf->ctx|cycle->conf_ctx     conf
+			 *   -----           		   -----
+			 *	 | * |           		   | * |
+			 *	 -----           		   -----
+			 *	  \               		    /				      ctx
+			 *	   --------------------------------------	     -----
+			 *	   | * |  ...  |*ngx_events_module.index| 		 | * |
+			 *     --------------------------------------		 -----
+			 *     				  					 \            /
+			 *					   					 --------------
+			 *					   				     |     *      |
+			 *					   					 --------------
+			 *					   	  				   \
+			 *					   	   				    ---------------
+			 *					   	   				    | * | ... | * | 存放各个事件模块的配置结构体指针
+			 *					   	   				    ---------------
+			 *											 /			 \
+			 *					   	   		------------------	  ------------------
+			 *					   	   		|ngx_event_conf_t|	  |ngx_epoll_conf_t|
+        	 *								------------------	  ------------------
+        	 */
             (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);
             if ((*ctx)[ngx_modules[i]->ctx_index] == NULL) {
                 return NGX_CONF_ERROR;

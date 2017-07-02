@@ -191,6 +191,9 @@ typedef struct {
 } ngx_http_core_main_conf_t;
 
 
+/*
+ * 代表一个server{}块
+ */
 typedef struct {
     /* array of the ngx_http_server_name_t, "server_name" directive */
     ngx_array_t                 server_names;
@@ -221,6 +224,7 @@ typedef struct {
 #endif
 
     /*
+     * ？？？？???? 这里为什么不用数组，就像main_conf_t中有servers数组一样
      * 关联当前server{}块下的所有http模块的location{}块
      * named_locations
      * -----
@@ -339,6 +343,7 @@ typedef struct {
     unsigned                   code:10;
     unsigned                   test_dir:1;
 } ngx_http_try_file_t;
+
 
 // 可以认为该结构体代表一个location{}块
 struct ngx_http_core_loc_conf_s {

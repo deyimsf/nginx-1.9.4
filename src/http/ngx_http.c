@@ -117,7 +117,7 @@ ngx_module_t  ngx_http_module = {
 
 
 /*
- * 在解析ngx顶层配置文件时会解析到http{}指令,该指令对调用该方法
+ * 在解析ngx顶层配置文件时会解析到http{}指令,该指令对应该方法
  *
  * 指令http对应的方法,整个http模块的入口,用来管理所有的http模块
  *
@@ -147,17 +147,17 @@ ngx_module_t  ngx_http_module = {
  * 			conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
  *   逻辑。
  *
- *   该值是核心http模块在cycle->conf_ctx中第二层指针的位置的值:
+ *   该值是核心http模块在cycle->conf_ctx中第二层指针的位置的地址:
  *   (此时cycle->conf_ctx等于cf->ctx)
  *
  *   cf->ctx      	     conf
  *   -----          	-----
  *	 | * |              | * |
  *	 -----              -----
- *	  \                  /
- *	  ------------------
- *	  | * | * | * | *# |
- *    ------------------
+ *	  \                 /
+ *	   ------------------
+ *	   | * | * | * | *# |ngx_http_module.index
+ *     ------------------
  *
  * conf值是 &cycle->conf_ctx[ngx_http_module.index]
  *
