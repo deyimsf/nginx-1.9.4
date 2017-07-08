@@ -347,17 +347,26 @@ typedef struct {
 
 // 可以认为该结构体代表一个location{}块
 struct ngx_http_core_loc_conf_s {
+	/*
+	 * location指令对应的名字,比如：
+	 * 		location ~  /aa {}
+	 * 那么该值就是 /aa
+	 */
     ngx_str_t     name;          /* location name */
 
 #if (NGX_PCRE)
+    // 编译好的正则
     ngx_http_regex_t  *regex;
 #endif
 
+    // TODO
     unsigned      noname:1;   /* "if () {}" block or limit_except */
     unsigned      lmt_excpt:1;
     unsigned      named:1;
 
+    // 1表示精确匹配
     unsigned      exact_match:1;
+    // TODO
     unsigned      noregex:1;
 
     unsigned      auto_redirect:1;
@@ -374,8 +383,10 @@ struct ngx_http_core_loc_conf_s {
 #endif
 
     /* pointer to the modules' loc_conf */
-    // 在某个location{}块内的所有http模块的loc_conf配置项结构体
-    // locl_conf[module.ctx_index]
+    /*
+     *  在某个location{}块内的所有http模块的loc_conf配置项结构体
+     * locl_conf[module.ctx_index]
+     */
     void        **loc_conf;
 
     uint32_t      limit_except;
@@ -483,6 +494,15 @@ struct ngx_http_core_loc_conf_s {
     ngx_uint_t    types_hash_max_size;
     ngx_uint_t    types_hash_bucket_size;
 
+    /*
+     * 一个ngx_http_core_loc_conf_t结构体可以认为代表一个location{}
+	 *
+     * 如果当前结构体是在server{}中的ngx_http_conf_ctx_t->loc_conf[ngx_http_core_module.ctx_index]
+     * 那么locations就是server{}块下所属的所有location{}块
+     *
+     * 如果当前结构体是在location{}中的ngx_http_conf_ctx_t->loc_conf[ngx_http_core_module.ctx_index]
+     * 那么locations就是location{}块下所属的所有location{}块
+     */
     ngx_queue_t  *locations;
 
 #if 0
@@ -491,13 +511,30 @@ struct ngx_http_core_loc_conf_s {
 };
 
 
+/*
+ * 一个队列元素
+ * 存放ngx_http_core_loc_conf_t对象
+ */
 typedef struct {
     ngx_queue_t                      queue;
+    /*
+	 * 1.如果location是精确匹配
+	 * 2.如果location是正则匹配
+	 * 3.如果location是@匹配
+	 */
     ngx_http_core_loc_conf_t        *exact;
+    /*
+     * 如果location是一般匹配
+     */
     ngx_http_core_loc_conf_t        *inclusive;
+    // location名字
     ngx_str_t                       *name;
+    // location所在文件的名字
     u_char                          *file_name;
+    // location所在的行
     ngx_uint_t                       line;
+
+    // TODO
     ngx_queue_t                      list;
 } ngx_http_location_queue_t;
 

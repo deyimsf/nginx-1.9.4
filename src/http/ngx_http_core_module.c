@@ -3081,9 +3081,9 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 	 *    | **main_conf | ... |	   	       |  **main_conf  |  **srv_conf  |  **loc_conf  |
 	 *    ---------------------		       -----------------------------------------------
 	 *				 \			 	 	   /           	      /                      \
-	 *				 -----------------------		   -------------			   -------------
+	 *				 ++-------------------++		   -------------			   -------------
 	 *				 | * |     ...     | * |		   | * |...| * |			   | * |...| * | 都是ngx_http_max_module个
-	 *				 -----------------------		   -------------			   -------------
+	 *				 ++-------------------++		   -------------			   -------------
 	 *				   |  					             |							 |
 	 *				+-------------------------+	   ---------------------------	  --------------------------
 	 *				|ngx_http_core_main_conf_t|	   |ngx_http_core_main_conf_t|	  |ngx_http_core_loc_conf_t|
@@ -3106,9 +3106,9 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 	 *    				| **main_conf | **srv_conf | **loc_conf |
 	 *    				-----------------------------------------
 	 *				 	/					|
-	 *		  ---------------			---------------
+	 *		  ++-----------++			---------------
 	 *		  | * | ... | * |			| * | ... | * |  都是ngx_http_max_module个
-	 *		  ---------------			---------------
+	 *		  ++-----------++			---------------
 	 *	        |
 	 *	  +-------------------------+
 	 *	  |ngx_http_core_main_conf_t| 和上图中带"+"边的在内存中是同一个结构体
@@ -3132,9 +3132,9 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 	 *    				| **main_conf | **srv_conf | **loc_conf |
 	 *    				-----------------------------------------
 	 *				 	/					|				  |
-	 *		  ---------------		 ---------------	 ---------------
+	 *		  ++-----------++		 ---------------	 ---------------
 	 *		  | * | ... | * |		 | * | ... | * |  	 | * | ... | * | 都是ngx_http_max_module个
-	 *		  ---------------		 ---------------	 ---------------
+	 *		  ++-----------++		 ---------------	 ---------------
 	 *	        |
 	 *	  +-------------------------+
 	 *	  |ngx_http_core_main_conf_t|
@@ -3176,9 +3176,9 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 			 *    							| **main_conf | **srv_conf | **loc_conf |
 			 *    							-----------------------------------------
 			 *				 				/					|				  |
-			 *		  			---------------		 	---------------	 	---------------
+			 *		  			++-----------++		 	---------------	 	---------------
 			 *		  			| * | ... | * |		 	| * | ... | * |  	| * | ... | * | 都是ngx_http_max_module个
-			 *		  			---------------		 	---------------	    ---------------
+			 *		  			++-----------++		 	---------------	    ---------------
 			 *	       			  |						  |
 			 *	  +-------------------------+		---------------------------
 			 *	  |ngx_http_core_main_conf_t|		|ngx_http_core_srv_conf_t|
@@ -3205,9 +3205,9 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 			 *    							| **main_conf | **srv_conf | **loc_conf |
 			 *    							-----------------------------------------
 			 *				 				/					|				  |
-			 *		  			---------------		 	---------------	 		---------------
+			 *		  			++-----------++		 	---------------	 		---------------
 			 *		  			| * | ... | * |		 	| * | ... | * |  		| * | ... | * | 都是ngx_http_max_module个
-			 *		  			---------------		 	---------------	    	---------------
+			 *		  			++-----------++		 	---------------	    	---------------
 			 *	       			  |						  |						  |
 			 *	  +-------------------------+	 --------------------------		--------------------------
 			 *	  |ngx_http_core_main_conf_t|	 |ngx_http_core_srv_conf_t|		|ngx_http_core_loc_conf_t|
@@ -3232,9 +3232,9 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 	 *    							|   **main_conf   |   **srv_conf   |   **loc_conf   |
 	 *    							-----------------------------------------------------
 	 *		 cmcf		 			/		cscf				|				  	   |
-	 *	    -----	  	---------------	 	----- 		---------------	 			---------------
+	 *	    -----	  	++-----------++	 	----- 		---------------	 			---------------
 	 *	 	| * |  		| * | ... | * |		| * | 		| * | ... | * |  			| * | ... | * | 都是ngx_http_max_module个
-	 *		-----		---------------		----- 		---------------	    		---------------
+	 *		-----		++-----------++		----- 		---------------	    		---------------
 	 *	      |			  |						\  	    / ngx_http_core_srv_conf_t	  |
 	 *	  +-------------------------+	 		----------------------------		 --------------------------
 	 *	  |ngx_http_core_main_conf_t|	 		| * | *ctx |      ...	   |	     |ngx_http_core_loc_conf_t|
@@ -3264,7 +3264,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
      *						-----------------
      *						| * |  ...  | * |
      *						-----------------
-     *						 /			 \
+     *						 /			  \
      *	--------------------------	   --------------------------
      *	|ngx_http_core_srv_conf_t|     |ngx_http_core_srv_conf_t|
      *	--------------------------     --------------------------
@@ -3289,15 +3289,18 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 	 *    						-----------------------------------------------------			   -----------------------------------------------------
 	 *    						|   **main_conf   |   **srv_conf   |   **loc_conf   |			   |   **main_conf   |   **srv_conf   |   **loc_conf   |
 	 *    						-----------------------------------------------------			   -----------------------------------------------------
-	 *		 			 			/				|				  	   |						   |				 |					|
-	 *	         	  	---------------	 	 ---------------	 		---------------			 +------------+	  ---------------	 ---------------
-	 *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 |_main_conf_t|	  | * | ... | * |	 | * | ... | * |都是ngx_http_max_module个
-	 *					---------------		 ---------------	    	---------------			 +------------+	  ---------------	 ---------------
-	 *	      			  |					  / ngx_http_core_srv_conf_t   \												|					|
-	 *	 +-------------------------+		----------------------------	--------------------------		 --------------------------		--------------------------
-	 *	 |ngx_http_core_main_conf_t|		| * | *ctx |      ...  	   |	|ngx_http_core_loc_conf_t|		 |ngx_http_core_srv_conf_t|		|ngx_http_core_loc_conf_t|
-	 *	 +-------------------------+ 	 	----------------------------	--------------------------		 --------------------------		--------------------------
-	 *
+	 *		 			 			/				|				  	   |						   |				     |					   	 \
+	 *	         	  	++-----------++	 	 ---------------	 		---------------			 	  ++-----------++	   ---------------	    	---------------
+	 *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 	  | * | ... | * |	   | * | ... | * |	    	| * | ... | * |都是ngx_http_max_module个
+	 *					++-----------++		 ---------------	    	---------------			 	  ++-----------++	   ---------------	    	---------------
+	 *	      			  |					 / ngx_http_core_srv_conf_t   \								|			   		 |						   \
+	 *	 +-------------------------+	  ----------------------------	--------------------------		|	       		 --------------------------	   --------------------------
+	 *	 |ngx_http_core_main_conf_t|	  | * | *ctx |      ...  	 |	|ngx_http_core_loc_conf_t|		|	 			 |ngx_http_core_srv_conf_t|	   |ngx_http_core_loc_conf_t|
+	 *	 +-------------------------+ 	  ----------------------------	--------------------------		|	 			 --------------------------	   --------------------------
+	 *																									|
+	 *																								 +-------------------------+
+	 *																								 |ngx_http_core_main_conf_t|
+	 *																								 +-------------------------+
      */
     pcf = *cf;
     cf->ctx = ctx;
@@ -3306,7 +3309,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     /*
      * 当每个模块在server{}块的自定义配置项创建完毕之后,解析server{}块下的所有指令
      * 每解析到一个指令就调用每个指令的handler方法
-     * 当然在server{}呢也会遇到location指令,location指令绑定的handler是ngx_http_core_location方法
+     * 当然在server{}块也会遇到location指令,location指令绑定的handler是ngx_http_core_location方法
      *
      * 当这个方法执行完毕后，所有server{}块下的指令就都被解析完毕了。(包括location{}s)
      */
@@ -3375,16 +3378,18 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
  *    						-----------------------------------------------------			   -----------------------------------------------------
  *    						|   **main_conf   |   **srv_conf   |   **loc_conf   |			   |   **main_conf   |   **srv_conf   |   **loc_conf   |
  *    						-----------------------------------------------------			   -----------------------------------------------------
- *		 			 			/				|				  	   |						   |				 |					|
- *	         	  	---------------	 	 ---------------	 		---------------			 +------------+	  ---------------	 ---------------
- *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 |_main_conf_t|	  | * | ... | * |	 | * | ... | * |都是ngx_http_max_module个
- *					---------------		 ---------------	    	---------------			 +------------+	  ---------------	 ---------------
- *	      			  |					  / ngx_http_core_srv_conf_t   \												|					|
- *	 +-------------------------+		----------------------------	--------------------------		 --------------------------		--------------------------
- *	 |ngx_http_core_main_conf_t|		| * | *ctx |      ...  	   |	|ngx_http_core_loc_conf_t|		 |ngx_http_core_srv_conf_t|		|ngx_http_core_loc_conf_t|
- *	 +-------------------------+ 	 	----------------------------	--------------------------		 --------------------------		--------------------------
- * servers数组关联http{}内的所有_srv_conf_t
- *
+ *		 			 			/				|				  	   |						    |					 |					  	 |
+ *	         	  	++-----------++	 	 ---------------	 		---------------			 	++-----------++	  	 ---------------	 		---------------
+ *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 	| * | ... | * |	  	 | * | ... | * |	 		| * | ... | * |都是ngx_http_max_module个
+ *					++-----------++		 ---------------	    	---------------			 	++-----------++	  	 ---------------	 		---------------
+ *	      			  |					  / ngx_http_core_srv_conf_t   \						   |				  \						   	   \
+ *	 +-------------------------+		----------------------------	-------------------------- |		 		  --------------------------	--------------------------
+ *	 |ngx_http_core_main_conf_t|		| * | *ctx |      ...  	   |	|ngx_http_core_loc_conf_t| |		 		  |ngx_http_core_srv_conf_t|	|ngx_http_core_loc_conf_t|
+ *	 +-------------------------+ 	 	----------------------------	-------------------------- |		 		  --------------------------	--------------------------
+ * servers数组关联http{}内的所有_srv_conf_t															   |
+ *																								 +-------------------------+
+ *																								 |ngx_http_core_main_conf_t|
+ * 																			 					 +-------------------------+
  *
  * cmd:对应指令的配置信息
  *	   { ngx_string("location"),
@@ -3424,20 +3429,82 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ngx_http_conf_ctx_t       *ctx, *pctx;
     ngx_http_core_loc_conf_t  *clcf, *pclcf;
 
+    /*
+     * 在前面可以看到,http{}、server{}块都会创建一个ngx_http_conf_ctx_t结构体,
+     * 这里遇到location{}块后又创建了一个ngx_http_conf_ctx_t结构体.
+     *
+     * http模块就是使用该结构体在存放各个模块自己的结构体配置信息的。
+     *
+     * 分配完毕后结构如下:
+     * 	 ctx
+     * 	-----
+     * 	| * |
+     * 	-----
+     * 	  \ 		ngx_http_conf_ctx_t
+     * 	   -----------------------------------------
+     * 	   | **main_conf | **srv_conf | **loc_conf |
+     * 	   -----------------------------------------
+     *
+     */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
     pctx = cf->ctx;
+    // 将location{}块对应的main_conf和server_conf直接指向上一级(server{})的对应的指针
     ctx->main_conf = pctx->main_conf;
     ctx->srv_conf = pctx->srv_conf;
 
+    /*
+     * 分配ngx_http_max_module个指针,用来存放各个http模块在locaiont{}块内的结构体
+     * 分配完毕后ctx内存结构如下:
+     *
+     *   																				cycle->conf_ctx
+	 *																					 -----
+	 *																					 | * |
+	 *																				     -----
+	 * 	 			   		 cf->ctx|pctx													\
+	 *				  			-----												  ---------------------
+	 *				  			| * |												  | * | ... | * | ... | ngx_max_module个
+	 *				  			-----												  ---------------------
+	 *	 			 			 \	         ngx_http_conf_ctx_t							       \			ngx_http_conf_ctx_t
+	 *    						-----------------------------------------------------			   -----------------------------------------------------
+	 *    						|   **main_conf   |   **srv_conf   |   **loc_conf   |			   |   **main_conf   |   **srv_conf   |   **loc_conf   |
+	 *    						-----------------------------------------------------			   -----------------------------------------------------
+	 *		 			 			/				|				  	   |						    |					 |					  	 |
+	 *	         	  	++-----------++	 	 +-+---------+-+	 		---------------			 	++-----------++	  	 ---------------	 		---------------
+	 *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 	| * | ... | * |	  	 | * | ... | * |	 		| * | ... | * |都是ngx_http_max_module个
+	 *					++-----------++		 +-+---------+-+	    	---------------			 	++-----------++	  	 ---------------	 		---------------
+	 *	      			  |					  / ngx_http_core_srv_conf_t   \						   |				  \						   	   \
+	 *	 +-------------------------+		----------------------------	-------------------------- |		 		  --------------------------	--------------------------
+	 *	 |ngx_http_core_main_conf_t|		| * | *ctx |      ...  	   |	|ngx_http_core_loc_conf_t| |		 		  |ngx_http_core_srv_conf_t|	|ngx_http_core_loc_conf_t|
+	 *	 +-------------------------+ 	 	----------------------------	-------------------------- |		 		  --------------------------	--------------------------
+	 * servers数组关联http{}内的所有_srv_conf_t															   |
+	 *																								 +-------------------------+
+	 *																								 |ngx_http_core_main_conf_t|
+	 * 																			 					 +-------------------------+
+     *
+     * 		 ctx
+     * 		-----
+     * 		| * |
+     * 		-----
+     * 	  	   \ 		ngx_http_conf_ctx_t
+     * 	       -----------------------------------------
+     * 	       | **main_conf | **srv_conf | **loc_conf |
+     * 	   	   -----------------------------------------
+     *			 |					|				|
+     *	++-----------++	 	 +-+------------	 ---------------
+     *	| * | ... | * |		 | * | ... | * |	 | * | ... | * | ngx_http_max_module个
+     *	++-----------++		 +-+------------	 ---------------
+     *
+     */
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    // 调用所有http模块的create_loc_conf()方法来创建各个http模块自己的指令信心结构体
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_HTTP_MODULE) {
             continue;
@@ -3457,12 +3524,75 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     clcf = ctx->loc_conf[ngx_http_core_module.ctx_index];
     clcf->loc_conf = ctx->loc_conf;
 
+    /*
+     * 走到这里,对于http核心模块(ngx_http_core_module),它的loc_conf位置的结构体在内存中的位置如下:
+     *
+     *
+     *   																				cycle->conf_ctx
+	 *																					 -----
+	 *																					 | * |
+	 *																				     -----
+	 * 	 			   		 cf->ctx|pctx													\
+	 *				  			-----												  ---------------------
+	 *				  			| * |												  | * | ... | * | ... | ngx_max_module个
+	 *				  			-----												  ---------------------
+	 *	 			 			 \	         ngx_http_conf_ctx_t							       \			ngx_http_conf_ctx_t
+	 *    						-----------------------------------------------------			   -----------------------------------------------------
+	 *    						|   **main_conf   |   **srv_conf   |   **loc_conf   |			   |   **main_conf   |   **srv_conf   |   **loc_conf   |
+	 *    						-----------------------------------------------------			   -----------------------------------------------------
+	 *		 			 			/				|				  	   |						    |					 |					  	 |
+	 *	         	  	++-----------++	 	 +-+---------+-+	 		---------------			 	++-----------++	  	 ---------------	 		---------------
+	 *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 	| * | ... | * |	  	 | * | ... | * |	 		| * | ... | * |都是ngx_http_max_module个
+	 *					++-----------++		 +-+---------+-+	    	---------------			 	++-----------++	  	 ---------------	 		---------------
+	 *	      			  |					  / ngx_http_core_srv_conf_t   \						   |				  \						   	   \
+	 *	 +-------------------------+		----------------------------	-------------------------- |		 		  --------------------------	--------------------------
+	 *	 |ngx_http_core_main_conf_t|		| * | *ctx |      ...  	   |	|ngx_http_core_loc_conf_t| |		 		  |ngx_http_core_srv_conf_t|	|ngx_http_core_loc_conf_t|
+	 *	 +-------------------------+ 	 	----------------------------	-------------------------- |		 		  --------------------------	--------------------------
+	 * servers数组关联http{}内的所有_srv_conf_t															   |
+	 *																								 +-------------------------+
+	 *																								 |ngx_http_core_main_conf_t|
+	 * 																			 					 +-------------------------+
+     *
+     * 	 			ctx
+     * 				-----
+     * 				| * |
+     * 				-----
+     * 	  			  \ 		ngx_http_conf_ctx_t
+     * 	   			-----------------------------------------
+     * 	   			| **main_conf | **srv_conf | **loc_conf |
+     * 	   			-----------------------------------------
+     *					|				|			 \ 当前location中存放所有http模块的配置信息结构体的指针
+     *		++-----------++	 	 +-+---------+-+    +++---------+++			  		      -----
+     *		| * | ... | * |		 | * | ... | * |	| * | ... | * |		      		      | * |clcf
+     *		++-----------++		 +-+---------+-+	+++---------+++			  		      -----
+     *									 			  \	    ngx_http_core_loc_conf_t       /
+     *									 			-----------------------------------------
+     *									 			| **loc_conf |          ......          |
+     *									 			-----------------------------------------
+     *									 				|
+     *									 			+++---------+++
+     *									 			| * | ... | * |
+     *									 			+++---------+++
+     */
+
+
     value = cf->args->elts;
 
+
+    /* 处理location带两个参数的情况
+     * 如果是两个参数,那么它的第一个参数可以是下面这几种:
+     * 	location  =  /aa  {}  : 精确匹配
+     * 	location  ^~  /aa  {} : TODO
+     * 	location  ~  /aa  {}  :
+     * 	location  ~*  /aa  {} :
+     */
     if (cf->args->nelts == 3) {
 
+    	// 第一个参数的长度
         len = value[1].len;
+        // 第一个参数的内容
         mod = value[1].data;
+        // 第二个参数(ngx_str_t)
         name = &value[2];
 
         if (len == 1 && mod[0] == '=') {
@@ -3477,12 +3607,13 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
         } else if (len == 1 && mod[0] == '~') {
 
+        	// 设置clcf->regex字段
             if (ngx_http_core_regex_location(cf, clcf, name, 0) != NGX_OK) {
                 return NGX_CONF_ERROR;
             }
 
         } else if (len == 2 && mod[0] == '~' && mod[1] == '*') {
-
+        	// 设置clcf->regex字段
             if (ngx_http_core_regex_location(cf, clcf, name, 1) != NGX_OK) {
                 return NGX_CONF_ERROR;
             }
@@ -3493,6 +3624,16 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
             return NGX_CONF_ERROR;
         }
 
+
+        // 处理location带一个参数的情况
+        // 如果带一个参数,可以是这样的:
+        //	  	location  =/aa  {}  : 精确匹配
+        //   	location  ^~/aa  {} : TODO
+        //   	location  ~/aa  {}  :
+        //   	location  ~*/aa  {} :
+        //		location  /aa  {}   :
+        //		location  @/aa  {}  :
+        //
     } else {
 
         name = &value[1];
@@ -3539,8 +3680,20 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         }
     }
 
+    // ngx_http_core_loc_conf_t
     pclcf = pctx->loc_conf[ngx_http_core_module.ctx_index];
 
+    /*
+     * 如果这里的pclcf是server{}块中的loc_conf,那么pclcf->name.len肯定等于0
+     *
+     * 只有出现嵌套的location{},如:
+     * 		location / {
+     * 			location /ab {}
+     *
+     * 			location /ac {}
+     * 		}
+     * pclcf->name.len才会大于零
+     */
     if (pclcf->name.len) {
 
         /* nested location */
@@ -3549,6 +3702,13 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         clcf->prev_location = pclcf;
 #endif
 
+        /*
+         * 精确匹配的location中不可以嵌套location,比如:
+         * 		location = /abc {
+         * 			// 这里不允许再次出现location指令
+         * 		}
+         *
+         */
         if (pclcf->exact_match) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "location \"%V\" cannot be inside "
@@ -3557,6 +3717,12 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
             return NGX_CONF_ERROR;
         }
 
+        /*
+         * 以@开头的locatoin中不可以嵌套location{}块,比如:
+         * 		location @/abc {
+         *			// 这里不允许再次出现location指令
+         * 		}
+         */
         if (pclcf->named) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "location \"%V\" cannot be inside "
@@ -3565,6 +3731,12 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
             return NGX_CONF_ERROR;
         }
 
+        /*
+		 * 以@开头的locatoin{}块不可以出现在location{}块中,比如:
+		 * 		location /abc {
+		 *			 location @/abc {} 不允许出现这种location
+		 * 		}
+		 */
         if (clcf->named) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "named location \"%V\" can be "
@@ -3573,8 +3745,28 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
             return NGX_CONF_ERROR;
         }
 
+        /*
+         * pclcf代表上一级location{}块,或者server{}中的ngx_http_conf_ctx_t->loc_conf[ngx_http_core_module.ctx_index]
+         * clcf代表当前location{}块
+         */
+
         len = pclcf->name.len;
 
+
+        /*
+		 * 如果当前location没有使用正则表达式,则当前location的名字必须被上一级location名字包含,如:
+		 * 		location /abc {
+		 * 			location /a {}  //错误
+		 * 		}
+		 *
+		 * 		locaiton /abc {
+		 * 			location /abcdd {} //正确
+		 * 		}
+		 *
+		 * 		location /abc {
+		 * 			location ~ /a {} //正确
+		 * 		}
+		 */
 #if (NGX_PCRE)
         if (clcf->regex == NULL
             && ngx_filename_cmp(clcf->name.data, pclcf->name.data, len) != 0)
@@ -3589,14 +3781,42 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         }
     }
 
+    /*
+     * 把当前代表locaiton{}块的ngx_http_core_loc_conf_t结构体放入到上级locations队列中
+     */
     if (ngx_http_add_location(cf, &pclcf->locations, clcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
 
     save = *cf;
+    // 每个cf->ctx都是一个指向ngx_http_conf_ctx_t的结构体
     cf->ctx = ctx;
     cf->cmd_type = NGX_HTTP_LOC_CONF;
 
+   /*
+	* 	 			ctx
+	* 				-----
+	* 				| * |
+	* 				-----
+	* 	  			  \ 		ngx_http_conf_ctx_t
+	* 	   			-----------------------------------------
+	* 	   			| **main_conf | **srv_conf | **loc_conf |
+	* 	   			-----------------------------------------
+	*					|				|			 \ 当前location中存放所有http模块的配置信息结构体的指针
+	*		++-----------++	 	 +-+---------+-+    +++---------+++			  		      -----
+	*		| * | ... | * |		 | * | ... | * |	| * | ... | * |		      		      | * |clcf
+	*		++-----------++		 +-+---------+-+	+++---------+++			  		      -----
+	*									 			  \	    ngx_http_core_loc_conf_t       /
+	*									 			-----------------------------------------
+	*									 			| **loc_conf |          ......          |
+	*									 			-----------------------------------------
+	*									 				|
+	*									 			+++---------+++
+	*									 			| * | ... | * |
+	*									 			+++---------+++
+    */
+
+    // 开始解析location{}块中的指令
     rv = ngx_conf_parse(cf, NULL);
 
     *cf = save;
@@ -3605,6 +3825,9 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 }
 
 
+/*
+ * 编译正则表达式?
+ */
 static ngx_int_t
 ngx_http_core_regex_location(ngx_conf_t *cf, ngx_http_core_loc_conf_t *clcf,
     ngx_str_t *regex, ngx_uint_t caseless)

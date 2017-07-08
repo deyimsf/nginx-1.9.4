@@ -26,12 +26,12 @@
  *  } my_node;
  *
  *
- *	之后就就可以以容器container对象为入参来使用,nginx为队列提供的各种方法了,比如:
+ *	之后就可以以容器container对象为入参来使用,nginx为队列提供的各种方法了,比如:
  *	my_node node;
  *	node.name = "张三";
  *	node.age = 15;
  *
- *	ngx_queue_insert_head(&container,&node);将node添加到队列头部
+ *	ngx_queue_insert_head(&container,&node.nqt);将node添加到队列头部
  *
  *
  */

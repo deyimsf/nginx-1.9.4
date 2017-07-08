@@ -1144,12 +1144,18 @@ ngx_http_init_static_location_trees(ngx_conf_t *cf,
 }
 
 
+/*
+ * 向locations队列中添加location{}块(ngx_http_core_loc_conf_t)
+ *
+ * 如果还没有为队列分配内存,则先分配内存
+ */
 ngx_int_t
 ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
     ngx_http_core_loc_conf_t *clcf)
 {
     ngx_http_location_queue_t  *lq;
 
+    // 检查是否已经为队列分配内存,如果没有则在这里分配
     if (*locations == NULL) {
         *locations = ngx_palloc(cf->temp_pool,
                                 sizeof(ngx_http_location_queue_t));
@@ -1157,9 +1163,11 @@ ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
             return NGX_ERROR;
         }
 
+        // 初始化队列
         ngx_queue_init(*locations);
     }
 
+    // 创建一个队列元素,队列中放的就是该元素
     lq = ngx_palloc(cf->temp_pool, sizeof(ngx_http_location_queue_t));
     if (lq == NULL) {
         return NGX_ERROR;
@@ -1171,20 +1179,40 @@ ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
 #endif
         || clcf->named || clcf->noname)
     {
+    	/*
+		 * 1.如果该location是精确匹配
+		 * 2.如果该location是正则匹配
+		 * 3.如果该location是@匹配
+		 * 4.nonname是干啥的 TODO
+		 */
+
         lq->exact = clcf;
         lq->inclusive = NULL;
+        printf("=====exact====>%s\n",lq->exact->name.data);
+
 
     } else {
+        /*
+	     * 不满足上面的匹配规则,比如一般匹配(location /abc {})
+	     */
         lq->exact = NULL;
         lq->inclusive = clcf;
+        printf("=====inclusive====>%s\n",lq->inclusive->name.data);
     }
 
+    // location名字
     lq->name = &clcf->name;
+    // location所在的文件
     lq->file_name = cf->conf_file->file.name.data;
+    // location所在的行数
     lq->line = cf->conf_file->line;
+
+    printf("=====lq->file_name====>%s\n",cf->conf_file->file.name.data);
+    printf("=====lq->line====>%lu\n",cf->conf_file->line);
 
     ngx_queue_init(&lq->list);
 
+    // 将对列元素放到*locations队列尾部
     ngx_queue_insert_tail(*locations, &lq->queue);
 
     return NGX_OK;
