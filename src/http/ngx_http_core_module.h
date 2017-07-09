@@ -199,9 +199,10 @@ typedef struct {
     ngx_array_t                 server_names;
 
     /* server ctx */
-    // 主要用来存储所有http模块，在server{}块的配置项结构体(各个自定义模块的srv_conf和loc_conf结构体)
-    // 当然包括核心http模块的ngx_http_core_srv|loc_conf结构体
-    // 用到了 **srv_conf和**loc_conf
+    /* 主要用来存储所有http模块，在server{}块的配置项结构体(各个自定义模块的srv_conf和loc_conf结构体)
+     * 当然包括核心http模块的ngx_http_core_srv|loc_conf结构体
+     * 用到了 **srv_conf和**loc_conf
+     */
     ngx_http_conf_ctx_t        *ctx;
 
     ngx_str_t                   server_name;
@@ -224,20 +225,7 @@ typedef struct {
 #endif
 
     /*
-     * ？？？？???? 这里为什么不用数组，就像main_conf_t中有servers数组一样
-     * 关联当前server{}块下的所有http模块的location{}块
-     * named_locations
-     * -----
-     * | * |
-     * -----
-     *  \
-     *   -------------------------------------------
-     *   |   *    |          ...        |     *    | 所有http模块的位置
-     *   -------------------------------------------
-     *     \								\
-     *   --------------------------		 ---------------------------
-     *   |ngx_http_core_loc_conf_t|      |ngx_http_hello_loc_conf_t|
-     *   --------------------------	     ---------------------------
+     * TODO
      */
     ngx_http_core_loc_conf_t  **named_locations;
 } ngx_http_core_srv_conf_t;
@@ -359,14 +347,31 @@ struct ngx_http_core_loc_conf_s {
     ngx_http_regex_t  *regex;
 #endif
 
-    // TODO
+    /*
+     * if () {}: ngx中,该指令被看成一个location{}块,把自己放入到locations队列中
+     * 			 看/src/http/modules/ngx_http_rewrite_module.c/ngx_http_rewrite_if()方法
+     *
+     * limit_except method {}: ngx中,该指令被看成一个location{}块,把自己放入到locations队列中
+     * 			看/src/http/ngx_http_core_module.c/ngx_http_core_limit_except
+     */
     unsigned      noname:1;   /* "if () {}" block or limit_except */
     unsigned      lmt_excpt:1;
+    /*
+     * 前缀是@的location:
+     * 	location @abc {}
+     */
     unsigned      named:1;
 
-    // 1表示精确匹配
+    /*
+     * 1表示精确匹配:
+     *   location = /abc {}
+     *
+     */
     unsigned      exact_match:1;
-    // TODO
+    /*
+     * 没有编译正则表达式?:
+     * 	 location ^~ /abc {}
+     */
     unsigned      noregex:1;
 
     unsigned      auto_redirect:1;

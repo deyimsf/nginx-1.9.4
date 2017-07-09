@@ -3318,6 +3318,8 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     *cf = pcf;
 
     if (rv == NGX_CONF_OK && !cscf->listen) {
+    	// 如果server中没有设置listen指令,则走下面的逻辑
+
         ngx_memzero(&lsopt, sizeof(ngx_http_listen_opt_t));
 
         sin = &lsopt.u.sockaddr_in;
@@ -3607,13 +3609,13 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
         } else if (len == 1 && mod[0] == '~') {
 
-        	// 设置clcf->regex字段
+        	// 设置clcf->regex字段, 区分大小写
             if (ngx_http_core_regex_location(cf, clcf, name, 0) != NGX_OK) {
                 return NGX_CONF_ERROR;
             }
 
         } else if (len == 2 && mod[0] == '~' && mod[1] == '*') {
-        	// 设置clcf->regex字段
+        	// 设置clcf->regex字段, 不区分大小写
             if (ngx_http_core_regex_location(cf, clcf, name, 1) != NGX_OK) {
                 return NGX_CONF_ERROR;
             }
@@ -3827,6 +3829,8 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
 /*
  * 编译正则表达式?
+ *
+ * caseless: 是否区分大小写
  */
 static ngx_int_t
 ngx_http_core_regex_location(ngx_conf_t *cf, ngx_http_core_loc_conf_t *clcf,

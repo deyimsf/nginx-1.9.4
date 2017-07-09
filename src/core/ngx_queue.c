@@ -57,6 +57,8 @@ ngx_queue_middle(ngx_queue_t *queue)
  *
  *	*queue: 容器本身指针
  *	*cmp: 比较方法
+ *
+ * 排完之后的结果是升序
  */
 void
 ngx_queue_sort(ngx_queue_t *queue,

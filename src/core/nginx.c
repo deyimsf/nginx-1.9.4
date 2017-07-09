@@ -36,9 +36,6 @@
  *   在http核心模块(ngx_http_core_module)的ngx_http_core_location方法中,会再次调用所有http模块
  *   的create_loc_conf方法。
  *
- *
- *
- *
  */
 
 

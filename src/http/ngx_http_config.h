@@ -94,9 +94,16 @@ typedef struct {
     ngx_int_t   (*postconfiguration)(ngx_conf_t *cf);
 
     void       *(*create_main_conf)(ngx_conf_t *cf);
+    /*
+     * conf: 该模块在本级区域创建的配置信息结构体(已经赋值完毕)
+     */
     char       *(*init_main_conf)(ngx_conf_t *cf, void *conf);
 
     void       *(*create_srv_conf)(ngx_conf_t *cf);
+    /*
+     * prev: 该模块在上级区域创建的配置信息结构体(已经赋值完毕)
+     * conf: 该模块在本级区域创建的配置信息结构体(已经赋值完毕)
+     */
     char       *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);
 
     void       *(*create_loc_conf)(ngx_conf_t *cf);
