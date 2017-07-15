@@ -185,7 +185,7 @@ struct ngx_queue_s {
  *
  * h: 容器本身的指针
  * q: 容器h中的一个元素,拆完后q不再属于容器h,而属于新的容器
- * n: 新容器本身的指针
+ * n: 新容器本身的指针,n中原来的元素被抛弃
  */
 #define ngx_queue_split(h, q, n)                                              \
     (n)->prev = (h)->prev;                                                    \

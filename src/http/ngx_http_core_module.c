@@ -1557,6 +1557,13 @@ ngx_http_core_find_location(ngx_http_request_t *r)
     }
 
     /* rc == NGX_DECLINED or rc == NGX_AGAIN in nested location */
+    /*
+     * 走到这里有两种情况:
+     * 	rc == NGX_DECLINED: 在server{}中没有匹配成功,或者在嵌套中没有匹配成功
+     * 	rc == NGX_AGAIN: 在server{}中匹配成功,或者在嵌套中匹配成功
+     *
+     * 	这两种都没有终止匹配作用,所以继续向下进行正则匹配
+     */
 
 #if (NGX_PCRE)
 
@@ -1593,10 +1600,10 @@ ngx_http_core_find_location(ngx_http_request_t *r)
 
 
 /*
- * NGX_OK       - exact match
+ * NGX_OK       - exact match 精确匹配(=)
  * NGX_DONE     - auto redirect
- * NGX_AGAIN    - inclusive match
- * NGX_DECLINED - no match
+ * NGX_AGAIN    - inclusive match 一般匹配(^~|无修饰符)
+ * NGX_DECLINED - no match 没有匹配成功
  */
 
 static ngx_int_t
@@ -1655,10 +1662,12 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
         if (len == (size_t) node->len) {
 
             if (node->exact) {
+            	// 精确匹配(=), 则终止继续匹配,直接返回
                 r->loc_conf = node->exact->loc_conf;
                 return NGX_OK;
 
             } else {
+            	// 非精确匹配(^~|无修饰符),则继续向下匹配
                 r->loc_conf = node->inclusive->loc_conf;
                 return NGX_AGAIN;
             }

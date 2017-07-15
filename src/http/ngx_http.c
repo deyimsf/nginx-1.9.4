@@ -617,11 +617,14 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         /*
          * cscfp[s]: 当前server{}块的ngx_http_core_srv_conf_t结构体
          * clcf: 当前server{}块的ngx_http_core_loc_conf_t结构体
+         *
+         * 初始化locations队列
          */
         if (ngx_http_init_locations(cf, cscfp[s], clcf) != NGX_OK) {
             return NGX_CONF_ERROR;
         }
 
+        // 此时locations队列已经分隔完毕
         if (ngx_http_init_static_location_trees(cf, clcf) != NGX_OK) {
             return NGX_CONF_ERROR;
         }
@@ -1109,6 +1112,13 @@ ngx_http_merge_locations(ngx_conf_t *cf, ngx_queue_t *locations,
 }
 
 
+/*
+ * 该方法执行完毕后会把locations队列拆分开来,结果如下:
+ *	1.named_locations数组存放@类型的location
+ *	2.regex_locations数组存放正则类型的location
+ *	3.原来的locations存放无修饰符(包括 =|^~|无修饰符)类型的locaiton
+ *	4.TODO  一个疑问 if () {} 直接扔掉了?
+ */
 static ngx_int_t
 ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     ngx_http_core_loc_conf_t *pclcf)
@@ -1139,6 +1149,11 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     r = 0;
 #endif
 
+    /*
+     * 该循环记录locaitons队列中,第一个正则location用regex表示
+     * 记录第一个@ location用named表示
+     * 记录第一个if () {}用q表示
+     */
     for (q = ngx_queue_head(locations);
          q != ngx_queue_sentinel(locations);
          q = ngx_queue_next(q))
@@ -1156,6 +1171,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
 #if (NGX_PCRE)
 
+        // 这是一个正则(~ | ~*)locaiton
         if (clcf->regex) {
             r++;
 
@@ -1168,6 +1184,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
 #endif
 
+        // 这是一个@ location
         if (clcf->named) {
             n++;
 
@@ -1178,11 +1195,14 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
             continue;
         }
 
+        // 这是一个if () {}
         if (clcf->noname) {
             break;
         }
     }
 
+
+    // 把 if () {} 分离出去
     if (q != ngx_queue_sentinel(locations)) {
         ngx_queue_split(locations, q, &tail);
     }
@@ -1194,6 +1214,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
             return NGX_ERROR;
         }
 
+        // 存放@匹配的location
         cscf->named_locations = clcfp;
 
         for (q = named;
@@ -1207,6 +1228,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
         *clcfp = NULL;
 
+        // 把@匹配的location分离出去
         ngx_queue_split(locations, named, &tail);
     }
 
@@ -1220,6 +1242,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
             return NGX_ERROR;
         }
 
+        // 存放正则匹配的location
         pclcf->regex_locations = clcfp;
 
         for (q = regex;
@@ -1233,6 +1256,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
         *clcfp = NULL;
 
+        // 把正则匹配的location分离出去
         ngx_queue_split(locations, regex, &tail);
     }
 
@@ -1324,12 +1348,11 @@ ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
         || clcf->named || clcf->noname)
     {
     	/*
-		 * 1.如果该location是精确匹配
-		 * 2.如果该location是正则匹配
+		 * 1.如果该location是精确匹配(=)
+		 * 2.如果该location是正则匹配(~|~*)
 		 * 3.如果该location是@匹配
-		 * 4.nonname是干啥的 TODO
+		 * 4.nonname: if () {} 或limit_except
 		 */
-
         lq->exact = clcf;
         lq->inclusive = NULL;
         //printf("=====exact====>%s\n",lq->exact->name.data);
@@ -1337,7 +1360,9 @@ ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
 
     } else {
         /*
-	     * 不满足上面的匹配规则,比如一般匹配(location /abc {})
+	     * 不满足上面的匹配规则,如:
+	     * 	location /abc {}
+	     *	location ^~ /abc {}
 	     */
         lq->exact = NULL;
         lq->inclusive = clcf;
@@ -1356,14 +1381,24 @@ ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
 
     ngx_queue_init(&lq->list);
 
-    // 将对列元素放到*locations队列尾部
+    // 将对列元素放到locations队列尾部
     ngx_queue_insert_tail(*locations, &lq->queue);
 
     return NGX_OK;
 }
 
 
-// TODO
+/*
+ * 每个server{}块和location{}块都会维护一个location队列
+ * locations队列排完序后的顺序如下:
+ *  1. = (精确匹配,终止匹配) | 无修饰符 | ^~ (和无修饰符相同,但终止匹配)
+ *    按字符倒序排序
+ *  2. ~* | ~
+ *    按照在配置文件中的位置排序,终止匹配
+ *  3. @ (内部匹配,TODO 是否终止匹配)
+ *  4. if () {} 所有终止匹配都不会终止if
+ *
+ */
 static ngx_int_t
 ngx_http_cmp_locations(const ngx_queue_t *one, const ngx_queue_t *two)
 {
@@ -1449,6 +1484,7 @@ ngx_http_cmp_locations(const ngx_queue_t *one, const ngx_queue_t *two)
 
 #endif
 
+    // 非正则、非named、非nonamed的location的比较,也就是除了 ~|~*|@|if () {} 这几个的比较
     rc = ngx_filename_cmp(first->name.data, second->name.data,
                           ngx_min(first->name.len, second->name.len) + 1);
 
@@ -1461,6 +1497,9 @@ ngx_http_cmp_locations(const ngx_queue_t *one, const ngx_queue_t *two)
 }
 
 
+/**
+ * TODO 没看明白目的是啥
+ */
 static ngx_int_t
 ngx_http_join_exact_locations(ngx_conf_t *cf, ngx_queue_t *locations)
 {
@@ -1480,6 +1519,7 @@ ngx_http_join_exact_locations(ngx_conf_t *cf, ngx_queue_t *locations)
             && ngx_filename_cmp(lq->name->data, lx->name->data, lx->name->len)
                == 0)
         {
+        	// 如果locaiton名字相同,并且是精确匹配(=)或者一般匹配(^~|无修饰符),则不允许
             if ((lq->exact && lx->exact) || (lq->inclusive && lx->inclusive)) {
                 ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
                               "duplicate location \"%V\" in %s:%ui",
@@ -1488,6 +1528,11 @@ ngx_http_join_exact_locations(ngx_conf_t *cf, ngx_queue_t *locations)
                 return NGX_ERROR;
             }
 
+            /*
+             * 走到这里是这种情况:
+             *  lq->exact == 1  	lx->inclusive == 1
+             *  lq->inclusive == 1  	lx->exact == 1
+             */
             lq->inclusive = lx->inclusive;
 
             ngx_queue_remove(x);

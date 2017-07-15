@@ -225,7 +225,7 @@ typedef struct {
 #endif
 
     /*
-     * TODO
+     *  存放@匹配的location
      */
     ngx_http_core_loc_conf_t  **named_locations;
 } ngx_http_core_srv_conf_t;
@@ -384,6 +384,7 @@ struct ngx_http_core_loc_conf_s {
 
     ngx_http_location_tree_node_t   *static_locations;
 #if (NGX_PCRE)
+    // 存放正则匹配的location
     ngx_http_core_loc_conf_t       **regex_locations;
 #endif
 
@@ -507,6 +508,17 @@ struct ngx_http_core_loc_conf_s {
      *
      * 如果当前结构体是在location{}中的ngx_http_conf_ctx_t->loc_conf[ngx_http_core_module.ctx_index]
      * 那么locations就是location{}块下所属的所有location{}块
+     *
+     *
+     * locations队列排完序后的顺序如下:
+	 *  1. = (精确匹配,终止匹配) | 无修饰符 | ^~ (和无修饰符相同,但终止匹配)
+	 *    按字符倒序排序
+	 *  2. ~* | ~
+	 *    按照在配置文件中的位置排序,终止匹配
+	 *  3. @ (内部匹配,TODO 是否终止匹配)
+	 *  4. if () {} 所有终止匹配都不会终止if
+	 *
+	 *  最后会被拆分开成只剩下上面的第一种
      */
     ngx_queue_t  *locations;
 
@@ -523,13 +535,13 @@ struct ngx_http_core_loc_conf_s {
 typedef struct {
     ngx_queue_t                      queue;
     /*
-	 * 1.如果location是精确匹配
-	 * 2.如果location是正则匹配
+	 * 1.如果location是精确匹配(=)
+	 * 2.如果location是正则匹配(~|~*)
 	 * 3.如果location是@匹配
 	 */
     ngx_http_core_loc_conf_t        *exact;
     /*
-     * 如果location是一般匹配
+     * 如果location是一般匹配(无修饰符|^~)
      */
     ngx_http_core_loc_conf_t        *inclusive;
     // location名字
