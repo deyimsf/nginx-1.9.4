@@ -1614,6 +1614,7 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
     size_t      len, n;
     ngx_int_t   rc, rv;
 
+    // 当前请求uri的长度
     len = r->uri.len;
     uri = r->uri.data;
 
@@ -1630,14 +1631,28 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
 
         n = (len <= (size_t) node->len) ? len : node->len;
 
+        // 当前uri和容器中的节点比对,只比对两者中最短的字符个数
         rc = ngx_filename_cmp(uri, node->name, n);
 
+        /*
+         * 比对不成功,比如:
+         * 	 uri = /3/asdeeeeeeeee
+         * 	 node->name = /4/abbbbbb
+         */
         if (rc != 0) {
+        	/*
+        	 * rc < 0 : 表示uri的排序在node->name的前面,所以应该去左边的树进行查找
+        	 */
             node = (rc < 0) ? node->left : node->right;
 
             continue;
         }
 
+        /*
+         * 走到这里表示匹配成功,比如:
+         * 	 uri = /ab
+         * 	 node->name = /a
+         */
         if (len > (size_t) node->len) {
 
             if (node->inclusive) {

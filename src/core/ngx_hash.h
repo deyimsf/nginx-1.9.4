@@ -124,7 +124,7 @@ typedef struct {
 
 
 /*
- * 只是在构造hash结构是使用
+ * 只是在构造hash结构时使用
  * 当构造完*hash后就不需要了
  */
 typedef struct {
@@ -181,19 +181,27 @@ typedef struct {
     ngx_pool_t       *pool;
     ngx_pool_t       *temp_pool;
 
-    // 以数组的形式存放基础散列表的键值对数据,以ngx_hash_key_t结构体存放
-    // 由ngx_hash_add_key方法赋值
+    /*
+     * 以数组的形式存放基础散列表的键值对数据,以ngx_hash_key_t结构体存放
+     * 由ngx_hash_add_key方法赋值
+     */
     ngx_array_t       keys;
-    // 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
-    // 这个桶用ngx_array_t结构体表示,桶里面存储了不含通配符的域名
+    /*
+     * 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
+     * 这个桶用ngx_array_t结构体表示,桶里面存储了不含通配符的域名
+     */
     ngx_array_t      *keys_hash;
 
-    // 以数组的形式存放前置通配符散列表的键值对数据,以ngx_hash_key_t结构体存放
-    // 由ngx_hash_add_key方法赋值
-    // 如：*.jd.com
+    /*
+     * 以数组的形式存放前置通配符散列表的键值对数据,以ngx_hash_key_t结构体存放
+     * 由ngx_hash_add_key方法赋值
+     * 如：*.jd.com
+     */
     ngx_array_t       dns_wc_head;
-    // 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
-    // 这个桶用ngx_array_t结构体表示,桶里面存储了包含前置通配符的域名
+    /*
+     * 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
+     * 这个桶用ngx_array_t结构体表示,桶里面存储了包含前置通配符的域名
+     */
     ngx_array_t      *dns_wc_head_hash;
 
     // 以数组的形式存放后置通配符散列表的键值对数据,以ngx_hash_key结构体存放

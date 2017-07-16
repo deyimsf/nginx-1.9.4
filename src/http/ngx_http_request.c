@@ -216,6 +216,9 @@ ngx_http_init_connection(ngx_connection_t *c)
 
     /* find the server configuration for the address:port */
 
+    /*
+     * 当前连接有port端口接收
+     */
     port = c->listening->servers;
 
     if (port->naddrs > 1) {
@@ -259,6 +262,7 @@ ngx_http_init_connection(ngx_connection_t *c)
 
             /* the last address is "*" */
 
+            // 匹配地址
             for (i = 0; i < port->naddrs - 1; i++) {
                 if (addr[i].addr == sin->sin_addr.s_addr) {
                     break;

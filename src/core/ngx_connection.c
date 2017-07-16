@@ -90,6 +90,9 @@ ngx_create_listening(ngx_conf_t *cf, void *sockaddr, socklen_t socklen)
 }
 
 
+/*
+ * 对reuserport的支持
+ */
 ngx_int_t
 ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
 {

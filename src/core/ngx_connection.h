@@ -47,6 +47,10 @@ struct ngx_listening_s {
     /* handler of accepted connection */
     ngx_connection_handler_pt   handler;
 
+    /*
+     * src/http/http.c/ngx_http_init_listening()方法中会将其设置为ngx_http_port_t
+     *
+     */
     void               *servers;  /* array of ngx_http_in_addr_t, for example */
 
     ngx_log_t           log;

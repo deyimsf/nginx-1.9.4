@@ -57,6 +57,10 @@ typedef struct ngx_http_location_tree_node_s  ngx_http_location_tree_node_t;
 typedef struct ngx_http_core_loc_conf_s  ngx_http_core_loc_conf_t;
 
 
+/*
+ * 代表一个server{}块下的一个监听地址,比如 listen 8080
+ * 也就是说该结构体只能代表一个端口
+ */
 typedef struct {
     union {
         struct sockaddr        sockaddr;
@@ -196,6 +200,9 @@ typedef struct {
  */
 typedef struct {
     /* array of the ngx_http_server_name_t, "server_name" directive */
+	/*
+	 * 当前server{}下的所有域名,有server_name指令提供
+	 */
     ngx_array_t                 server_names;
 
     /* server ctx */
@@ -290,6 +297,40 @@ typedef struct {
 } ngx_http_port_t;
 
 
+/*
+ * 代表一个端口,端口维度
+ * 如下配置:
+ * 	 server { // server1
+ * 	 	listen		127.0.0.1:8080;
+ * 	 	listen		127.0.0.2:8080;
+ * 	 	server_name host1 host2;
+ * 	 }
+ *
+ * 	 server { // server2
+ * 	 	listen		127.0.0.1:8080;
+ * 	 	listen		127.0.0.2:8080;
+ * 	 	server_name host3 host4;
+ * 	 }
+ * 这样一个配置会产生一个ngx_http_conf_port_t结构体,因为端口都一样
+ *
+ * ngx_http_conf_port_t->addrs: 8080
+ * 		ngx_http_conf_addr_t->servers: 127.0.0.1
+ *			ngx_http_core_srv_conf_t->server_names: server1
+ *				host1
+ *				host2
+ *			ngx_http_core_srv_conf_t->server_names: server2
+ *				host3
+ *				host4
+ *
+ * 		ngx_http_conf_addr_t->servers: 127.0.0.2
+ * 			ngx_http_core_srv_conf_t: server1
+ * 				host1
+ *				host2
+ *			ngx_http_core_srv_conf_t: server2
+ *			 	host3
+ *				host4
+ *
+ */
 typedef struct {
     ngx_int_t                  family;
     in_port_t                  port;
@@ -297,20 +338,82 @@ typedef struct {
 } ngx_http_conf_port_t;
 
 
+/*
+ * 代表某个端口下的一个地址,所以该结构体是ip地址维度的
+ *
+ * 如下配置:
+ * 	 server { // server1
+ * 	 	listen		127.0.0.1:8080;
+ * 	 	listen		127.0.0.2:8080;
+ * 	 	server_name host1 host2;
+ * 	 }
+ *
+ * 	 server { // server2
+ * 	 	listen		127.0.0.1:8080;
+ * 	 	listen		127.0.0.2:8080;
+ * 	 	server_name host3 host4;
+ * 	 }
+ * 这样一个配置,对于8080端口会产生两个该结构体
+ * 一个代表127.0.0.1这个地址;另一个代表127.0.0.2这个地址
+ * 最终该结构体中的servers数组,会存放代表server1和server2的ngx_http_core_srv_conf_t结构体
+ *
+ *
+ * ngx_http_conf_addr_t --> 127.0.0.1
+ *		servers:
+ *			----------------------------------------------------
+ *			|ngx_http_core_srv_conf_t|ngx_http_core_srv_conf_t|
+ *			----------------------------------------------------
+ *
+ * ngx_http_conf_addr_t --> 127.0.0.2
+ *  	servers:
+ *			----------------------------------------------------
+ *			|ngx_http_core_srv_conf_t|ngx_http_core_srv_conf_t|
+ *			----------------------------------------------------
+ */
 typedef struct {
     ngx_http_listen_opt_t      opt;
 
+    /*
+     * 简易hash结构,不带通配符的(如: www.jd.com)
+     */
     ngx_hash_t                 hash;
+    /*
+     * 通配符的hash结构,存放前置通配符域名(*.jd.com)
+     */
     ngx_hash_wildcard_t       *wc_head;
+    /*
+     * 通配符的hash结构,存放后置通配符域名(www.jd.*)
+     */
     ngx_hash_wildcard_t       *wc_tail;
 
 #if (NGX_PCRE)
     ngx_uint_t                 nregex;
+    /*
+     * 存放正则匹配的域名(如: www.jd.{1,3}.com)
+     */
     ngx_http_server_name_t    *regex;
 #endif
 
     /* the default server configuration for this address:port */
     ngx_http_core_srv_conf_t  *default_server;
+
+    /*
+     * 某个端口下面的所有server{}块  一个server{}块下面可以有多个端口
+     * 如下配置:
+     * 	 server { // server1
+     * 	 	listen		127.0.0.1:8080;
+     * 	 	listen		127.0.0.2:8080;
+     * 	 	server_name host1 host2;
+     * 	 }
+     *
+     * 	 server { // server2
+     * 	 	listen		127.0.0.1:8080;
+     * 	 	listen		127.0.0.2:8080;
+     * 	 	server_name host3 host4;
+     * 	 }
+     * 则对于127.0.0.1:8080这个地址,servers数组中存放了两个server{}块,分别是server1和server2
+     *
+     */
     ngx_array_t                servers;  /* array of ngx_http_core_srv_conf_t */
 } ngx_http_conf_addr_t;
 

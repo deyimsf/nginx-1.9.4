@@ -618,13 +618,13 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
          * cscfp[s]: 当前server{}块的ngx_http_core_srv_conf_t结构体
          * clcf: 当前server{}块的ngx_http_core_loc_conf_t结构体
          *
-         * 初始化locations队列
+         * 初始化locations队列,该方法执行完毕后会把locations队列拆分开来
          */
         if (ngx_http_init_locations(cf, cscfp[s], clcf) != NGX_OK) {
             return NGX_CONF_ERROR;
         }
 
-        // 此时locations队列已经分隔完毕
+        // 此时locations队列已经有ngx_http_init_locations()方法分隔完毕
         if (ngx_http_init_static_location_trees(cf, clcf) != NGX_OK) {
             return NGX_CONF_ERROR;
         }
@@ -698,7 +698,8 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      */
 
     /*
-     * 设置server的查找hash结构 TODO
+     * 1.通过ports构造域名的hash结构
+     * 2.将posts中所有的监听地址,放入cf->cycle->listening数组中
      */
     if (ngx_http_optimize_servers(cf, cmcf, cmcf->ports) != NGX_OK) {
         return NGX_CONF_ERROR;
@@ -1266,6 +1267,10 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 }
 
 
+/*
+ * 该方法主要是完成对pclcf->static_locations完全平衡二叉树的赋值
+ *
+ */
 static ngx_int_t
 ngx_http_init_static_location_trees(ngx_conf_t *cf,
     ngx_http_core_loc_conf_t *pclcf)
@@ -1301,6 +1306,7 @@ ngx_http_init_static_location_trees(ngx_conf_t *cf,
         return NGX_ERROR;
     }
 
+    // TODO
     ngx_http_create_locations_list(locations, ngx_queue_head(locations));
 
     pclcf->static_locations = ngx_http_create_locations_tree(cf, locations, 0);
@@ -1547,6 +1553,9 @@ ngx_http_join_exact_locations(ngx_conf_t *cf, ngx_queue_t *locations)
 }
 
 
+/*
+ * TODO 没看明白是干啥的
+ */
 static void
 ngx_http_create_locations_list(ngx_queue_t *locations, ngx_queue_t *q)
 {
@@ -1733,6 +1742,7 @@ ngx_http_add_listen(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
     port = cmcf->ports->elts;
     for (i = 0; i < cmcf->ports->nelts; i++) {
+    	// 匹配是否有相同的端口存在于ports中
 
         if (p != port[i].port || sa->sa_family != port[i].family) {
             continue;
@@ -1740,6 +1750,9 @@ ngx_http_add_listen(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
         /* a port is already in the port list */
 
+        /*
+         * 端口已经存在
+         */
         return ngx_http_add_addresses(cf, cscf, &port[i], lsopt);
     }
 
@@ -1967,6 +1980,13 @@ ngx_http_add_server(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 }
 
 
+/*
+ * 1.通过ports构造域名的hash结构
+ * 2.将posts中所有的监听地址,放入cf->cycle->listening数组中
+ *
+ * ports:以端口维度保存的整个nginx的监听地址
+ *
+ */
 static ngx_int_t
 ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     ngx_array_t *ports)
@@ -1999,12 +2019,14 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 #endif
                )
             {
+            	// 为域名构造hash结构
                 if (ngx_http_server_names(cf, cmcf, &addr[a]) != NGX_OK) {
                     return NGX_ERROR;
                 }
             }
         }
 
+        /* 将port[p]中代表的监听地址,放入到cf->cycle->listening数组中 */
         if (ngx_http_init_listening(cf, &port[p]) != NGX_OK) {
             return NGX_ERROR;
         }
@@ -2014,6 +2036,15 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 }
 
 
+/*
+ * 将某个端口对应的所有域名放入到ngx_http_conf_addr_t结构体的不同字段中
+ *
+ * addr->hash: 存放不带通配符的域名(如: www.jd.com)
+ * addr->wc_head: 存放带前置通配符的域名(如: *.jd.com)
+ * addr->wc_tail: 存放带后置通配符的域名(如: www.jd.*)
+ * addr->regex: 存放正则匹配的域名(如: www.\d.com)
+ *
+ */
 static ngx_int_t
 ngx_http_server_names(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     ngx_http_conf_addr_t *addr)
@@ -2039,16 +2070,40 @@ ngx_http_server_names(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 
     ha.pool = cf->pool;
 
+    // 初始化ngx_hash_keys_arrays_t对象,为下面创建各种hash结构做准备
     if (ngx_hash_keys_array_init(&ha, NGX_HASH_LARGE) != NGX_OK) {
         goto failed;
     }
 
+    /*
+     * 假设配置文件如下:
+     * 	 server { // server1
+     * 	 	listen		8080;
+     * 	 	server_name host1 host2;
+     * 	 }
+     *
+     * 	 server { // server2
+     * 	 	listen		8080;
+     * 	 	server_name host3 host4;
+     * 	 }
+     *
+     *
+     * 	 则addr->servers.elts放的数据如下:
+     * 	   cscfp[0]	 server1
+     * 	   cscfp[1]	 server2
+     */
     cscfp = addr->servers.elts;
 
     for (s = 0; s < addr->servers.nelts; s++) {
 
+    	/*
+    	 * 存放cscfp[s](ngx_http_core_srv_conf_t)下的所有域名的数组
+    	 */
         name = cscfp[s]->server_names.elts;
 
+        /*
+         * 构造cscfp[s](ngx_http_core_srv_conf_t)下的所有域名的hash结构
+         */
         for (n = 0; n < cscfp[s]->server_names.nelts; n++) {
 
 #if (NGX_PCRE)
@@ -2058,6 +2113,12 @@ ngx_http_server_names(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
             }
 #endif
 
+            /*
+             * 该方法会根据域名的设置情况将其放入到ngx_hash_keys_arrays_t的不同字段上
+             * 	keys:一个数组,存放不带统配符的域名(如 www.jd.com)
+             * 	dns_wc_head:一个数组,存放前置通配符的域名(如 *.jd.com)
+             * 	dns_wc_tail:一个数组,存放后置通配符的域名(如 www.jd.*)
+             */
             rc = ngx_hash_add_key(&ha, &name[n].name, name[n].server,
                                   NGX_HASH_WILDCARD_KEY);
 
@@ -2090,12 +2151,19 @@ ngx_http_server_names(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
         hash.hash = &addr->hash;
         hash.temp_pool = NULL;
 
+        /*
+         * 将不带统配符的域名,放入到&addr->hash结构中
+         */
         if (ngx_hash_init(&hash, ha.keys.elts, ha.keys.nelts) != NGX_OK) {
             goto failed;
         }
     }
 
     if (ha.dns_wc_head.nelts) {
+
+    	/*
+    	 * 将前置通配符域名,放入到addr->wc_head结构中
+    	 */
 
         ngx_qsort(ha.dns_wc_head.elts, (size_t) ha.dns_wc_head.nelts,
                   sizeof(ngx_hash_key_t), ngx_http_cmp_dns_wildcards);
@@ -2114,6 +2182,9 @@ ngx_http_server_names(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     }
 
     if (ha.dns_wc_tail.nelts) {
+    	/*
+		 * 将后置通配符域名,放入到addr->wc_tail结构中
+		 */
 
         ngx_qsort(ha.dns_wc_tail.elts, (size_t) ha.dns_wc_tail.nelts,
                   sizeof(ngx_hash_key_t), ngx_http_cmp_dns_wildcards);
@@ -2139,7 +2210,23 @@ ngx_http_server_names(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
         return NGX_OK;
     }
 
+    /*
+     * 处理当前端口中,带正则表达式的域名
+     * addr->nregex: 带正则域名的个数
+     */
     addr->nregex = regex;
+    /*
+     * 为addr->regex分配regex个存放ngx_http_server_name_t结构的内存,分配后结构如下:
+     * 	 addr->regex
+     * 	   -----
+     * 	   | * |
+     * 	   -----
+     *		 \					regex个
+     *		 -----------------------------------------------------
+     *		 |ngx_http_server_name_t| ... |ngx_http_server_name_t|
+     *		 -----------------------------------------------------
+     *
+     */
     addr->regex = ngx_palloc(cf->pool, regex * sizeof(ngx_http_server_name_t));
     if (addr->regex == NULL) {
         return NGX_ERROR;
@@ -2216,6 +2303,9 @@ ngx_http_cmp_dns_wildcards(const void *one, const void *two)
 }
 
 
+/*
+ * 将port下代表的所有监听地址,加入到cf->cycle->listeing数组中
+ */
 static ngx_int_t
 ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
 {
@@ -2281,6 +2371,7 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
             break;
         }
 
+        // 对reuserport的支持,暂时不考虑看
         if (ngx_clone_listening(cf, ls) != NGX_OK) {
             return NGX_ERROR;
         }
