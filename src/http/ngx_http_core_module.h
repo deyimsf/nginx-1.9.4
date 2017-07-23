@@ -187,6 +187,22 @@ typedef struct {
 
     ngx_hash_keys_arrays_t    *variables_keys;
 
+    /*
+     * ports:以端口维度保存的整个nginx的监听地址
+	 * 		8080:{
+	 * 			192.168.146.80:{
+	 * 				www.jd.com
+	 * 				d.jd.com
+	 * 			}
+	 *
+	 *
+	 * 			127.0.0.1:{
+	 *				d.jd.com
+	 *				www.jd.com
+	 * 			}
+	 * 		}
+	 *
+     */
     ngx_array_t               *ports;
 
     ngx_uint_t                 try_files;       /* unsigned  try_files:1 */
@@ -290,9 +306,17 @@ typedef struct {
 #endif
 
 
+/*
+ * 代表一个端口,跟ngx_http_conf_port_t的区别是,ngx_http_conf_port_t是一个配置信息,
+ * 他里面包含了当前nginx关于监听地址的所有配置信息(ip、port、域名)。
+ * 而该结构体是被每个ngx_listening_t引用的,每一个ngx_listening_t对象,都会用servers来
+ * 指定一个ngx_http_port_t,也就是说ngx_listening_t在端口维度引用了所有的监听地址。
+ */
 typedef struct {
     /* ngx_http_in_addr_t or ngx_http_in6_addr_t */
+	// 端口下的所有地址
     void                      *addrs;
+    // 端口下地址的个数
     ngx_uint_t                 naddrs;
 } ngx_http_port_t;
 
@@ -654,14 +678,37 @@ typedef struct {
     // location所在的行
     ngx_uint_t                       line;
 
-    // TODO
+    /*
+	 * TODO ?
+	 * 放嵌套的locatio,比如:
+	 * 		location /a {
+	 * 			locaiton /a/b {}
+	 * 			location /a/c {}
+	 * 			location /a/d {}
+	 * 		}
+	 * 则list中存放的就是/a里面的location,最后会用他来组装ngx_http_location_tree_node_s中的tree字段
+	 *
+	 */
     ngx_queue_t                      list;
 } ngx_http_location_queue_t;
 
 
 struct ngx_http_location_tree_node_s {
+	// 左子树
     ngx_http_location_tree_node_t   *left;
+    // 右子树
     ngx_http_location_tree_node_t   *right;
+    /*
+     * TODO ?
+     * 放嵌套的locatio,比如:
+     * 		location /a {
+     * 			locaiton /a/b {}
+     * 			location /a/c {}
+     * 			location /a/d {}
+     * 		}
+     * 则tree中存放的就是/a里面的location,并且名字会去掉/a前缀
+     *
+     */
     ngx_http_location_tree_node_t   *tree;
 
     ngx_http_core_loc_conf_t        *exact;

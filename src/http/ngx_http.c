@@ -624,7 +624,10 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             return NGX_CONF_ERROR;
         }
 
-        // 此时locations队列已经有ngx_http_init_locations()方法分隔完毕
+        /*
+         * 此时locations队列已经由ngx_http_init_locations()方法分隔完毕
+         * 组装完全二叉树
+         */
         if (ngx_http_init_static_location_trees(cf, clcf) != NGX_OK) {
             return NGX_CONF_ERROR;
         }
@@ -1268,7 +1271,20 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
 
 /*
- * 该方法主要是完成对pclcf->static_locations完全平衡二叉树的赋值
+ * 该方法主要是完成对pclcf->static_locations完全二叉树的赋值
+ * static_locations最终值包含精确匹配(=)和无符号匹配的location块
+ *
+ * 完全二叉树(Complete Binary Tree):
+ * 		若设二叉树的深度为h,除第h层外,其它各层的结点数都到达最大个数,并且第h层的节点都连续
+ * 		集中在最左边。
+ *
+ * 		完全二叉树:							 满二叉树
+ * 						A						A
+ * 					   / \					   / \
+ * 					  /   \					  /   \
+ * 					 B     C				 B     C
+ * 				    / \   / \				/ \   / \
+ * 				   D   E F				   D   E F   G
  *
  */
 static ngx_int_t
@@ -1279,6 +1295,10 @@ ngx_http_init_static_location_trees(ngx_conf_t *cf,
     ngx_http_core_loc_conf_t   *clcf;
     ngx_http_location_queue_t  *lq;
 
+    /*
+     * 取出pclcf下的locations队列,此时的队列并没有包含全部的location{}
+     * 该队列在/src/http/ngx_http.c/ngx_http_init_locations()方法中已经被分隔完毕
+     */
     locations = pclcf->locations;
 
     if (locations == NULL) {
@@ -1295,13 +1315,16 @@ ngx_http_init_static_location_trees(ngx_conf_t *cf,
     {
         lq = (ngx_http_location_queue_t *) q;
 
+        // 取出代表location{}的ngx_http_core_loc_conf_t结构体
         clcf = lq->exact ? lq->exact : lq->inclusive;
 
+        // 递归处理ngx_http_core_loc_conf_t下的locations队列
         if (ngx_http_init_static_location_trees(cf, clcf) != NGX_OK) {
             return NGX_ERROR;
         }
     }
 
+    // 没看明白是干啥的 TODO ?
     if (ngx_http_join_exact_locations(cf, locations) != NGX_OK) {
         return NGX_ERROR;
     }
@@ -1309,6 +1332,7 @@ ngx_http_init_static_location_trees(ngx_conf_t *cf,
     // TODO
     ngx_http_create_locations_list(locations, ngx_queue_head(locations));
 
+    // 创建完全二叉树
     pclcf->static_locations = ngx_http_create_locations_tree(cf, locations, 0);
     if (pclcf->static_locations == NULL) {
         return NGX_ERROR;
@@ -1554,7 +1578,7 @@ ngx_http_join_exact_locations(ngx_conf_t *cf, ngx_queue_t *locations)
 
 
 /*
- * TODO 没看明白是干啥的
+ * TODO 没仔细看,后续有需要的时候再细看
  */
 static void
 ngx_http_create_locations_list(ngx_queue_t *locations, ngx_queue_t *q)
@@ -1618,6 +1642,20 @@ ngx_http_create_locations_list(ngx_queue_t *locations, ngx_queue_t *q)
 /*
  * to keep cache locality for left leaf nodes, allocate nodes in following
  * order: node, left subtree, right subtree, inclusive subtree
+ *
+ * 创建完全二叉树
+ *
+ * 完全二叉树(Complete Binary Tree):
+ * 		若设二叉树的深度为h,除第h层外,其它各层的结点数都到达最大个数,并且第h层的节点都连续
+ * 		集中在最左边。
+ *
+ * 		    完全二叉树:					满二叉树:
+ * 						A						A
+ * 					   / \					   / \
+ * 					  /   \					  /   \
+ * 					 B     C				 B     C
+ * 				    / \   / \				/ \   / \
+ * 				   D   E F				   D   E F   G
  */
 
 static ngx_http_location_tree_node_t *
@@ -1684,6 +1722,7 @@ inclusive:
         return node;
     }
 
+    // 这里放嵌套的location ?
     node->tree = ngx_http_create_locations_tree(cf, &lq->list, prefix + len);
     if (node->tree == NULL) {
         return NULL;
@@ -1751,7 +1790,7 @@ ngx_http_add_listen(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         /* a port is already in the port list */
 
         /*
-         * 端口已经存在
+         * 端口已经存在,则将地址添加到该端口(&port[i])中
          */
         return ngx_http_add_addresses(cf, cscf, &port[i], lsopt);
     }
@@ -1985,6 +2024,18 @@ ngx_http_add_server(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
  * 2.将posts中所有的监听地址,放入cf->cycle->listening数组中
  *
  * ports:以端口维度保存的整个nginx的监听地址
+ * 		8080:{
+ * 			192.168.146.80:{
+ * 				www.jd.com
+ * 				d.jd.com
+ * 			}
+ *
+ *
+ * 			127.0.0.1:{
+ *				d.jd.com
+ *				www.jd.com
+ * 			}
+ * 		}
  *
  */
 static ngx_int_t
@@ -2305,6 +2356,10 @@ ngx_http_cmp_dns_wildcards(const void *one, const void *two)
 
 /*
  * 将port下代表的所有监听地址,加入到cf->cycle->listeing数组中
+ * 每一个listeing都会引用一个代表当前端口下的所有地址的集合
+ *
+ * 首先每个ngx_listening_t都会有自身的ip和端口(sockaddr),他的servers字段又以端口
+ * 维度包含了该端口下的所有地址(ip)
  */
 static ngx_int_t
 ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
@@ -2341,6 +2396,7 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
             continue;
         }
 
+        // addr中包含了sockaddr(ip+port)
         ls = ngx_http_add_listening(cf, &addr[i]);
         if (ls == NULL) {
             return NGX_ERROR;
@@ -2353,6 +2409,7 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
 
         ls->servers = hport;
 
+        // 端口下地址的个数
         hport->naddrs = i + 1;
 
         switch (ls->sockaddr->sa_family) {
@@ -2365,6 +2422,10 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
             break;
 #endif
         default: /* AF_INET */
+        	/*        	 *
+        	 * 这个方法会把port端口下的所有地址都放入到hport中,而每一个servers都会包含一个hport,
+        	 * 所以每一个ls都会包该ls对应的所有地址
+        	 */
             if (ngx_http_add_addrs(cf, hport, addr) != NGX_OK) {
                 return NGX_ERROR;
             }
@@ -2462,6 +2523,9 @@ ngx_http_add_listening(ngx_conf_t *cf, ngx_http_conf_addr_t *addr)
 }
 
 
+/*
+ * 将每个端口下的所有地址,存放到hport中
+ */
 static ngx_int_t
 ngx_http_add_addrs(ngx_conf_t *cf, ngx_http_port_t *hport,
     ngx_http_conf_addr_t *addr)
@@ -2471,6 +2535,7 @@ ngx_http_add_addrs(ngx_conf_t *cf, ngx_http_port_t *hport,
     struct sockaddr_in        *sin;
     ngx_http_virtual_names_t  *vn;
 
+    // 为这个端口创建一个存放所有地址的内存空间
     hport->addrs = ngx_pcalloc(cf->pool,
                                hport->naddrs * sizeof(ngx_http_in_addr_t));
     if (hport->addrs == NULL) {
@@ -2479,6 +2544,7 @@ ngx_http_add_addrs(ngx_conf_t *cf, ngx_http_port_t *hport,
 
     addrs = hport->addrs;
 
+    // 把addr数组中所有的地址(只代表某一个端口的)放入到addrs中
     for (i = 0; i < hport->naddrs; i++) {
 
         sin = &addr[i].opt.u.sockaddr_in;

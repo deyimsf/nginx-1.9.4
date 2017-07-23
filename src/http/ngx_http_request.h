@@ -293,6 +293,7 @@ typedef struct ngx_http_addr_conf_s  ngx_http_addr_conf_t;
 
 typedef struct {
     ngx_http_addr_conf_t             *addr_conf;
+    // TODO 当前连接对应的server{}块中的ngx_http_conf_ctx_t结构体
     ngx_http_conf_ctx_t              *conf_ctx;
 
 #if (NGX_HTTP_SSL && defined SSL_CTRL_SET_TLSEXT_HOSTNAME)

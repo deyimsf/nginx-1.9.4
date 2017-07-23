@@ -191,6 +191,11 @@ ngx_http_header_t  ngx_http_headers_in[] = {
 };
 
 
+/*
+ * 当新连接建立完毕后调用该方法
+ *
+ * c: 代表客户端的一个连接
+ */
 void
 ngx_http_init_connection(ngx_connection_t *c)
 {
@@ -206,6 +211,7 @@ ngx_http_init_connection(ngx_connection_t *c)
     ngx_http_in6_addr_t    *addr6;
 #endif
 
+    // 创建一个ngx_http_connection_t结构体
     hc = ngx_pcalloc(c->pool, sizeof(ngx_http_connection_t));
     if (hc == NULL) {
         ngx_http_close_connection(c);
@@ -217,11 +223,12 @@ ngx_http_init_connection(ngx_connection_t *c)
     /* find the server configuration for the address:port */
 
     /*
-     * 当前连接有port端口接收
+     * 当前连接由port端口接收
      */
     port = c->listening->servers;
 
     if (port->naddrs > 1) {
+    	// 如果当前端口对应了多个ip地址,则进行比对
 
         /*
          * there are several addresses on this port and one of them
@@ -256,19 +263,35 @@ ngx_http_init_connection(ngx_connection_t *c)
 #endif
 
         default: /* AF_INET */
+        	// c->local_sockaddr = ls->sockaddr;
             sin = (struct sockaddr_in *) c->local_sockaddr;
 
             addr = port->addrs;
 
             /* the last address is "*" */
 
-            // 匹配地址
+            /*
+             * 对比当前监听连接的ip地址(c->local_sockaddr.s_addr)
+             *
+             * 对比完成之后就可以拿到当前监听地址的addr对象(ngx_http_in_addr_t)
+             * 该对象包含了conf(ngx_http_addr_conf_t)结构体,而该结构体则包含了
+             * virtual_names(ngx_http_virtual_names_t)虚拟主机名字
+             *   typedef struct {
+			 *		 ngx_hash_combined_t       names;
+			 *
+			 *		 ngx_uint_t                nregex;
+			 *		 ngx_http_server_name_t   *regex;
+			 *	 } ngx_http_virtual_names_t;
+			 *	 其中names是包含了所有该地址(ip:port)对应域名的hash结构
+             *
+             */
             for (i = 0; i < port->naddrs - 1; i++) {
                 if (addr[i].addr == sin->sin_addr.s_addr) {
                     break;
                 }
             }
 
+            // 当前监听连接(ip:port)对应的ngx_http_addr_conf_t赋值给hc->addr_conf
             hc->addr_conf = &addr[i].conf;
 
             break;
@@ -293,6 +316,7 @@ ngx_http_init_connection(ngx_connection_t *c)
     }
 
     /* the default server configuration for the address:port */
+    // 该开始时,hc->conf_ctx先设置一个默认的server{}块对应的ngx_http_conf_ctx_t结构体
     hc->conf_ctx = hc->addr_conf->default_server->ctx;
 
     ctx = ngx_palloc(c->pool, sizeof(ngx_http_log_ctx_t));
@@ -403,7 +427,15 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
     hc = c->data;
     cscf = ngx_http_get_module_srv_conf(hc->conf_ctx, ngx_http_core_module);
 
+    /*
+     * TODO
+     * 此时还没有开始读取http数据,也就是还不知道是哪个域名,应该换无法确定是哪个server{}块,
+     * 也就时说无法确定是哪个ngx_http_core_srv_conf_t结构体,那么这里为什么就能确定呢?
+     */
     size = cscf->client_header_buffer_size;
+
+    // printf("server_name=%s; client_header_buffer_size= %zu\n",cscf->server_name.data,size);
+
 
     b = c->buffer;
 
@@ -908,6 +940,10 @@ ngx_http_ssl_servername(ngx_ssl_conn_t *ssl_conn, int *ad, void *arg)
 #endif
 
 
+/*
+ * 解析请求行
+ * 请求行解析完毕后就可以确定是哪个host,然后再根据host就可以找到对应的server{}块
+ */
 static void
 ngx_http_process_request_line(ngx_event_t *rev)
 {
@@ -985,6 +1021,9 @@ ngx_http_process_request_line(ngx_event_t *rev)
                     return;
                 }
 
+                /*
+                 * 解析出host之后,开始匹配域名
+                 */
                 if (ngx_http_set_virtual_server(r, &host) == NGX_ERROR) {
                     return;
                 }
@@ -1016,6 +1055,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
 
             c->log->action = "reading client request headers";
 
+            // 找到server后才会继续向下走
             rev->handler = ngx_http_process_request_headers;
             ngx_http_process_request_headers(rev);
 
@@ -1174,6 +1214,9 @@ ngx_http_process_request_uri(ngx_http_request_t *r)
 }
 
 
+/**
+ * 处理请求头
+ */
 static void
 ngx_http_process_request_headers(ngx_event_t *rev)
 {
@@ -1257,6 +1300,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
         /* the host header could change the server configuration context */
         cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
 
+        // 解析请求头,按行解析
         rc = ngx_http_parse_header_line(r, r->header_in,
                                         cscf->underscores_in_headers);
 
@@ -1836,7 +1880,10 @@ ngx_http_process_request_header(ngx_http_request_t *r)
 }
 
 
-// 解析完所有的请求头后才开始执行此方法
+/*
+ * 解析完所有的请求头后才开始执行此方法
+ * 到这里就开始执行请求的各个阶段了
+ */
 void
 ngx_http_process_request(ngx_http_request_t *r)
 {
@@ -1914,6 +1961,7 @@ ngx_http_process_request(ngx_http_request_t *r)
     // 取出请求r,然后回调请求中的[write|read]_event_handler方法
     c->read->handler = ngx_http_request_handler;
     c->write->handler = ngx_http_request_handler;
+    // 请求读事件暂时设置为阻塞,所以这时不会读请求体,是否需要读请求体由请求的某个阶段指定
     r->read_event_handler = ngx_http_block_reading;
 
     ////ngx_http_read_client_request_body
@@ -2053,6 +2101,9 @@ ngx_http_set_virtual_server(ngx_http_request_t *r, ngx_str_t *host)
 
 #endif
 
+    /*
+     * 匹配域名,在hc->addr_conf->virtual_names中查找host
+     */
     rc = ngx_http_find_virtual_server(r->connection,
                                       hc->addr_conf->virtual_names,
                                       host, r, &cscf);
@@ -2111,15 +2162,18 @@ ngx_http_find_virtual_server(ngx_connection_t *c,
         return NGX_DECLINED;
     }
 
+    // 匹配server{}块(ngx_http_core_srv_conf_t)
     cscf = ngx_hash_find_combined(&virtual_names->names,
                                   ngx_hash_key(host->data, host->len),
                                   host->data, host->len);
 
+    // 匹配成功则返回
     if (cscf) {
         *cscfp = cscf;
         return NGX_OK;
     }
 
+    // 走到这里说明没有匹配成功一般域名命名方式(非正则方式),下面的代码匹配带正则的域名
 #if (NGX_PCRE)
 
     if (host->len && virtual_names->nregex) {

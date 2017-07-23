@@ -50,6 +50,16 @@ struct ngx_listening_s {
     /*
      * src/http/http.c/ngx_http_init_listening()方法中会将其设置为ngx_http_port_t
      *
+     * 以端口维度包含了当前端口下的所有地址信息:
+     *		typedef struct {
+	 *			void                      *addrs; //ngx_http_in_addr_t
+	 *			ngx_uint_t                 naddrs;
+	 *		} ngx_http_port_t;
+     *
+     * 		typedef struct {
+	 *			in_addr_t                  addr;
+	 *			ngx_http_addr_conf_t       conf;
+	 *		} ngx_http_in_addr_t;
      */
     void               *servers;  /* array of ngx_http_in_addr_t, for example */
 
@@ -194,6 +204,7 @@ struct ngx_connection_s {
 #endif
 
     // listening链接对应的内核socket地址
+    // c->local_sockaddr = ls->sockaddr;
     struct sockaddr    *local_sockaddr;
     // local_sockaddr对象的长度
     socklen_t           local_socklen;
