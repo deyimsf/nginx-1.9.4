@@ -1644,13 +1644,18 @@ ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
 }
 
 
+/*
+ * 该方法可以理解为引擎的指令,会基于栈(e->sp)来操作
+ */
 void
 ngx_http_script_value_code(ngx_http_script_engine_t *e)
 {
     ngx_http_script_value_code_t  *code;
 
+    // 该结构体存放了变量的值
     code = (ngx_http_script_value_code_t *) e->ip;
 
+    // 做相应的偏移,脚本引擎可以继续执行后续的代码
     e->ip += sizeof(ngx_http_script_value_code_t);
 
     e->sp->len = code->text_len;
@@ -1659,28 +1664,41 @@ ngx_http_script_value_code(ngx_http_script_engine_t *e)
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
                    "http script value: \"%v\"", e->sp);
 
+    // 压栈(栈顶数据为空)
     e->sp++;
 }
 
 
+/*
+ * 该方法可以理解为引擎的指令,会基于栈(e->sp)来操作
+ */
 void
 ngx_http_script_set_var_code(ngx_http_script_engine_t *e)
 {
     ngx_http_request_t          *r;
     ngx_http_script_var_code_t  *code;
 
+    // 该结构体存放了变量在variables中的下标
     code = (ngx_http_script_var_code_t *) e->ip;
 
+    // 做相应的偏移,脚本引擎可以继续执行后续的代码
     e->ip += sizeof(ngx_http_script_var_code_t);
 
     r = e->request;
 
+    /*
+     * 在ngx_http_script_value_code()方法中做了e->sp++,相当于把栈加一,
+     * 这里是要取出栈中的值,所以这里对栈减一
+     *
+     * 弹栈(取出栈顶数据)
+     */
     e->sp--;
 
     r->variables[code->index].len = e->sp->len;
     r->variables[code->index].valid = 1;
     r->variables[code->index].no_cacheable = 0;
     r->variables[code->index].not_found = 0;
+    // 设置变量值
     r->variables[code->index].data = e->sp->data;
 
 #if (NGX_DEBUG)

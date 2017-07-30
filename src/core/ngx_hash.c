@@ -909,7 +909,7 @@ ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
  *
  * 不允许存在相同的元素,如果存在返回NGX_BUSY
  *
- * (只为域名key服务,也就是说key不能是其它数据)
+ * (只为域名key服务,也就是说key不能是其它数据; 也可以是变量;)
  *
  */
 ngx_int_t
@@ -1067,6 +1067,7 @@ wildcard:
 
         /* check conflicts in exact hash for ".example.com" */
 
+    	/* 检查名字是否冲突 比如jd.com 和 .jd.com视为相同 */
         name = ha->keys_hash[k].elts;
 
         if (name) { // 桶已经存在
@@ -1173,6 +1174,7 @@ wildcard:
 
     /* check conflicts in wildcard hash */
 
+    /* 检查带统配符的key是否冲突 比如.jd.com 和 *.jd.com 视为冲突 */
     name = keys->elts;
 
     if (name) { // 第k个桶已经存在

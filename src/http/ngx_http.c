@@ -4,7 +4,7 @@
  * Copyright (C) Nginx, Inc.
  */
 
-/**
+/*
  * http模块中,各个配置信息结构体的关联方式:
  *
  * 	1.在http核心模块的ngx_http_core_main_conf_t里面有一个servers数组,用来关联http{}块下的所有server{}
@@ -633,16 +633,20 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-
+    // 初始化存放http各个阶段的数组
     if (ngx_http_init_phases(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
 
+    // 初始化存放http请求头的hash结构
     if (ngx_http_init_headers_in_hash(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
 
-
+    /*
+     * 到这里http模块的基本配置就算完成了,下面这个循环会回调所有http模块的postconfiguration()方法
+     * 所以基本上在postconfiguration()方法中可以拿到所有的配置信息
+     */
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -657,6 +661,11 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    /*
+     * 到这里所有的指令都已经解析完毕,包括set指令
+     *
+     * 所以该函数的作用就是为cmcf->variables中的变量设置get_handler方法(这些方法都是内置变量)
+     */
     if (ngx_http_variables_init_vars(cf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -719,6 +728,9 @@ failed:
 }
 
 
+/*
+ * 初始化http模块的阶段,其实就是初始化每个阶段的数组
+ */
 static ngx_int_t
 ngx_http_init_phases(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 {
@@ -775,6 +787,12 @@ ngx_http_init_phases(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 }
 
 
+/*
+ * 初始化请求头的hash结构 cmcf->headers_in_hash
+ *
+ * headers_in_hash结构中key是请求头的名字,值是ngx_http_header_t结构体,该结构体则存放了
+ * 获取当前请求头值的方法
+ */
 static ngx_int_t
 ngx_http_init_headers_in_hash(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 {
@@ -796,6 +814,7 @@ ngx_http_init_headers_in_hash(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         }
 
         hk->key = header->name;
+        // 忽略大小写的hash值
         hk->key_hash = ngx_hash_key_lc(header->name.data, header->name.len);
         hk->value = header;
     }
@@ -1167,7 +1186,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         clcf = lq->exact ? lq->exact : lq->inclusive;
 
         // 打印排好序的locations
-        printf("-------location------->%s\n",clcf->name.data);
+        // printf("-------location------->%s\n",clcf->name.data);
 
         if (ngx_http_init_locations(cf, NULL, clcf) != NGX_OK) {
             return NGX_ERROR;

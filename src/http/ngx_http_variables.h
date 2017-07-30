@@ -13,11 +13,12 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-
+// 变量值
 typedef ngx_variable_value_t  ngx_http_variable_value_t;
 
 #define ngx_http_variable(v)     { sizeof(v) - 1, 1, 0, 0, 0, (u_char *) v }
 
+//变量名
 typedef struct ngx_http_variable_s  ngx_http_variable_t;
 
 typedef void (*ngx_http_set_variable_pt) (ngx_http_request_t *r,
@@ -32,12 +33,33 @@ typedef ngx_int_t (*ngx_http_get_variable_pt) (ngx_http_request_t *r,
 #define NGX_HTTP_VAR_NOHASH       8
 
 
+/*
+ * 表示一个变量名
+ *
+ * ngx_http_variable_value_t表示一个变量值
+ */
 struct ngx_http_variable_s {
+	// 变量的名字
     ngx_str_t                     name;   /* must be first to build the hash */
     ngx_http_set_variable_pt      set_handler;
     ngx_http_get_variable_pt      get_handler;
+
+    /*
+     * 存放指向变量值的地方(ngx_http_request_t的偏移量),比如指向ngx_http_request_t结构体的args字段
+     * 如果没用则为0,比如变量值不是简单的指向ngx_http_request_t结构体的某个字段,而是需要
+     * 复杂的分析计算,那么就需要使用get_handler方法了
+     */
     uintptr_t                     data;
+
+    /*
+     * NGX_HTTP_VAR_CHANGEABLE: 该变量可重复添加
+     * NGX_HTTP_VAR_NOCACHEABLE: 该变量不可缓存(每次都调用get_handler())
+     */
     ngx_uint_t                    flags;
+    /*
+     * 该变量在cmcf->variables内的下标
+     * 可以通过ngx_http_get_variable_index()方法获取
+     */
     ngx_uint_t                    index;
 };
 

@@ -3993,6 +3993,7 @@ ngx_http_core_type(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
 static ngx_int_t
 ngx_http_core_preconfiguration(ngx_conf_t *cf)
 {
+	// 添加ngx核心变量
     return ngx_http_variables_add_core_vars(cf);
 }
 

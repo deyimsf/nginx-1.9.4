@@ -11,8 +11,60 @@
 
 
 typedef struct {
+	/*
+	 * typedef struct {
+     *	  ngx_http_script_code_pt     code;
+     *	  uintptr_t                   value;
+     *	  uintptr_t                   text_len;
+     *	  // 变量的值,这里把变量值指针转换为了long
+     *	  uintptr_t                   text_data;
+	 * } ngx_http_script_value_code_t;
+	 *
+	 * 存放变量的值(ngx_http_script_value_code_t),比如:
+	 *  set $name zhangsan
+	 *
+	 * 那么此时,对于变量name来说,codes的第一个元素就是ngx_http_script_value_code_t:
+	 *  	zhangsan
+	 *  (实际上codes中放的元素大小是1个字节,结构体ngx_http_script_value_code_t有多大,就占多少个元素)
+	 *
+	 *
+	 * 假设有两个set指令,分别是
+	 * 	set $a	aa;
+	 * 	set $b 	bbc;
+	 * 那么最终codes的部分内存结构如下:
+	 *   ------------------------------------ <--- ngx_http_script_value_code_t
+	 *   |code = ngx_http_script_value_code |
+	 * 	 ------------------------------------
+	 * 	 |value = 0							|
+	 * 	 ------------------------------------
+	 * 	 |text_len = 2						|
+	 * 	 ------------------------------------
+	 * 	 |text_data = aa					|
+	 * 	 ------------------------------------ <--- ngx_http_script_var_code_t
+	 * 	 |code=ngx_http_script_set_var_code |
+	 *	 ------------------------------------
+	 *	 |index = 1							|
+	 *	 ------------------------------------ <--- ngx_http_script_value_code_t
+	 *   |code = ngx_http_script_value_code |
+	 * 	 ------------------------------------
+	 * 	 |value = 0							|
+	 * 	 ------------------------------------
+	 * 	 |text_len = 3						|
+	 * 	 ------------------------------------
+	 * 	 |text_data = bbc					|
+	 * 	 ------------------------------------ <--- ngx_http_script_var_code_t
+	 * 	 |code=ngx_http_script_set_var_code |
+	 *	 ------------------------------------
+	 *	 |index = 2							|
+	 *	 ------------------------------------
+	 *
+	 */
     ngx_array_t  *codes;        /* uintptr_t */
 
+    /*
+     * 表示栈大小(ngx_http_script_engine_t->sp)
+     * ngx_http_script_engine_t->sp可以看做是栈
+     */
     ngx_uint_t    stack_size;
 
     ngx_flag_t    log;
@@ -133,6 +185,15 @@ ngx_module_t  ngx_http_rewrite_module = {
 };
 
 
+/*
+ * 执行脚本引擎
+ *
+ * 假设有如下指令:
+ * 	set $a abc
+ *
+ * 用ngx_http_script_value_code()方法将值(abc)压栈(e->sp++)
+ * 用ngx_http_script_set_var_code()方法弹栈(e->sp--)取值,并放到对应的r->variables中
+ */
 static ngx_int_t
 ngx_http_rewrite_handler(ngx_http_request_t *r)
 {
@@ -158,11 +219,13 @@ ngx_http_rewrite_handler(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
 
+    // 创建脚本引擎内存空间
     e = ngx_pcalloc(r->pool, sizeof(ngx_http_script_engine_t));
     if (e == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
+    // 相当于基于栈的指令中的栈,rlcf->stack_size表示栈大小
     e->sp = ngx_pcalloc(r->pool,
                         rlcf->stack_size * sizeof(ngx_http_variable_value_t));
     if (e->sp == NULL) {
@@ -178,6 +241,9 @@ ngx_http_rewrite_handler(ngx_http_request_t *r)
     while (*(uintptr_t *) e->ip) {
         code = *(ngx_http_script_code_pt *) e->ip;
         code(e);
+
+        // ngx_http_script_value_code_t->ngx_http_script_value_code()
+        // ngx_http_script_var_code_t->ngx_http_script_set_var_code()
     }
 
     if (e->status < NGX_HTTP_BAD_REQUEST) {
@@ -895,6 +961,19 @@ ngx_http_rewrite_variable(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
 }
 
 
+/*
+ * 设置变量的引擎数据
+ *
+ * 主要是设置lcf->codes字段,这里面存放了脚本引擎执行时需要的数据:
+ * 	每个变量值有两个结构体来表示,ngx_http_script_value_code_t和ngx_http_script_var_code_t
+ * 	第一个用来保存变量值,第二个用来保存变量在cmcf->variables中的下标
+ *
+ * 	第一个结构体中的ngx_http_script_value_code()方法将变量值压入栈(ngx_http_script_engine_t->sp++)
+ * 	第二个结构体中的ngx_http_script_set_var_code()方法将变量值从栈(ngx_http_script_engine_t->sp--)
+ * 		取出,并对r-variables中对应的变量赋值
+ *
+ * 最终引擎有ngx_http_rewrite_handler()方法执行
+ */
 static char *
 ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -917,11 +996,17 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     value[1].len--;
     value[1].data++;
 
+    /*
+     * 将变量名字添加到cmcf->variables_keys数组中
+     */
     v = ngx_http_add_variable(cf, &value[1], NGX_HTTP_VAR_CHANGEABLE);
     if (v == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    /*
+     * 将变量的名字添加到cmcf->variables数组中,并返回变量在数组中的下标
+     */
     index = ngx_http_get_variable_index(cf, &value[1]);
     if (index == NGX_ERROR) {
         return NGX_CONF_ERROR;
@@ -936,10 +1021,18 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
            != 0
         && ngx_strncasecmp(value[1].data, (u_char *) "arg_", 4) != 0)
     {
+    	/*
+    	 * 自定义变量会走这个逻辑,比如:
+    	 * 		set $a aaa;
+    	 */
         v->get_handler = ngx_http_rewrite_var;
         v->data = index;
+
     }
 
+    /*
+     * 执行完该代码后lcf->codes数组中存放的就是ngx_http_script_value_code_t
+     */
     if (ngx_http_rewrite_value(cf, lcf, &value[2]) != NGX_CONF_OK) {
         return NGX_CONF_ERROR;
     }
@@ -998,6 +1091,7 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
         val->code = ngx_http_script_value_code;
         val->value = (uintptr_t) n;
         val->text_len = (uintptr_t) value->len;
+        // 变量值放入到val->text_data中
         val->text_data = (uintptr_t) value->data;
 
         return NGX_CONF_OK;

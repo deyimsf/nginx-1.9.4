@@ -77,6 +77,9 @@ static char *ngx_http_client_errors[] = {
 };
 
 
+/*
+ * http的所有请求头
+ */
 ngx_http_header_t  ngx_http_headers_in[] = {
     { ngx_string("Host"), offsetof(ngx_http_headers_in_t, host),
                  ngx_http_process_host },
@@ -602,6 +605,7 @@ ngx_http_create_request(ngx_connection_t *c)
 
     cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
 
+    // 为请求中所有可能用到的变量名(cmcf->variables)分配用于存储变量值的内存
     r->variables = ngx_pcalloc(r->pool, cmcf->variables.nelts
                                         * sizeof(ngx_http_variable_value_t));
     if (r->variables == NULL) {

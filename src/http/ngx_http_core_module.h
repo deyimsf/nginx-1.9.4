@@ -160,22 +160,48 @@ typedef struct {
 } ngx_http_phase_engine_t;
 
 
+/*
+ * 该结构体代表http中的一个阶段
+ * 每个阶段都包含一个handlers数组,该数组是每个阶段要执行的方法
+ */
 typedef struct {
+	/*
+	 * 存放http模块要执行的方法,目前方法签名是:
+	 * 		typedef ngx_int_t (*ngx_http_handler_pt)(ngx_http_request_t *r);
+	 */
     ngx_array_t                handlers;
 } ngx_http_phase_t;
 
 
+/*
+ * 整个ngx中只有一个该结构体
+ * 可以认为其代表一个http{}块
+ */
 typedef struct {
-	// 存储http{}块下的所有server{}块配置项结构体(ngx_http_core_srv_conf_t)
-	// 当前http{}下有几个server{},就有几个ngx_http_core_srv_conf_t配置项结构体
+	/*
+	 * 存储http{}块下的所有server{}块配置项结构体(ngx_http_core_srv_conf_t)
+	 * 当前http{}下有几个server{},就有几个ngx_http_core_srv_conf_t配置项结构体
+	 */
     ngx_array_t                servers;         /* ngx_http_core_srv_conf_t */
 
     ngx_http_phase_engine_t    phase_engine;
 
+    /*
+     * 存放http请求头的hash结构
+     */
     ngx_hash_t                 headers_in_hash;
 
+    /*
+     * 变量的hash结构,使用variables_keys->keys数组中的数据生成的
+     */
     ngx_hash_t                 variables_hash;
 
+    /*
+     * 存放ngx配置文件中出现的以"$"开头的变量(已使用变量)
+     *
+     * set指令调用ngx_http_add_variable()和ngx_http_get_variable_index()方法
+     * 分别把变量名放入到cmcf->variables_keys和cmcf->variables数组中
+     */
     ngx_array_t                variables;       /* ngx_http_variable_t */
     ngx_uint_t                 ncaptures;
 
@@ -185,6 +211,19 @@ typedef struct {
     ngx_uint_t                 variables_hash_max_size;
     ngx_uint_t                 variables_hash_bucket_size;
 
+
+    /*
+	 * set指令调用ngx_http_add_variable()和ngx_http_get_variable_index()方法
+	 * 分别把变量名放入到cmcf->variables_keys和cmcf->variables数组中
+	 *
+	 * key是变量的名字
+	 * value是ngx_http_variable_t结构体
+	 *
+	 * 存放ngx中的外置变量和内置变量(已定义变量)
+	 * 它的作用基本就是防止变量重复定义,以及为variables中用到的内置变量设置get_handler方法
+	 *
+	 * 把variables字段设置完毕后,该字段内存就会被回收
+	 */
     ngx_hash_keys_arrays_t    *variables_keys;
 
     /*
@@ -207,6 +246,12 @@ typedef struct {
 
     ngx_uint_t                 try_files;       /* unsigned  try_files:1 */
 
+    /*
+     * 存放所有http模块,在各个阶段要执行的所有方法
+     *
+     * 总共11个阶段NGX_HTTP_LOG_PHASE在枚举ngx_http_phases中的值是10
+     * 这里数组的长度设置为11
+     */
     ngx_http_phase_t           phases[NGX_HTTP_LOG_PHASE + 1];
 } ngx_http_core_main_conf_t;
 

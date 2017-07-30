@@ -355,6 +355,9 @@ ngx_http_variable_value_t  ngx_http_variable_true_value =
     ngx_http_variable("1");
 
 
+/*
+ * 将变量名字添加到cmcf->variables_keys数组中
+ */
 ngx_http_variable_t *
 ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
 {
@@ -372,6 +375,7 @@ ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
+    // 检查要添加的变量是否已经存在variables_keys中
     key = cmcf->variables_keys->keys.elts;
     for (i = 0; i < cmcf->variables_keys->keys.nelts; i++) {
         if (name->len != key[i].key.len
@@ -426,6 +430,15 @@ ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
 }
 
 
+/*
+ * 将变量的名字添加到cmcf->variables数组中,并返回变量在数组中的下标,如果便令名已经存在则返回原下标
+ *
+ * 与该方法对应的方法时ngx_http_get_indexed_variable(),它会通过数组下标获取变量值,也就是说在开发过程中
+ * 如果我们想通过下标的方式来获取变量值,那么在变量解析的时候,我们需要通过ngx_http_get_variable_index()方法
+ * 来获取变量下标,并记住这个下标,然后在实际用的时候就可以通过这个下标直接找到变量了,这个方式比hash查找更快、更高效.
+ *
+ * 该方法不设置变量的get_handler()方法
+ */
 ngx_int_t
 ngx_http_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
 {
@@ -510,6 +523,7 @@ ngx_http_get_indexed_variable(ngx_http_request_t *r, ngx_uint_t index)
         == NGX_OK)
     {
         if (v[index].flags & NGX_HTTP_VAR_NOCACHEABLE) {
+        	// 设置变量是不可缓存的,每次获取该变量都要调用get_handler()方法
             r->variables[index].no_cacheable = 1;
         }
 
@@ -535,6 +549,7 @@ ngx_http_get_flushed_variable(ngx_http_request_t *r, ngx_uint_t index)
             return v;
         }
 
+        // 不可缓存
         v->valid = 0;
         v->not_found = 0;
     }
@@ -643,6 +658,11 @@ ngx_http_get_variable(ngx_http_request_t *r, ngx_str_t *name, ngx_uint_t key)
 }
 
 
+/*
+ * $args变量的set_handler()方法
+ *
+ * data是 args字段在ngx_http_request_t中的偏移量
+ */
 static ngx_int_t
 ngx_http_variable_request(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     uintptr_t data)
@@ -2442,6 +2462,18 @@ ngx_http_regex_exec(ngx_http_request_t *r, ngx_http_regex_t *re, ngx_str_t *s)
 #endif
 
 
+/*
+ * 添加http核心变量,在http核心模块的ngx_http_core_preconfiguration()方法中调用
+ *
+ * 该方法的主要作用是把http核心模块定义的变量放入到cmcf->variables_keys中,供以后生成hash结构用
+ * 比如如下变量:
+ * 	{
+ * 		ngx_string("http_host"),
+ * 		NULL,
+ * 		ngx_http_variable_header,
+ *  	offsetof(ngx_http_request_t, headers_in.host), 0, 0
+ *  }
+ */
 ngx_int_t
 ngx_http_variables_add_core_vars(ngx_conf_t *cf)
 {
@@ -2466,14 +2498,25 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
         return NGX_ERROR;
     }
 
+    // 将http核心模块自定义的变量放入到variables_keys结构体中
     for (cv = ngx_http_core_variables; cv->name.len; cv++) {
         v = ngx_palloc(cf->pool, sizeof(ngx_http_variable_t));
         if (v == NULL) {
             return NGX_ERROR;
         }
 
+        // 将cv结构体复制给v
         *v = *cv;
 
+        /*
+         * 将变量添加到ngx_hash_keys_arrays_t结构体中
+         * 该结构体主要有三个数组来存放键值对ngx_hash_key_t结构体
+         *   keys:存放不带通配符的和带一个点的字符
+         *   dns_wc_head:存放带前置通配符的(*.)
+         *   dns_wc_tail:存放带后置通配符的(.*)
+         * 最终会利用这三个数组来生成真正的hash结构体
+         * (但是变量应该不支持通配符)
+         */
         rc = ngx_hash_add_key(cmcf->variables_keys, &v->name, v,
                               NGX_HASH_READONLY_KEY);
 
@@ -2493,6 +2536,25 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
 }
 
 
+/*
+ * 该函数主要处理cmcf中的两个字段:
+ *	cmcf->variables
+ *	cmcf->variables_keys
+ * variables_keys的作用是收集ngx中所有模块的内置变量,和用set指令配置的变量,并保证变量名字不重复。
+ * variables的作用是收集ngx中实际用的到变量,所谓用到就是在ngx配置文件中出现一"$"开头的字符,比如
+ * 	set $a bbb;
+ * 	set $b $http_host;
+ * 其中变量$http_host是一个内置变量,他在解析http指令之前就已经放入到了variables_keys中,另外两个
+ * $a和$b都是外部变量,set指令在解析到他们的时候,首先会调用ngx_http_add_variable()方法将其放入到variables_keys中,
+ * 然后调用ngx_http_get_variable_index()方法将其放入到variables中。
+ *
+ * 注意,我们之前说variables_keys还有一个作用是变量名防重,当向variables_keys中添加一个变量时,
+ * 如果ngx_http_add_variable()方法的第三个参数flags没有设置成NGX_HTTP_VAR_CHANGEABLE,并且variables_keys中
+ * 已存在该变量名,则添加失败并打印 the duplicate \"%V\" variable
+ *
+ * 最终目的:
+ * 	如果variables中存在内置变量,则设置其get_handler方法
+ */
 ngx_int_t
 ngx_http_variables_init_vars(ngx_conf_t *cf)
 {
@@ -2504,6 +2566,9 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
 
     /* set the handlers for the indexed http variables */
 
+    /*
+     * 取出http核心模块的ngx_http_core_main_conf_t结构体
+     */
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
     v = cmcf->variables.elts;
@@ -2519,12 +2584,16 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
                 && ngx_strncmp(v[i].name.data, key[n].key.data, v[i].name.len)
                    == 0)
             {
+            	/*
+            	 * 如果variables中存在内置变量,则设置其get_handler方法
+            	 */
                 v[i].get_handler = av->get_handler;
                 v[i].data = av->data;
 
                 av->flags |= NGX_HTTP_VAR_INDEXED;
                 v[i].flags = av->flags;
 
+                // 这个变量在variables数组中的索引?
                 av->index = i;
 
                 if (av->get_handler == NULL) {
@@ -2535,6 +2604,7 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
             }
         }
 
+        /* 一下判断ngx配置文件中是否使用到了以 "http_"、"sent_http_"、"upstream_http_"、"cookie_"、"arg_" 开头的变量 */
         if (ngx_strncmp(v[i].name.data, "http_", 5) == 0) {
             v[i].get_handler = ngx_http_variable_unknown_header_in;
             v[i].data = (uintptr_t) &v[i].name;
@@ -2573,6 +2643,9 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
         }
 
         if (ngx_strncmp(v[i].name.data, "arg_", 4) == 0) {
+
+        	printf("--------------------%s\n",v[i].name.data);
+
             v[i].get_handler = ngx_http_variable_argument;
             v[i].data = (uintptr_t) &v[i].name;
             v[i].flags = NGX_HTTP_VAR_NOCACHEABLE;
@@ -2614,6 +2687,7 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
         return NGX_ERROR;
     }
 
+    // 扔掉
     cmcf->variables_keys = NULL;
 
     return NGX_OK;

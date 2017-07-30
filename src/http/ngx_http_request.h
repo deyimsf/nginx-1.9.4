@@ -156,9 +156,19 @@ typedef enum {
 } ngx_http_state_e;
 
 
+/*
+ * 代表一个http请求头
+ */
 typedef struct {
+	// 请求头名字
     ngx_str_t                         name;
     ngx_uint_t                        offset;
+
+    /*
+     * 获取请求头值的方法
+     * 如: /src/http/ngx_http_request.c/ngx_http_headers_in()
+     *     /src/http/ngx_http_request.c/ngx_http_process_host()
+     */
     ngx_http_header_handler_pt        handler;
 } ngx_http_header_t;
 
@@ -353,6 +363,9 @@ struct ngx_http_posted_request_s {
 };
 
 
+/*
+ * http模块阶段中要执行的方法
+ */
 typedef ngx_int_t (*ngx_http_handler_pt)(ngx_http_request_t *r);
 typedef void (*ngx_http_event_handler_pt)(ngx_http_request_t *r);
 
@@ -413,6 +426,9 @@ struct ngx_http_request_s {
     ngx_http_handler_pt               content_handler;
     ngx_uint_t                        access_code;
 
+    /*
+     * 每个请求都有cmcf->variables.nelts个变量值
+     */
     ngx_http_variable_value_t        *variables;
 
 #if (NGX_PCRE)

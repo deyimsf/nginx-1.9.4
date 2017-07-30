@@ -83,7 +83,7 @@ typedef struct {
 } ngx_hash_t;
 
 
-/**
+/*
  * 支持通配符的散列表,只是对基本散列表做了一个简单的封装
  */
 typedef struct {
@@ -100,7 +100,12 @@ typedef struct {
     ngx_str_t         key;
     // key的hash值
     ngx_uint_t        key_hash;
-    // 键值对中的原始值,ngx_hash_elt_t结构中的value指向该值
+
+    /*
+     * 键值对中的原始值,ngx_hash_elt_t结构中的value指向该值
+     *
+	 * 在http变量中存放的是ngx_http_variable_t结构体(cmcf->variables_keys)
+	 */
     void             *value;
 } ngx_hash_key_t;
 
@@ -184,18 +189,27 @@ typedef struct {
     /*
      * 以数组的形式存放基础散列表的键值对数据,以ngx_hash_key_t结构体存放
      * 由ngx_hash_add_key方法赋值
+     *
+     * 最终使用ngx_hash_init()方法用keys来创建hash结构
      */
     ngx_array_t       keys;
     /*
      * 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
      * 这个桶用ngx_array_t结构体表示,桶里面存储了不含通配符的域名
+     *
+     * 该字段的存在只是为了检查key值是否有冲突,最终会使用上面的keys字段来构造hash结构
+     * 所以该字段中只放key的名字,其中带点的通配符字符串会被视为非通配符字符串,比如 jd.com
+     * 和 .jd.com视为相同
      */
     ngx_array_t      *keys_hash;
+
 
     /*
      * 以数组的形式存放前置通配符散列表的键值对数据,以ngx_hash_key_t结构体存放
      * 由ngx_hash_add_key方法赋值
      * 如：*.jd.com
+     *
+     * 最终会使用ngx_hash_wildcard_init()方法用dns_wc_head来创建hash结构体
      */
     ngx_array_t       dns_wc_head;
     /*
@@ -204,9 +218,13 @@ typedef struct {
      */
     ngx_array_t      *dns_wc_head_hash;
 
-    // 以数组的形式存放后置通配符散列表的键值对数据,以ngx_hash_key结构体存放
-    // 由ngx_hash_add_key方法赋值
-    // 如：www.jd.*
+
+    /*
+     * 以数组的形式存放后置通配符散列表的键值对数据,以ngx_hash_key结构体存放
+     * 由ngx_hash_add_key方法赋值
+     * 如：www.jd.*
+     * 最终会使用ngx_hash_wildcard_init()方法用dns_wc_head来创建hash结构体
+     */
     ngx_array_t       dns_wc_tail;
     // 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
     // 这个桶用ngx_array_t结构体表示,桶里面存储了包含后置通配符的域名

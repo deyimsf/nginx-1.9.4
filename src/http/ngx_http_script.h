@@ -17,6 +17,11 @@
 typedef struct {
     u_char                     *ip;
     u_char                     *pos;
+
+    /*
+     * 引擎执行过程中携带当前变量值
+     * 相当于基于栈的指令中的栈,ngx_http_rewrite_loc_conf_t->stack_size表示栈大小
+     */
     ngx_http_variable_value_t  *sp;
 
     ngx_str_t                   buf;
@@ -94,6 +99,11 @@ typedef struct {
 
 typedef struct {
     ngx_http_script_code_pt     code;
+
+    /*
+     * 当前变量在cmcf->variables数组中的下标
+     *
+     */
     uintptr_t                   index;
 } ngx_http_script_var_code_t;
 
@@ -195,6 +205,9 @@ typedef struct {
 } ngx_http_script_complex_value_code_t;
 
 
+/*
+ * 脚本引擎中的值
+ */
 typedef struct {
     ngx_http_script_code_pt     code;
     uintptr_t                   value;
