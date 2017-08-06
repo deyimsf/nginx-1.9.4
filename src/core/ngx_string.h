@@ -33,6 +33,10 @@ typedef struct {
 
     unsigned    valid:1;
     unsigned    no_cacheable:1;
+
+    /*
+     * 1:表示没有发现这个变量,也就是说该变量没有被定义过(即不存在于cmcf->variables中,也不存在于cmcv->variable-keys中)
+     */
     unsigned    not_found:1;
     unsigned    escape:1;
 

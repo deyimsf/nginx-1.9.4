@@ -15,6 +15,7 @@
 
 
 typedef struct {
+	// 引擎执行时存放codes中的元素
     u_char                     *ip;
     u_char                     *pos;
 
@@ -43,12 +44,45 @@ typedef struct {
 
 typedef struct {
     ngx_conf_t                 *cf;
+    /*
+     * 复杂变量值,如 set $a $bb 中的$bb
+     */
     ngx_str_t                  *source;
 
+    /*
+     * 数组中存放各个变量在cmcf->variables中的下标,比如set $a $bb$cc
+     * 假设 $bb的下标是1, $cc的下标是2
+     * 那么该字段的值如下:
+     * 		flushes
+     * 		-------
+     * 		|  *  |
+     * 		-------
+     *			\
+     *			-------
+     *			|  *  |
+     *			-------
+     *				\
+     *				---------------
+     *				| ngx_array_t |
+     *				---------------
+     *						\ elts
+     *						---------
+     *						| 1 | 2 |
+     *						---------
+     */
     ngx_array_t               **flushes;
     ngx_array_t               **lengths;
+
+    /*
+     * lcf->codes
+     */
     ngx_array_t               **values;
 
+    /*
+     * 复杂变量值中的变量个数, 比如:
+     * 		set $a $bb$cc
+     * 则该值为2
+     */
     ngx_uint_t                  variables;
     ngx_uint_t                  ncaptures;
     ngx_uint_t                  captures_mask;
@@ -69,6 +103,10 @@ typedef struct {
 
 
 typedef struct {
+	/*
+	 * 变量值
+	 * 如: $http_name
+	 */
     ngx_str_t                   value;
     ngx_uint_t                 *flushes;
     void                       *lengths;
@@ -78,6 +116,8 @@ typedef struct {
 
 typedef struct {
     ngx_conf_t                 *cf;
+
+    // 变量值
     ngx_str_t                  *value;
     ngx_http_complex_value_t   *complex_value;
 
@@ -168,7 +208,12 @@ typedef struct {
 
 
 typedef struct {
+	/*
+	 * 脚本引擎要执行的方法
+	 */
     ngx_http_script_code_pt     code;
+
+    // return指令中的状态码
     uintptr_t                   status;
     ngx_http_complex_value_t    text;
 } ngx_http_script_return_code_t;
@@ -199,7 +244,17 @@ typedef struct {
 } ngx_http_script_if_code_t;
 
 
+/*
+ * 复杂变量值,如: set $a $bb$cc
+ *
+ * 如果变量值中存在其它变量,则使用该结构体代替变量值
+ * 变量值中没有其它变量才会使用ngx_http_script_value_code_t结构体
+ *
+ */
 typedef struct {
+	/*
+	 * 用户处理复杂变量值的脚本函数(如:ngx_http_script_complex_value_code)
+	 */
     ngx_http_script_code_pt     code;
     ngx_array_t                *lengths;
 } ngx_http_script_complex_value_code_t;
@@ -209,9 +264,30 @@ typedef struct {
  * 脚本引擎中的值
  */
 typedef struct {
+	/*
+	 * 处理变量值的函数,比如ngx_http_script_value_code()方法
+	 */
     ngx_http_script_code_pt     code;
+
+    /*
+     * 变量值中变量的个数,0代表没有变量,比如：
+     * 	 set $a bb;
+     * 则value等于0,如果：
+     * 	 set $a $cc
+     * 则value等于1
+     *
+     */
     uintptr_t                   value;
+
+    /*
+     * 纯变量值长度,比如 set $a bb;
+     * 则该值为2
+     */
     uintptr_t                   text_len;
+    /*
+     * 纯变量值,比如 set $a bb;
+     * 则该值为bb
+     */
     uintptr_t                   text_data;
 } ngx_http_script_value_code_t;
 

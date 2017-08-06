@@ -58,6 +58,21 @@ typedef struct {
 	 *	 |index = 2							|
 	 *	 ------------------------------------
 	 *
+	 *
+	 * 假设有个set指令如下:
+	 *	 set $a $bb$cc
+	 * 那么codes的部分内存结构如下 (TODO ?)
+	 *   codes
+	 *   -----
+	 *   | * |
+	 *   -----
+	 *   	\   ngx_http_script_complex_value_code_t
+	 *   	----------------------------------------------
+	 *   	|code = ngx_http_script_complex_value_code() |
+	 *   	----------------------------------------------
+	 *   	|				   *lengths					 |
+	 *		----------------------------------------------
+	 *
 	 */
     ngx_array_t  *codes;        /* uintptr_t */
 
@@ -561,6 +576,7 @@ ngx_http_rewrite_return(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             return NGX_CONF_OK;
         }
 
+        // return指令中的第三个参数,比如return 200 $http_name
         v = &value[2];
     }
 
@@ -1024,6 +1040,8 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     	/*
     	 * 自定义变量会走这个逻辑,比如:
     	 * 		set $a aaa;
+    	 *
+    	 * TODO 这个方法是干嘛的
     	 */
         v->get_handler = ngx_http_rewrite_var;
         v->data = index;
@@ -1031,7 +1049,11 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     /*
+     * 把变量值(ngx_http_script_value_code_t)放入到lcf->codesz中
+     *
      * 执行完该代码后lcf->codes数组中存放的就是ngx_http_script_value_code_t
+     *
+     * 该方法还会处理复杂变量值(set $a $bb$cc)
      */
     if (ngx_http_rewrite_value(cf, lcf, &value[2]) != NGX_CONF_OK) {
         return NGX_CONF_ERROR;
@@ -1051,12 +1073,26 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_OK;
     }
 
+    /*
+     * 把变量(ngx_http_script_var_code_t)放入到lcf->codes中
+     *
+     * 从这里可以看到对于指令 set $a $bb$cc,ngx会先把变量值放入到脚本数组中(lcf->codes),
+     * 然后把变量放入到脚本数组中,这样ngx脚本引擎在执行的时候就会先获取变量值,然后在给变量赋值了
+     *
+     * 也就是说,在脚本引擎设计中
+     *  ngx_http_script_value_code_t结构体负责存储脚本值信息
+     *  ngx_http_script_var_code_t结构体负责存储处理脚本信息的方法
+     *
+     * 对于这两个结构体,如果从他们携带的方法角度描述的话可以这两样理解,第一个结构体的方法负责取变量值,
+     * 第二个结构体的方法负责为变量赋值。
+     */
     vcode = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                        sizeof(ngx_http_script_var_code_t));
     if (vcode == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    // 设置为变量赋值的方法
     vcode->code = ngx_http_script_set_var_code;
     vcode->index = (uintptr_t) index;
 
@@ -1064,6 +1100,13 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/**
+ * 将变量值放入到lcf->codes中
+ *
+ * 对于复杂变量值使用ngx_http_script_complex_value_code_t来处理
+ *
+ * TODO 如果value等于 $http_xxx该如何处理
+ */
 static char *
 ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     ngx_str_t *value)
@@ -1076,6 +1119,8 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     n = ngx_http_script_variables_count(value);
 
     if (n == 0) {
+    	/* 走这个逻辑说明变量值中没有其他变量 */
+
         val = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                          sizeof(ngx_http_script_value_code_t));
         if (val == NULL) {
@@ -1097,6 +1142,12 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
         return NGX_CONF_OK;
     }
 
+    /*
+     * 走到这里说明变量值中存在其它变量,比如:
+     * 	set $a $bb$cc$dd
+     *
+     * 该函数的作用是向lcf->codes数组中添加ngx_http_script_complex_value_code_t结构体
+     */
     complex = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                  sizeof(ngx_http_script_complex_value_code_t));
     if (complex == NULL) {
@@ -1109,12 +1160,15 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     ngx_memzero(&sc, sizeof(ngx_http_script_compile_t));
 
     sc.cf = cf;
+    // 复杂变量值,如 set $a $bb 中的$bb
     sc.source = value;
     sc.lengths = &complex->lengths;
     sc.values = &lcf->codes;
+    // 复杂变量值中,变量个数
     sc.variables = n;
     sc.complete_lengths = 1;
 
+    // 解析变量值中的变量
     if (ngx_http_script_compile(&sc) != NGX_OK) {
         return NGX_CONF_ERROR;
     }

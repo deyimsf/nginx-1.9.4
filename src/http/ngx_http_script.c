@@ -314,6 +314,9 @@ ngx_http_set_predicate_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/*
+ * 计算value中变量的个数,也就是$的个数
+ */
 ngx_uint_t
 ngx_http_script_variables_count(ngx_str_t *value)
 {
@@ -329,6 +332,11 @@ ngx_http_script_variables_count(ngx_str_t *value)
 }
 
 
+/*
+ * TODO 没看懂,以后有时间再看
+ *
+ * 将变量(如$http_name、$age等)放入cmcv->variabls中并存储变量在数组中的下标
+ */
 ngx_int_t
 ngx_http_script_compile(ngx_http_script_compile_t *sc)
 {
@@ -336,20 +344,34 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
     ngx_str_t    name;
     ngx_uint_t   i, bracket;
 
+    /*
+     * 初始化sc(ngx_http_script_compile_t)
+     */
     if (ngx_http_script_init_arrays(sc) != NGX_OK) {
         return NGX_ERROR;
     }
 
+    /*
+     * 循环变量值,如 set $a $bb$cc 则source->len等于 $bb$cc的长度6
+     *
+     * source等于 $bb$cc
+     */
     for (i = 0; i < sc->source->len; /* void */ ) {
 
         name.len = 0;
 
         if (sc->source->data[i] == '$') {
 
+        	/*
+        	 * 如果当前变量值最后一个字符是$则该变量值无效
+        	 *
+        	 * 否则检查下一个字符
+        	 */
             if (++i == sc->source->len) {
                 goto invalid_variable;
             }
 
+            // 判断是否使用了正则表达式中的捕获形式,如$1、$2、$3等
 #if (NGX_PCRE)
             {
             ngx_uint_t  n;
@@ -375,26 +397,34 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
             }
 #endif
 
+            // 如果紧跟'$'字符之后是一个'{'字符
             if (sc->source->data[i] == '{') {
+            	// 记录当前正在遍历括号('{}')内字符
                 bracket = 1;
 
                 if (++i == sc->source->len) {
                     goto invalid_variable;
                 }
 
+                // 记录去掉变量前缀的字符指针值
                 name.data = &sc->source->data[i];
 
             } else {
+            	// 当前变量不包含括号('{}')
                 bracket = 0;
+                // 记录去掉变量前缀的字符指针值
                 name.data = &sc->source->data[i];
             }
 
+            // 开始计算不带前缀的变量值,如${bb} 去掉 ${}
             for ( /* void */ ; i < sc->source->len; i++, name.len++) {
                 ch = sc->source->data[i];
 
                 if (ch == '}' && bracket) {
                     i++;
                     bracket = 0;
+
+                    // 计算出一个变量值
                     break;
                 }
 
@@ -406,6 +436,7 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
                     continue;
                 }
 
+                // 计算出一个变量值
                 break;
             }
 
@@ -420,8 +451,10 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
                 goto invalid_variable;
             }
 
+            // 变量值中变量的个数加一
             sc->variables++;
 
+            // TODO 费劲
             if (ngx_http_script_add_var_code(sc, &name) != NGX_OK) {
                 return NGX_ERROR;
             }
@@ -549,6 +582,9 @@ ngx_http_script_flush_no_cacheable_variables(ngx_http_request_t *r,
 }
 
 
+/*
+ * 初始化*sc->flushes
+ */
 static ngx_int_t
 ngx_http_script_init_arrays(ngx_http_script_compile_t *sc)
 {
@@ -556,6 +592,24 @@ ngx_http_script_init_arrays(ngx_http_script_compile_t *sc)
 
     if (sc->flushes && *sc->flushes == NULL) {
         n = sc->variables ? sc->variables : 1;
+        /*
+         * 	sc->flushes
+         * 	 -------
+         * 	 |  *  |
+         * 	 -------
+         * 	    \
+         * 	    -------
+         * 	    |  *  |
+         * 	    -------
+         * 	    	\
+         * 	    	---------------
+         * 	    	| ngx_array_t |
+         * 	    	---------------
+         * 	    			\ elts
+         * 	    			----------
+         * 	    			|  |  |  |
+         * 	    			----------
+         */
         *sc->flushes = ngx_array_create(sc->cf->pool, n, sizeof(ngx_uint_t));
         if (*sc->flushes == NULL) {
             return NGX_ERROR;
@@ -667,6 +721,8 @@ ngx_http_script_add_code(ngx_array_t *codes, size_t size, void *code)
 
     if (code) {
         if (elts != codes->elts) {
+        	/* 不相等代表数组扩容了 */
+
             p = code;
             *p += (u_char *) codes->elts - elts;
         }
@@ -761,6 +817,9 @@ ngx_http_script_add_var_code(ngx_http_script_compile_t *sc, ngx_str_t *name)
     ngx_int_t                    index, *p;
     ngx_http_script_var_code_t  *code;
 
+    /*
+     * 取出这个变量的索引(下标)
+     */
     index = ngx_http_get_variable_index(sc->cf, name);
 
     if (index == NGX_ERROR) {
@@ -773,6 +832,7 @@ ngx_http_script_add_var_code(ngx_http_script_compile_t *sc, ngx_str_t *name)
             return NGX_ERROR;
         }
 
+        // 变量下标放入到 *sc->flushes数组中
         *p = index;
     }
 
@@ -1363,6 +1423,7 @@ ngx_http_script_return_code(ngx_http_script_engine_t *e)
         || code->text.value.len
         || code->text.lengths)
     {
+    	// 提前结束,不再走后面的阶段了
         e->status = ngx_http_send_response(e->request, code->status, NULL,
                                            &code->text);
     } else {
@@ -1646,6 +1707,10 @@ ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
 
 /*
  * 该方法可以理解为引擎的指令,会基于栈(e->sp)来操作
+ *
+ * 取出变量值将其赋值给e->sp->data,比如有如下指令:
+ * 		set $a $bb$cc
+ * 在该方法的作用就是将变量值($bb$cc)赋值给e->sp->data
  */
 void
 ngx_http_script_value_code(ngx_http_script_engine_t *e)
@@ -1671,6 +1736,10 @@ ngx_http_script_value_code(ngx_http_script_engine_t *e)
 
 /*
  * 该方法可以理解为引擎的指令,会基于栈(e->sp)来操作
+ *
+ * 为变量赋值,如有如下指令:
+ * 		set $a $bb$cc
+ * 则该方法的作用是为变量$a赋值(e->sp->data),其中e->sp->data中存放的就是$bb$cc解析后的值
  */
 void
 ngx_http_script_set_var_code(ngx_http_script_engine_t *e)

@@ -668,7 +668,6 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             	 */
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
                 if (confp) {
-                	printf("=========>%s\n",cmd->name.data);
                     conf = confp[ngx_modules[i]->ctx_index];
                 }
             }

@@ -201,6 +201,9 @@ typedef struct {
      *
      * set指令调用ngx_http_add_variable()和ngx_http_get_variable_index()方法
      * 分别把变量名放入到cmcf->variables_keys和cmcf->variables数组中
+     *
+     * 变量值存放在ngx_http_rewrite_loc_conf_t->codes中,最终有ngx_http_rewrite_handler()方法
+     * 启动引擎来为r->variables中用到的变量赋值
      */
     ngx_array_t                variables;       /* ngx_http_variable_t */
     ngx_uint_t                 ncaptures;

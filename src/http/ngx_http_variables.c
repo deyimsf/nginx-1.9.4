@@ -5,6 +5,61 @@
  */
 
 
+/*
+ * 变量设置原理:
+ *  ngx中的变量设置跟ngx_http_rewrite_module模块结合紧密,或者说rewrite模块是实现变量的一个具体实现.
+ *  在各个模块开始解析配置文件之前,一般都会将自定义内置变量放入到cmcf->variables_keys中,他只是对ngx所有变量的一个收集,
+ *  cmcf->variables是ngx配置中用到的变量的收集。
+ *
+ *  rewrite模块是用set指令来定义变量,通过set指令的ngx_http_rewrite_set()方法,设置引擎数据ngx_http_rewrite_loc_conf_t->codes,
+ *  codes字段,这里面存放了脚本引擎执行时需要的数据:
+ *  	每个变量值有两个结构体来表示,ngx_http_script_value_code_t和ngx_http_script_var_code_t
+ * 		第一个用来保存变量值,第二个用来保存变量在cmcf->variables中的下标
+ *
+ * 		第一个结构体中的ngx_http_script_value_code()方法将变量值压入栈(ngx_http_script_engine_t->sp++)
+ * 		第二个结构体中的ngx_http_script_set_var_code()方法将变量值从栈(ngx_http_script_engine_t->sp--)取出,并对r-variables中对应的变量赋值
+ *
+ *  最终引擎(ngx_http_script_engine_t)有ngx_http_rewrite_handler()方法执行,执行的过程就是对r->variables中的变量值(ngx_variable_value_t)赋值的过程。
+ *
+ *  上面介绍的是rewrite模块实现变量的方式,所以当然可以有其它实现变量的方式,实现方式都是围绕
+ *  	cmcf->variables_keys
+ *  	cmcf->variables
+ *  	r->variabls
+ *  这三个数据结构
+ *
+ *
+ *  脚本引擎关于set指令始终围绕ngx_http_script_value_code_t和ngx_http_script_var_code_t这两个结构体来执行
+ *     while (*(uintptr_t *) e->ip) {
+ *			code = *(ngx_http_script_code_pt *) e->ip;
+ *			code(e);
+ *
+ *			// ngx_http_script_value_code_t->ngx_http_script_value_code()
+ *			// ngx_http_script_var_code_t->ngx_http_script_set_var_code()
+ *			// ngx_http_script_return_code_t->ngx_http_script_return_code()
+ *		}
+ *	ngx_http_script_value_code_t结构体负责存储脚本值信息,结构体的方法(ngx_http_script_value_code)负责取变量值
+ *	ngx_http_script_var_code_t结构体负责存储处理脚本信息的方法,结构体的方法(ngx_http_script_set_var_code)负责为变量赋值
+ *
+ *  脚本引擎关于return指令则是围绕ngx_http_script_return_code_t结构体
+ *
+ *  总结:
+ *  	从脚本引擎的循环语句中可以看到,不管是哪种结构体,核心都是在执行ngx_http_script_code_pt()方法
+ *
+ *
+ * 变量支持以下字符:
+ * 	 A -> Z
+ * 	 a -> z
+ * 	 0 -> 9
+ * 	 _(下划线)
+ *
+ *
+ * 关于http模块的6个动态变量(http_、sent_http_ 等):
+ *   ngx配置中用的到动态变量,都需要放入到cmcf->variabls数组中,最后ngx_http_variables_init_vars()方法
+ *   会为cmcf->variabls数组中的动态变量设置get_handler()方法
+ *
+ */
+
+
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -150,6 +205,9 @@ static ngx_int_t ngx_http_variable_time_local(ngx_http_request_t *r,
  * they are handled using dedicated entries
  */
 
+/*
+ * http模块内置变量
+ */
 static ngx_http_variable_t  ngx_http_core_variables[] = {
 
     { ngx_string("http_host"), NULL, ngx_http_variable_header,
@@ -476,6 +534,7 @@ ngx_http_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
         }
     }
 
+    // 没有找到就往cmcf->variables里面插入一条空的变量
     v = ngx_array_push(&cmcf->variables);
     if (v == NULL) {
         return NGX_ERROR;
@@ -558,6 +617,13 @@ ngx_http_get_flushed_variable(ngx_http_request_t *r, ngx_uint_t index)
 }
 
 
+/**
+ * 通过变量名获取变量值,如果找到这个变量则调用ngx_http_get_flushed_variable()方法获取
+ * 或者直接设置调用变量的get_handler()方法来获取变量值
+ *
+ * 对于6个动态变量(如http_、sent_http_等)则有该方法负责处理
+ *
+ */
 ngx_http_variable_value_t *
 ngx_http_get_variable(ngx_http_request_t *r, ngx_str_t *name, ngx_uint_t key)
 {
@@ -570,11 +636,13 @@ ngx_http_get_variable(ngx_http_request_t *r, ngx_str_t *name, ngx_uint_t key)
     v = ngx_hash_find(&cmcf->variables_hash, key, name->data, name->len);
 
     if (v) {
+    	/* 找到这个变量 */
+
         if (v->flags & NGX_HTTP_VAR_INDEXED) {
             return ngx_http_get_flushed_variable(r, v->index);
 
         } else {
-
+        	/* 调用该变量的get_handler方法来获取变量 */
             vv = ngx_palloc(r->pool, sizeof(ngx_http_variable_value_t));
 
             if (vv && v->get_handler(r, vv, v->data) == NGX_OK) {
@@ -584,6 +652,12 @@ ngx_http_get_variable(ngx_http_request_t *r, ngx_str_t *name, ngx_uint_t key)
             return NULL;
         }
     }
+
+    /*
+     * 走到这里说明变量不存在cmcf->variables_hash中,也就是说该变量没有在cmcf->variable->keys中出现过
+     *
+     * 继续向下走,检查是否是动态变量
+     */
 
     vv = ngx_palloc(r->pool, sizeof(ngx_http_variable_value_t));
     if (vv == NULL) {
@@ -652,6 +726,7 @@ ngx_http_get_variable(ngx_http_request_t *r, ngx_str_t *name, ngx_uint_t key)
         return NULL;
     }
 
+    // 没有发现这个变量,也就是说该变量没有被定义过
     vv->not_found = 1;
 
     return vv;
@@ -2553,7 +2628,8 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
  * 已存在该变量名,则添加失败并打印 the duplicate \"%V\" variable
  *
  * 最终目的:
- * 	如果variables中存在内置变量,则设置其get_handler方法
+ *  通过variables_keys集合为variables集合赋值(比如设置get_handler()方法)
+ *  为variables中的内置变量赋值(比如设置get_handler()方法)
  */
 ngx_int_t
 ngx_http_variables_init_vars(ngx_conf_t *cf)
@@ -2584,16 +2660,14 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
                 && ngx_strncmp(v[i].name.data, key[n].key.data, v[i].name.len)
                    == 0)
             {
-            	/*
-            	 * 如果variables中存在内置变量,则设置其get_handler方法
-            	 */
+
                 v[i].get_handler = av->get_handler;
                 v[i].data = av->data;
 
                 av->flags |= NGX_HTTP_VAR_INDEXED;
                 v[i].flags = av->flags;
 
-                // 这个变量在variables数组中的索引?
+                // 这个变量在variables数组中的下标
                 av->index = i;
 
                 if (av->get_handler == NULL) {
@@ -2604,7 +2678,14 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
             }
         }
 
-        /* 一下判断ngx配置文件中是否使用到了以 "http_"、"sent_http_"、"upstream_http_"、"cookie_"、"arg_" 开头的变量 */
+        /*
+         * 以下判断ngx配置文件中是否使用到了以 "http_"、"sent_http_"、"upstream_http_"、"cookie_"、"arg_" 开头的变量
+         *
+         * 比如指令:
+         * 	 return 200 $http_name
+         * 该指令会把变量$http_name放入到cmcf->variables数组中,并且只会放一份
+         * 当配置文件解析完毕后,$http_name变量对应的get_handler()方法会被设置为ngx_http_variable_unknown_header_in()方法
+         */
         if (ngx_strncmp(v[i].name.data, "http_", 5) == 0) {
             v[i].get_handler = ngx_http_variable_unknown_header_in;
             v[i].data = (uintptr_t) &v[i].name;
@@ -2643,9 +2724,6 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
         }
 
         if (ngx_strncmp(v[i].name.data, "arg_", 4) == 0) {
-
-        	printf("--------------------%s\n",v[i].name.data);
-
             v[i].get_handler = ngx_http_variable_argument;
             v[i].data = (uintptr_t) &v[i].name;
             v[i].flags = NGX_HTTP_VAR_NOCACHEABLE;
@@ -2680,6 +2758,10 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
     hash.pool = cf->pool;
     hash.temp_pool = NULL;
 
+    /*
+     * 用cmcf->variables_keys数组来创建cmcf->variables_hash结构
+     * 可以通过ngx_http_get_variable()方法从cmcf->variables_hash查找变量
+     */
     if (ngx_hash_init(&hash, cmcf->variables_keys->keys.elts,
                       cmcf->variables_keys->keys.nelts)
         != NGX_OK)
