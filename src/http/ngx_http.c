@@ -664,7 +664,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     /*
      * 到这里所有的指令都已经解析完毕,包括set指令
      *
-     * 所以该函数的作用就是为cmcf->variables中的变量设置get_handler方法(这些方法都是内置变量)
+     * 该函数的作用是为cmcf->variables中的变量设置get_handler方法(这些方法都是内置变量或者动态变量)
      */
     if (ngx_http_variables_init_vars(cf) != NGX_OK) {
         return NGX_CONF_ERROR;
@@ -835,6 +835,15 @@ ngx_http_init_headers_in_hash(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 }
 
 
+/*
+ * 从该方法的代码逻辑可知
+ * 	NGX_HTTP_FIND_CONFIG_PHASE
+ *	NGX_HTTP_POST_REWRITE_PHASE
+ *	NGX_HTTP_POST_ACCESS_PHASE
+ *	NGX_HTTP_TRY_FILES_PHASE
+ * 以上四个阶段的执行handler方法是固定的,第三方模块无法接入
+ *
+ */
 static ngx_int_t
 ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 {
@@ -848,15 +857,20 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     cmcf->phase_engine.server_rewrite_index = (ngx_uint_t) -1;
     cmcf->phase_engine.location_rewrite_index = (ngx_uint_t) -1;
     find_config_index = 0;
+    // 如果NGX_HTTP_REWRITE_PHASE阶段注册了方法,则说明使用了rewrite阶段
     use_rewrite = cmcf->phases[NGX_HTTP_REWRITE_PHASE].handlers.nelts ? 1 : 0;
+    // 确定是否在NGX_HTTP_ACCESS_PHASE阶段注册了方法
     use_access = cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers.nelts ? 1 : 0;
 
+    // TODO 啥意思, 为什么多加这几个值
     n = use_rewrite + use_access + cmcf->try_files + 1 /* find config phase */;
 
     for (i = 0; i < NGX_HTTP_LOG_PHASE; i++) {
+    	// 把cmcf->phases中所有注册的方法个数都加起来
         n += cmcf->phases[i].handlers.nelts;
     }
 
+    // 为每一个方法(所有阶段中注册的)分配一个ngx_http_phase_handler_t结构体
     ph = ngx_pcalloc(cf->pool,
                      n * sizeof(ngx_http_phase_handler_t) + sizeof(void *));
     if (ph == NULL) {
@@ -866,7 +880,13 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     cmcf->phase_engine.handlers = ph;
     n = 0;
 
+    /*
+     * 该循环的目的是为阶段引擎中的handlers(ngx_http_phase_handler_t)设置checker方法和阶段真正要执行的方法
+     * ph是一个数组(cmcf->phase_engine.handlers),他包含了所有阶段中的方法,所以他本身区别阶段的方法就是checker
+     * 字段,该字段确定了当前执行的是哪个阶段(在执行的时候有点类似变量的脚本引擎)
+     */
     for (i = 0; i < NGX_HTTP_LOG_PHASE; i++) {
+    	// 阶段中真正执行的方法
         h = cmcf->phases[i].handlers.elts;
 
         switch (i) {
@@ -879,6 +899,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 
             break;
 
+            // 查找location阶段
         case NGX_HTTP_FIND_CONFIG_PHASE:
             find_config_index = n;
 
@@ -886,6 +907,14 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
             n++;
             ph++;
 
+            /*
+             *  ph->checker = checker;
+             *	ph->handler = h[j];
+             *	ph->next = n;
+             *	ph++;
+             *
+             *	这里直接跳过为ph->handler赋值的逻辑,表示该阶段的handler方法是固定的
+             */
             continue;
 
         case NGX_HTTP_REWRITE_PHASE:
@@ -904,6 +933,14 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
                 ph++;
             }
 
+            /*
+			 *  ph->checker = checker;
+			 *	ph->handler = h[j];
+			 *	ph->next = n;
+			 *	ph++;
+			 *
+			 *	这里直接跳过为ph->handler赋值的逻辑,表示该阶段的handler方法是固定的
+             */
             continue;
 
         case NGX_HTTP_ACCESS_PHASE:
@@ -918,6 +955,14 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
                 ph++;
             }
 
+            /*
+			 *  ph->checker = checker;
+			 *	ph->handler = h[j];
+			 *	ph->next = n;
+			 *	ph++;
+			 *
+			 *	这里直接跳过为ph->handler赋值的逻辑,表示该阶段的handler方法是固定的
+			 */
             continue;
 
         case NGX_HTTP_TRY_FILES_PHASE:
@@ -927,6 +972,14 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
                 ph++;
             }
 
+            /*
+			 *  ph->checker = checker;
+			 *	ph->handler = h[j];
+			 *	ph->next = n;
+			 *	ph++;
+			 *
+			 *	这里直接跳过为ph->handler赋值的逻辑,表示该阶段的handler方法是固定的
+			 */
             continue;
 
         case NGX_HTTP_CONTENT_PHASE:
@@ -934,9 +987,17 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
             break;
 
         default:
+        	/*
+        	 * NGX_HTTP_POST_READ_PHASE
+        	 * NGX_HTTP_PREACCESS_PHASE
+        	 * NGX_HTTP_LOG_PHASE
+        	 *
+        	 * 以上三个阶段的checker方法固定为ngx_http_core_generic_phase
+        	 */
             checker = ngx_http_core_generic_phase;
         }
 
+        // n在这里表示下一个阶段的开始方法偏移量  TODO ?
         n += cmcf->phases[i].handlers.nelts;
 
         for (j = cmcf->phases[i].handlers.nelts - 1; j >=0; j--) {

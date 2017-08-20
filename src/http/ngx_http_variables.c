@@ -734,7 +734,7 @@ ngx_http_get_variable(ngx_http_request_t *r, ngx_str_t *name, ngx_uint_t key)
 
 
 /*
- * $args变量的set_handler()方法
+ * $args变量的get_handler()方法
  *
  * data是 args字段在ngx_http_request_t中的偏移量
  */
@@ -2647,10 +2647,21 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
      */
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
+    // variables集合中的变量
     v = cmcf->variables.elts;
+    // variables_keys集合中的变量
     key = cmcf->variables_keys->keys.elts;
 
     for (i = 0; i < cmcf->variables.nelts; i++) {
+
+    	/*
+    	 * 在ngx中如果变量被用到(比如set指令的第二个参数是变量)都会试着向variables集合中放一份,如果变量
+    	 * 已经存在于该集合则返回其下标,否则放入到该集合中。
+    	 *
+    	 * 如果用到的是内置变量或者动态变量,这些变量是没有事先定义的,所以这些变量的get_handler()方法也不会存在于variabls集合
+    	 * 中用的变量,但是这些变量(不包括动态变量)会事先初始化到variables_keys变量中,所以这里做的事就是在variables_keys
+    	 * 集合中查找在variables集合中使用的变量,然后把get_handler()方法赋值给对应的变量
+    	 */
 
         for (n = 0; n < cmcf->variables_keys->keys.nelts; n++) {
 
@@ -2671,6 +2682,7 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
                 av->index = i;
 
                 if (av->get_handler == NULL) {
+                	// TODO 为什么等于NULL就break
                     break;
                 }
 
@@ -2679,7 +2691,7 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
         }
 
         /*
-         * 以下判断ngx配置文件中是否使用到了以 "http_"、"sent_http_"、"upstream_http_"、"cookie_"、"arg_" 开头的变量
+         * 以下判断ngx配置文件中是否使用到了以 "http_"、"sent_http_"、"upstream_http_"、"upstream_cookie_"、"cookie_"、"arg_" 开头的变量
          *
          * 比如指令:
          * 	 return 200 $http_name

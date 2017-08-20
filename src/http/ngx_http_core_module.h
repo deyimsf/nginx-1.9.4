@@ -149,6 +149,8 @@ typedef ngx_int_t (*ngx_http_phase_handler_pt)(ngx_http_request_t *r,
 struct ngx_http_phase_handler_s {
     ngx_http_phase_handler_pt  checker;
     ngx_http_handler_pt        handler;
+
+    // 下一个阶段的开发方法?
     ngx_uint_t                 next;
 };
 
@@ -178,12 +180,23 @@ typedef struct {
  * 可以认为其代表一个http{}块
  */
 typedef struct {
+
 	/*
 	 * 存储http{}块下的所有server{}块配置项结构体(ngx_http_core_srv_conf_t)
 	 * 当前http{}下有几个server{},就有几个ngx_http_core_srv_conf_t配置项结构体
 	 */
     ngx_array_t                servers;         /* ngx_http_core_srv_conf_t */
 
+    /*
+     * 阶段引擎
+     *
+     *  typedef struct {
+     *		ngx_http_phase_handler_t  *handlers;
+     *		ngx_uint_t                 server_rewrite_index;
+     *		ngx_uint_t                 location_rewrite_index;
+	 *	} ngx_http_phase_engine_t;
+     *
+     */
     ngx_http_phase_engine_t    phase_engine;
 
     /*
