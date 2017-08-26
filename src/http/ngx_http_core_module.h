@@ -126,15 +126,19 @@ typedef enum {
 
     NGX_HTTP_SERVER_REWRITE_PHASE,
 
+	// 不可介入
     NGX_HTTP_FIND_CONFIG_PHASE,
     NGX_HTTP_REWRITE_PHASE,
+	// 不可介入
     NGX_HTTP_POST_REWRITE_PHASE,
 
     NGX_HTTP_PREACCESS_PHASE,
 
     NGX_HTTP_ACCESS_PHASE,
+	// 不可介入
     NGX_HTTP_POST_ACCESS_PHASE,
 
+	// 不可介入
     NGX_HTTP_TRY_FILES_PHASE,
     NGX_HTTP_CONTENT_PHASE,
 
@@ -157,7 +161,11 @@ struct ngx_http_phase_handler_s {
 
 typedef struct {
     ngx_http_phase_handler_t  *handlers;
+
+    // NGX_HTTP_SERVER_REWRITE_PHASE阶段在阶段引擎中的开始索引
     ngx_uint_t                 server_rewrite_index;
+
+    // NGX_HTTP_REWRITE_PHASE阶段在阶段引擎中的开始索引
     ngx_uint_t                 location_rewrite_index;
 } ngx_http_phase_engine_t;
 

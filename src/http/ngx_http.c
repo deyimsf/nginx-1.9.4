@@ -678,6 +678,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     *cf = pcf;
 
 
+    // 将注册的http中注册的handler(cmcf->phases[i].handlers)放到cmcf->phase_engine.handlers阶段引擎中
     if (ngx_http_init_phase_handlers(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -843,6 +844,10 @@ ngx_http_init_headers_in_hash(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
  *	NGX_HTTP_TRY_FILES_PHASE
  * 以上四个阶段的执行handler方法是固定的,第三方模块无法接入
  *
+ * 该方法的主要作用是把注册到cmcf->phases[i].handlers中的方法,放到cmcf->phase_engine.handlers阶段引擎中。
+ * ngx本身的模块或者是第三方模块,如果要介入到请求操作中,就需要把方法注册到每个阶段代表的handler数组中,而cmcf->phases[i].handlers
+ * 就是那个数组。
+ *
  */
 static ngx_int_t
 ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
@@ -856,13 +861,31 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 
     cmcf->phase_engine.server_rewrite_index = (ngx_uint_t) -1;
     cmcf->phase_engine.location_rewrite_index = (ngx_uint_t) -1;
+
+    // NGX_HTTP_FIND_CONFIG_PHASE阶段在脚本引擎cmcf->phase_engine.handlers中的开始索引
     find_config_index = 0;
+
     // 如果NGX_HTTP_REWRITE_PHASE阶段注册了方法,则说明使用了rewrite阶段
     use_rewrite = cmcf->phases[NGX_HTTP_REWRITE_PHASE].handlers.nelts ? 1 : 0;
     // 确定是否在NGX_HTTP_ACCESS_PHASE阶段注册了方法
     use_access = cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers.nelts ? 1 : 0;
 
-    // TODO 啥意思, 为什么多加这几个值
+    /*
+     * 因为有四个阶段:
+     *  	NGX_HTTP_FIND_CONFIG_PHASE
+     *		NGX_HTTP_POST_REWRITE_PHASE
+     *		NGX_HTTP_POST_ACCESS_PHASE
+     *		NGX_HTTP_TRY_FILES_PHASE
+     * 是不允许被其它模块介入的,但是他们也是在脚本引擎中被执行的,所以需要在脚本引擎的handlers中(cmcf->phase_engine.handlers)
+     * 分配一个ngx_http_phase_handler_t来执行对应的checker,从下面的循环代码可以看到,计算脚本引擎的
+     * handlers中ngx_http_phase_handler_t的个数用的是cmcf->phases[i].handlers.nelts,也就是每个阶段注册方法个数的总和,
+     * 这里并没有包含上面四个阶段,因为四个阶段是不允许被介入的,所以他们对应的注册方法个数也就是0,下面的这个表达式就是把他们加上。
+     *
+     * use_rewrite: 代表使用了NGX_HTTP_REWRITE_PHASE阶段,那么后续就需要NGX_HTTP_POST_REWRITE_PHASE阶段来做rewrite操作
+     * use_access: 代表使用了NGX_HTTP_ACCESS_PHASE阶段,那么后续就需要NGX_HTTP_POST_ACCESS_PHASE阶段在做访问控制操作
+     * cmcf->try_files: 使用了NGX_HTTP_TRY_FILES_PHASE阶段
+     * 1: NGX_HTTP_FIND_CONFIG_PHASE阶段是必须使用的,所以固定写1
+     */
     n = use_rewrite + use_access + cmcf->try_files + 1 /* find config phase */;
 
     for (i = 0; i < NGX_HTTP_LOG_PHASE; i++) {
@@ -870,41 +893,56 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         n += cmcf->phases[i].handlers.nelts;
     }
 
-    // 为每一个方法(所有阶段中注册的)分配一个ngx_http_phase_handler_t结构体
+    /*
+     * 为每一个方法(所有阶段中注册的)分配一个ngx_http_phase_handler_t结构体
+     * 阶段引擎会用到这个结构体来执行相应阶段的方法
+     *
+     * 如果use_rewrite、use_access、cmcf->try_files这三个都有值,那么最终n的值会比阶段中注册的所有方法个数大4,
+     * 从实际分配的空间来看,会比实际多出四个ngx_http_phase_handler_t和一个指针的空间大小。
+     *
+     * TODO 多出一个指针空间是干嘛的? 对齐?
+     *
+     */
     ph = ngx_pcalloc(cf->pool,
                      n * sizeof(ngx_http_phase_handler_t) + sizeof(void *));
     if (ph == NULL) {
         return NGX_ERROR;
     }
 
+    // 把分配好的ngx_http_phase_handler_t内存空间赋值给阶段引擎的handlers字段
     cmcf->phase_engine.handlers = ph;
     n = 0;
 
     /*
      * 该循环的目的是为阶段引擎中的handlers(ngx_http_phase_handler_t)设置checker方法和阶段真正要执行的方法
-     * ph是一个数组(cmcf->phase_engine.handlers),他包含了所有阶段中的方法,所以他本身区别阶段的方法就是checker
+     * ph是一个数组(cmcf->phase_engine.handlers),他包含了所有阶段中的方法,他本身区别阶段的方法就是checker
      * 字段,该字段确定了当前执行的是哪个阶段(在执行的时候有点类似变量的脚本引擎)
      */
     for (i = 0; i < NGX_HTTP_LOG_PHASE; i++) {
-    	// 阶段中真正执行的方法
+    	// 阶段i中真正执行的方法,也就是用户注册的方法
         h = cmcf->phases[i].handlers.elts;
 
         switch (i) {
 
         case NGX_HTTP_SERVER_REWRITE_PHASE:
             if (cmcf->phase_engine.server_rewrite_index == (ngx_uint_t) -1) {
+            	// NGX_HTTP_SERVER_REWRITE_PHASE阶段在阶段引擎中的开始索引
                 cmcf->phase_engine.server_rewrite_index = n;
             }
             checker = ngx_http_core_rewrite_phase;
 
             break;
 
-            // 查找location阶段
+            // 查找location阶段,不可介入
         case NGX_HTTP_FIND_CONFIG_PHASE:
+        	// 此时n就是该阶段在脚本引擎cmcf->phase_engine.handlers中的第一个ph
             find_config_index = n;
 
             ph->checker = ngx_http_core_find_config_phase;
+
+            // 该阶段只需要一个ph,并且没有对应的ph->handler,所以该阶段对应的下一个阶段的开始偏移量加一就可以
             n++;
+            // 下一个ph
             ph++;
 
             /*
@@ -919,6 +957,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 
         case NGX_HTTP_REWRITE_PHASE:
             if (cmcf->phase_engine.location_rewrite_index == (ngx_uint_t) -1) {
+            	// NGX_HTTP_REWRITE_PHASE阶段在阶段引擎中的开始索引
                 cmcf->phase_engine.location_rewrite_index = n;
             }
             checker = ngx_http_core_rewrite_phase;
@@ -927,7 +966,9 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 
         case NGX_HTTP_POST_REWRITE_PHASE:
             if (use_rewrite) {
+            	// 使用了NGX_HTTP_REWRITE_PHASE阶段,所以NGX_HTTP_POST_REWRITE_PHASE阶段就需要占用一个ph
                 ph->checker = ngx_http_core_post_rewrite_phase;
+                // 执行完NGX_HTTP_POST_REWRITE_PHASE阶段后需要重新匹配location,所以他的下一个阶段是NGX_HTTP_FIND_CONFIG_PHASE
                 ph->next = find_config_index;
                 n++;
                 ph++;
@@ -945,12 +986,16 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 
         case NGX_HTTP_ACCESS_PHASE:
             checker = ngx_http_core_access_phase;
+            // 为NGX_HTTP_POST_ACCESS_PHASE阶段预留一个ph
             n++;
             break;
 
+            // 不可介入
         case NGX_HTTP_POST_ACCESS_PHASE:
             if (use_access) {
+            	// 使用了NGX_HTTP_ACCESS_PHASE阶段,所以就会用到NGX_HTTP_POST_ACCESS_PHASE阶段
                 ph->checker = ngx_http_core_post_access_phase;
+                // 这里的n已经在上面的case中为NGX_HTTP_POST_ACCESS_PHASE阶段预留了一个ph,所以n就是该阶段的下一个阶段偏移量
                 ph->next = n;
                 ph++;
             }
@@ -965,9 +1010,12 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 			 */
             continue;
 
+            // 不可介入
         case NGX_HTTP_TRY_FILES_PHASE:
             if (cmcf->try_files) {
+            	// 使用到了NGX_HTTP_TRY_FILES_PHASE阶段
                 ph->checker = ngx_http_core_try_files_phase;
+                // 该阶段只需要一个ph,并且没有对应的ph->handler,所以该阶段对应的下一个阶段的开始偏移量加一就可以
                 n++;
                 ph++;
             }
@@ -997,13 +1045,17 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
             checker = ngx_http_core_generic_phase;
         }
 
-        // n在这里表示下一个阶段的开始方法偏移量  TODO ?
+        // n在这里表示下一个阶段的开始方法偏移量
         n += cmcf->phases[i].handlers.nelts;
 
         for (j = cmcf->phases[i].handlers.nelts - 1; j >=0; j--) {
+        	// 为阶段i的ph设置checker方法
             ph->checker = checker;
+            // 为阶段i的ph设置handler方法
             ph->handler = h[j];
+            // 阶段i的下一个阶段的开始偏移量
             ph->next = n;
+            // 阶段i的下一个ph
             ph++;
         }
     }
@@ -2104,9 +2156,9 @@ ngx_http_add_server(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
  * 2.将posts中所有的监听地址,放入cf->cycle->listening数组中
  *
  * ports:以端口维度保存的整个nginx的监听地址
- * 		8080:{
- * 			192.168.146.80:{
- * 				www.jd.com
+ * 		8080:{ // 端口
+ * 			192.168.146.80:{ // 地址
+ * 				www.jd.com // 域名
  * 				d.jd.com
  * 			}
  *
@@ -2150,14 +2202,17 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 #endif
                )
             {
-            	// 为域名构造hash结构
+            	// 为域名构造hash结构,每个地址可以包含多个域名
                 if (ngx_http_server_names(cf, cmcf, &addr[a]) != NGX_OK) {
                     return NGX_ERROR;
                 }
             }
         }
 
-        /* 将port[p]中代表的监听地址,放入到cf->cycle->listening数组中 */
+        /*
+         * 将port[p]中代表的监听地址,放入到cf->cycle->listening数组中
+         * 在ngx_http_add_listening()-->ngx_create_listening()方法中操作cf->cycle->listening数组
+         */
         if (ngx_http_init_listening(cf, &port[p]) != NGX_OK) {
             return NGX_ERROR;
         }
@@ -2460,6 +2515,8 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
      */
 
     if (addr[last - 1].opt.wildcard) {
+    	// 因为已经排过序了,带通配符的地址排在最后,所以如果最后一个地址带通配符,那么就需要处理通配符的情况
+
         addr[last - 1].opt.bind = 1;
         bind_wildcard = 1;
 
