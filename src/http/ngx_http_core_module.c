@@ -941,6 +941,9 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
+    printf("+++++++++------->%s %d  %s  rc=%ld\n",clcf->name.data,clcf->noname,clcf->root.data,rc);
+
+
     if (!r->internal && clcf->internal) {
         ngx_http_finalize_request(r, NGX_HTTP_NOT_FOUND);
         return NGX_OK;
@@ -1430,6 +1433,12 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
 }
 
 
+/*
+ * 对当前请求做一些配置操作,比如
+ * 		r->content_handler = clcf->handler;
+ * 如果clcf->handler方法存在的话,就不会执行当前请求中内容阶段中的方法
+ *
+ */
 void
 ngx_http_update_location_config(ngx_http_request_t *r)
 {
@@ -1518,8 +1527,9 @@ ngx_http_update_location_config(ngx_http_request_t *r)
  * NGX_AGAIN    - inclusive match
  * NGX_ERROR    - regex error
  * NGX_DECLINED - no match
+ *
+ * 找到后会设置r->loc_conf
  */
-
 static ngx_int_t
 ngx_http_core_find_location(ngx_http_request_t *r)
 {
@@ -1677,12 +1687,23 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
         if (len == (size_t) node->len) {
 
             if (node->exact) {
+            	/*
+            	 * 匹配到location的结果就是设置r->loc_conf字段
+            	 */
+
             	// 精确匹配(=), 则终止继续匹配,直接返回
                 r->loc_conf = node->exact->loc_conf;
                 return NGX_OK;
 
             } else {
-            	// 非精确匹配(^~|无修饰符),则继续向下匹配
+            	/*
+            	 * 匹配到location的结果就是设置r->loc_conf字段
+            	 */
+
+            	/*
+            	 * 成功匹配到,但当前是非精确匹配(^~|无修饰符),则继续向下匹配
+            	 * 但此时r->loc_conf已经被赋值,如果后续没有匹配到其它的,则这里匹配到的location就是匹配结果
+            	 */
                 r->loc_conf = node->inclusive->loc_conf;
                 return NGX_AGAIN;
             }

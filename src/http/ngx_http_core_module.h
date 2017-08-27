@@ -539,7 +539,10 @@ struct ngx_http_core_loc_conf_s {
     ngx_str_t     name;          /* location name */
 
 #if (NGX_PCRE)
-    // 编译好的正则
+    /*
+     * 编译好的正则,同时也可以表示带正则的location,比如:
+     * 		location ~ /aa {}
+     */
     ngx_http_regex_t  *regex;
 #endif
 
@@ -553,15 +556,14 @@ struct ngx_http_core_loc_conf_s {
     unsigned      noname:1;   /* "if () {}" block or limit_except */
     unsigned      lmt_excpt:1;
     /*
-     * 前缀是@的location:
+     * 值是1:前缀是@的location:
      * 	location @abc {}
      */
     unsigned      named:1;
 
     /*
-     * 1表示精确匹配:
+     * 值是1:表示精确匹配:
      *   location = /abc {}
-     *
      */
     unsigned      exact_match:1;
     /*
@@ -584,14 +586,19 @@ struct ngx_http_core_loc_conf_s {
     ngx_http_core_loc_conf_t       **regex_locations;
 #endif
 
-    /* pointer to the modules' loc_conf */
     /*
-     *  在某个location{}块内的所有http模块的loc_conf配置项结构体
+     * pointer to the modules' loc_conf
+     *
+     *
+     * 在某个location{}块内的所有http模块的loc_conf配置项结构体
      * locl_conf[module.ctx_index]
      */
     void        **loc_conf;
 
     uint32_t      limit_except;
+    /*
+     * TODO 该字段和loc_conf字段的关系
+     */
     void        **limit_except_loc_conf;
 
     // CONTENT_PHASE阶段的handler回调函数
@@ -642,6 +649,8 @@ struct ngx_http_core_loc_conf_s {
 
     ngx_flag_t    client_body_in_single_buffer;
                                            /* client_body_in_singe_buffer */
+
+    // location{}块中的internal指令
     ngx_flag_t    internal;                /* internal */
     ngx_flag_t    sendfile;                /* sendfile */
     ngx_flag_t    aio;                     /* aio */

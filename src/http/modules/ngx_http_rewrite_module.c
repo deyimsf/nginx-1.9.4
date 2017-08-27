@@ -986,7 +986,7 @@ ngx_http_rewrite_variable(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
  *
  * 	第一个结构体中的ngx_http_script_value_code()方法将变量值压入栈(ngx_http_script_engine_t->sp++)
  * 	第二个结构体中的ngx_http_script_set_var_code()方法将变量值从栈(ngx_http_script_engine_t->sp--)
- * 		取出,并对r-variables中对应的变量赋值
+ * 		取出,并对r->variables中对应的变量赋值
  *
  * 最终引擎有ngx_http_rewrite_handler()方法执行
  */

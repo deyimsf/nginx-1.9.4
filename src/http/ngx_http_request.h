@@ -378,6 +378,19 @@ struct ngx_http_request_s {
     void                            **ctx;
     void                            **main_conf;
     void                            **srv_conf;
+
+    /*
+     * 用来存储所有http模块在location{}内的配置结构体信息
+     *
+     * 该字段在匹配location{}的过程会用到,匹配成功就会设置该字段,下面两个方法会执行匹配操作
+     * 	/src/http/ngx_http_core_module.c/ngx_http_core_find_location()
+     * 	/src/http/ngx_http_core_module.c/ngx_http_core_find_static_location()
+     *
+     *
+     * 方法/src/http/ngx_http_script.c/ngx_http_script_if_code(),会为if(){}块中的loc_conf字段赋值,
+     * 前提是if(){}块存在于一个location()块中。注意location()块中的loc_conf和他内部的if(){}块的loc_conf字段不是同一个,
+     * if(){}会为自己的loc_conf字段重新分配内存。
+     */
     void                            **loc_conf;
 
     ngx_http_event_handler_pt         read_event_handler;
@@ -422,6 +435,12 @@ struct ngx_http_request_s {
     ngx_http_post_subrequest_t       *post_subrequest;
     ngx_http_posted_request_t        *posted_requests;
 
+    /*
+     * 当前要执行的handler的索引
+     *
+     * 这个索引是cmcf->phase_engine.handlers数组的一个下标
+     *
+     */
     ngx_int_t                         phase_handler;
     ngx_http_handler_pt               content_handler;
     ngx_uint_t                        access_code;

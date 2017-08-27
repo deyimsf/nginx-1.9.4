@@ -240,6 +240,11 @@ typedef struct {
 typedef struct {
     ngx_http_script_code_pt     code;
     uintptr_t                   next;
+    /*
+     * 如果当前if指令存在于一个locaton{}中,那么该字段就有值
+     *
+     * 也就是说if(){}块也会有自己的一份loc_conf数据
+     */
     void                      **loc_conf;
 } ngx_http_script_if_code_t;
 

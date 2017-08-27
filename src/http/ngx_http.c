@@ -871,7 +871,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     use_access = cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers.nelts ? 1 : 0;
 
     /*
-     * 因为有四个阶段:
+     * 因为有下面四个阶段
      *  	NGX_HTTP_FIND_CONFIG_PHASE
      *		NGX_HTTP_POST_REWRITE_PHASE
      *		NGX_HTTP_POST_ACCESS_PHASE
@@ -1299,7 +1299,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         clcf = lq->exact ? lq->exact : lq->inclusive;
 
         // 打印排好序的locations
-        // printf("-------location------->%s\n",clcf->name.data);
+        printf("-------location------->%s %d  %s\n",clcf->name.data,clcf->noname,clcf->root.data);
 
         if (ngx_http_init_locations(cf, NULL, clcf) != NGX_OK) {
             return NGX_ERROR;
@@ -1331,7 +1331,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
             continue;
         }
 
-        // 这是一个if () {}
+        // 这是一个if () {} or limit_except
         if (clcf->noname) {
             break;
         }
