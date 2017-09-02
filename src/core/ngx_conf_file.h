@@ -97,7 +97,13 @@ struct ngx_command_s {
      * 解析到该命令后要执行的方法
      * *cf: 可以理解为指令配置信息上下文,包含了指令名和指令入参
      * *cmd: 当前指令的定义信息
-     * *conf: 当前指令所在模块的配置信息结构体
+     * *conf: 当前指令所在模块的配置信息结构体,实际值依赖于下面的conf值如果conf有值,并且值是NGX_HTTP_LOC_CONF_OFFSET,
+     * 		  那么conf就代表该指令所在模块的oc级别的配置结构体信息,比如一个模块的loc级别的结构体如下:
+     * 		  		struct myhttp_loc_conf_s {
+     *					int a;
+     *					int b;
+     * 		  		}
+     *		  那么根据配置,在调用该方法的时候conf就是指向myhttp_loc_conf_s结构体的指针。
      */
     char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
@@ -105,10 +111,29 @@ struct ngx_command_s {
      * 该字段在 /src/core/ngx_conf_file.c/ngx_conf_handler("}else if (cf->ctx) {")方法中使用
      *
      * 如果是http模块,则代表xxx_conf在ngx_http_conf_ctx_t结构体中偏移量
+     *   NGX_HTTP_MAIN_CONF_OFFSET: 代表ngx_http_conf_ctx_t结构体中的main_conf字段
+     *   NGX_HTTP_SRV_CONF_OFFSET: 代表ngx_http_conf_ctx_t结构体中的srv_conf字段
+     *   NGX_HTTP_LOC_CONF_OFFSET: 代表ngx_http_conf_ctx_t结构体中的loc_conf字段
      */
     ngx_uint_t            conf;
-    // 某个字段在当前模块的配置信息结构体中的偏移量
+
+    /*
+     * 某个字段在当前模块的配置信息结构体中的偏移量,和上面的conf配合使用,比如conf是NGX_HTTP_LOC_CONF_OFFSET,
+     * offset是offsetof(myhttp_loc_conf_s, b),那么我们在该指令的回调方法 set 中就可以利用这个偏移量获取b这
+     * 个变量的地址,比如:
+     *		char *
+     *		myhttp_conf_set_p(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
+     *			// 将myhttp_loc_conf_s对象结构体用一个指针表示
+     *			char	*p = conf;
+     *
+     *			int		*b;
+     *			// 利用offset字段就可以取出b这个字段的指针
+     *			b = (int *) (p + cmd->offset);
+     *		}
+     */
     ngx_uint_t            offset;
+
+    // TODO
     void                 *post;
 };
 

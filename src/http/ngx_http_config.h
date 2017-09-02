@@ -74,16 +74,64 @@ typedef struct {
 	 *    | * | * | * | 各个http模块在main块位置存放各自配置信息结构体的下标
 	 *    -----------------
 	 *
+	 * 常规情况下,所有http指令,只要最深出现在http{}块中,那么该指令信息在解析后就应该存放在其对应的main级别
+	 * 的结构体中,比如如下配置:
+	 * 		http {
+	 * 			myhttp aa;
+	 *
+	 * 			server{
+	 *
+	 * 				location {
+	 * 					// something
+	 * 				}
+	 * 			}
+	 * 		}
+	 * 配置中的指令信息会存放在http{}块对应的myhttp_main_conf结构体中。
+	 *
 	 */
     void        **main_conf;
 
     /*
      * 存储http模块在server{}区域的配置信息
+     *
+     * 常规情况下,所有http指令,只要最深出现在server{}块中,那么该指令信息在解析后就都应该存放在其模块对应的srv
+     * 级别的结构体中,比如如下配置:
+     * 		http {
+     * 			myhttp aa;
+     *
+     * 			server {
+     * 					myhttp bb;
+     *
+     * 					location {
+     * 						// something
+     * 					}
+     * 			}
+     * 		}
+     * 对于上面出现的两条同样的指令,他们都会存放在各自myhttp_srv_conf结构体中。第一条指令信息存放在http{}
+     * 块中对应的myhttp_srv_conf结构体中; 第二条指令存放在server{}块中对应对的myhttp_srv_conf结构体中;
      */
     void        **srv_conf;
 
     /*
-     * 存储http模块在location{}区域的配置信息
+     * 存储所有http模块在location{}区域的配置信息
+     *
+     * 常规情况下,所有的http指令,只要最深可以出现在location{}块中,那么该指令信息在解析后就都应该存放在其模块
+     * 对应的loc级别的结构体中,比如有如下配置:
+     * 		http {
+     * 			myhttp aa;
+     *
+     * 			server {
+     * 				myhttp bb;
+     *
+     * 				location {
+     * 					myhttp cc;
+     * 				}
+     * 			}
+     * 		}
+     * 上面的配置总共出现了三条同样的指令,只是参数值不一样,但是因为该指令可以出现在locaton{}块中,所以解析后的信息
+     * 都应该存放在loc级别的myhttp_loc_conf结构体中。
+     * 所以,对于第一条指令信息,应该存放在http{}块对应的myhttp_loc_conf结构体中;第二条指令存放在server{}块对应
+     * 的myhttp_loc_conf结构体中;第三条指令存放在location{}块对应的myhttp_loc_conf结构体中;
      */
     void        **loc_conf;
 } ngx_http_conf_ctx_t;

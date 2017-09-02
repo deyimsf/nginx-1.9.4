@@ -574,11 +574,11 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             } else if (cf->ctx) {
 
             	/*
-            	 * 如果是事件模块,那么cf->ctx是有/src/event/ngx_event.c/ngx_events_block方法传递过来的;
-            	 * 如果是http模块,那么cf->ctx是有/src/http/ngx_http.c/ngx_http_block方法传递过来的;
+            	 * 如果是事件模块,那么cf->ctx最开始是有/src/event/ngx_event.c/ngx_events_block方法传递过来的;
+            	 * 如果是http模块,那么cf->ctx最开始是有/src/http/ngx_http.c/ngx_http_block方法传递过来的;
             	 *
             	 *
-            	 * 这一步是取各个非核心模块的自定义结构体指针了,比如
+            	 * 这一步是取各个非核心模块的自定义结构体指针了,比如:
             	 *  事件模块NGX_EVENT_MODULE;
             	 *  http模块NGX_HTTP_MODULE;
             	 *

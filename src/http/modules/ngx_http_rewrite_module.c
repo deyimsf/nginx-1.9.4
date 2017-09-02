@@ -615,6 +615,10 @@ ngx_http_rewrite_break(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static char *
 ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
+	/*
+	 * 如果当前指令出现在server{}块中,那么conf就代表rewrite模块在server{}块中对应的ngx_http_rewrite_loc_conf_t结构体
+	 * 如果当前指令出现在location{}块中,则conf就代表该模块在location{}块中对应的ngx_http_rewrite_loc_conf_t结构体
+	 */
     ngx_http_rewrite_loc_conf_t  *lcf = conf;
 
     void                         *mconf;
@@ -628,15 +632,22 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_script_if_code_t    *if_code;
     ngx_http_rewrite_loc_conf_t  *nlcf;
 
+    /*
+     * 为if () {}块创建一个ngx_http_conf_ctx_t结构体
+     */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    // pctx是当前创建的ctx的父级块拥有的ngx_http_conf_ctx_t结构体,比如server{}和locaiton {}
     pctx = cf->ctx;
     ctx->main_conf = pctx->main_conf;
     ctx->srv_conf = pctx->srv_conf;
 
+    /*
+     * 为当前if () {}块分配用于存放所有http模块自定义结构体信息的内存(location级别的)
+     */
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
@@ -651,6 +662,7 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         if (module->create_loc_conf) {
 
+        	// 回调所有http模块的create_loc_conf()方法
             mconf = module->create_loc_conf(cf);
             if (mconf == NULL) {
                  return NGX_CONF_ERROR;
@@ -660,13 +672,52 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    /*
+     * pclcf表示if () {}块所在的上级块
+     *
+     * 如果上级是server{}块,那么pclcf就表示http核心模块在server{}块中的ngx_http_core_loc_conf_t结构体信息,
+     * 该结构体locations字段包含了在该块下的所有loction{}块,比如:
+     * 		server {
+     * 			if ($uri) {
+     * 				// something
+     * 			}
+     *
+     * 			location /uri {
+     * 				// something
+     * 			}
+     * 		}
+     *
+     * 如果上级是location{}块,那么pclcf就表示http模块在location{}块中的ngx_http_core_loc_conf_t结构体信息,
+     * 结构体locations字段包含了在该块下的所有loction{}块,比如:
+     * 		location {
+     * 			if ($uri) {
+     * 				// something
+     * 			}
+     *
+     * 			location /uri {
+     * 				// something
+     * 			}
+     * 		}
+     *
+     */
     pclcf = pctx->loc_conf[ngx_http_core_module.ctx_index];
 
+    // 取出代表if () {}块本身的ngx_http_core_loc_conf_t结构体
     clcf = ctx->loc_conf[ngx_http_core_module.ctx_index];
     clcf->loc_conf = ctx->loc_conf;
     clcf->name = pclcf->name;
+    // 标记为匿名location
     clcf->noname = 1;
 
+    /*
+     * 把代表自己的ngx_http_core_loc_conf_t结构体放到父块的locations字段中
+     *
+     * TODO 目前还没有看明白加入这里的目的,因为if的执行不需要在NGX_HTTP_FIND_CONFIG_PHASE阶段匹配locaiton。
+     * 所以按理说这没必要把该结构体放入到locations队列中。虽然@类型的location也不在FIND阶段进行匹配,但@类型的
+     * location会在ngx_http_init_locations()方法中将其放入到ngx_http_core_srv_conf_t.named_locatons字段
+     * 中,所以@类型的locaiton需要放入到locations队列中,但目前if类型的会在ngx_http_init_locations()方法中丢弃,
+     * 难道是为了以后的扩展,或者代码风格上保持一致,或者我还没有看到使用的地方?
+     */
     if (ngx_http_add_location(cf, &pclcf->locations, clcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -686,8 +737,26 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
     /* the inner directives must be compiled to the same code array */
-
+    /*
+     * 把if () {}内的指令操作都编译到父级的codes数组中,这样在执行if () {}的时候就都是通过脚本引擎来执行了,
+     * 所以出现在if () {}内的变量会和它的父级变量在一个codes数组中执行。
+     * 对于如下配置:
+     * 		locationg / {
+     *			proxy_pass	http://www.baidu.com;
+     *
+	 * 			if ($uri) {
+	 * 				proxy_pass http://www.jd.com;
+	 * 			}
+     * 		}
+     * 我们知道在ngx中if本身会被看成一个location对待,所以它也有对应的ngx_http_core_loc_conf_t结构体,然而location的
+     * 匹配结果就是拿到对应的ngx_http_core_loc_conf_t结构体,然后后续的各个阶段中运行的loc级别的指令信息,都会从该结构体中
+     * 索引到,所以上面的if执行成功也就表示拿到了对应的ngx_http_core_loc_conf_t结构体,所以就正确的执行了匹配的proxy_pass指令。
+     */
     nlcf = ctx->loc_conf[ngx_http_rewrite_module.ctx_index];
+    /*
+     * 父级codes数组赋值给代表当前if的codes数组,这样在调用ngx_conf_parse方法进行解析的时候,会很方便的将脚本
+     * 代码放入到父级codes数组中了
+     */
     nlcf->codes = lcf->codes;
 
 
@@ -696,10 +765,12 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     if (pclcf->name.len == 0) {
         if_code->loc_conf = NULL;
+        // 在server{}中的if
         cf->cmd_type = NGX_HTTP_SIF_CONF;
 
     } else {
         if_code->loc_conf = ctx->loc_conf;
+        // 在locatoin{}中的if
         cf->cmd_type = NGX_HTTP_LIF_CONF;
     }
 
@@ -721,7 +792,7 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                                                 - (u_char *) if_code;
 
     /* the code array belong to parent block */
-
+    // 属于它的codes已经放入到父块的codes中,这里直接把这个变量置空
     nlcf->codes = NULL;
 
     return NGX_CONF_OK;

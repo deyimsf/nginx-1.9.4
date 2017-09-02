@@ -1253,7 +1253,7 @@ ngx_http_merge_locations(ngx_conf_t *cf, ngx_queue_t *locations,
  *	1.named_locations数组存放@类型的location
  *	2.regex_locations数组存放正则类型的location
  *	3.原来的locations存放无修饰符(包括 =|^~|无修饰符)类型的locaiton
- *	4.TODO  一个疑问 if () {} 直接扔掉了?
+ *	4.if () {} 直接扔掉了,因为他不需要匹配
  */
 static ngx_int_t
 ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
@@ -1428,7 +1428,7 @@ ngx_http_init_static_location_trees(ngx_conf_t *cf,
     ngx_http_location_queue_t  *lq;
 
     /*
-     * 取出pclcf下的locations队列,此时的队列并没有包含全部的location{}
+     * 取出pclcf下的locations队列,此时的队列并没有包含全部的location{},只包括  =|^~|无修饰符 这三种类型的locaiton
      * 该队列在/src/http/ngx_http.c/ngx_http_init_locations()方法中已经被分隔完毕
      */
     locations = pclcf->locations;
@@ -1557,7 +1557,7 @@ ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
  *    按字符倒序排序
  *  2. ~* | ~
  *    按照在配置文件中的位置排序,终止匹配
- *  3. @ (内部匹配,TODO 是否终止匹配)
+ *  3. @ (内部匹配)
  *  4. if () {} 所有终止匹配都不会终止if
  *
  */

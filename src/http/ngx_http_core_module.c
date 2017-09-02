@@ -2698,6 +2698,9 @@ ngx_http_internal_redirect(ngx_http_request_t *r,
 }
 
 
+/*
+ * 匹配@类型的location
+ */
 ngx_int_t
 ngx_http_named_location(ngx_http_request_t *r, ngx_str_t *name)
 {

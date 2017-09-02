@@ -3597,6 +3597,10 @@ ngx_http_proxy_init_headers(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *conf,
 static char *
 ngx_http_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
+	/*
+	 * 如果当前指令出现在location{}块中,那么conf就代表proxy模块在location{}块中对应的ngx_http_proxy_loc_conf_t结构体
+	 * 如果当前指令出现在if in location{}块中,则conf就代表该模块在if in location{}块中对应的ngx_http_proxy_loc_conf_t结构体
+	 */
     ngx_http_proxy_loc_conf_t *plcf = conf;
 
     size_t                      add;
