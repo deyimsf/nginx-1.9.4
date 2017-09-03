@@ -1207,6 +1207,7 @@ ngx_http_script_regex_end_code(ngx_http_script_engine_t *e)
     }
 
     if (code->uri) {
+    	// 改写uri
         r->uri = e->buf;
 
         if (r->uri.len == 0) {

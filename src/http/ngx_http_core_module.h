@@ -124,24 +124,58 @@ typedef struct {
 typedef enum {
     NGX_HTTP_POST_READ_PHASE = 0,
 
+	/*
+	 * 对应checker方法是ngx_http_core_rewrite_phase()
+	 * rewrite_module.c模块在该阶段注册的是ngx_http_rewrite_handler()方法
+	 */
     NGX_HTTP_SERVER_REWRITE_PHASE,
 
-	// 匹配location阶段,不可介入
+	/*
+	 * 不可以介入
+	 * 对应checker方法是ngx_http_core_find_config_phase()
+	 * 作用是匹配location
+	 */
     NGX_HTTP_FIND_CONFIG_PHASE,
+	/*
+	 * 对应checker方法是ngx_http_core_rewrite_phase()
+	 * rewrite_module.c模块在该阶段注册的是ngx_http_rewrite_handler()方法
+	 */
     NGX_HTTP_REWRITE_PHASE,
-	// 不可介入
+	/*
+	 * 不可以介入
+	 * 对应checker方法是ngx_http_core_post_rewrite_phase()
+	 * 如果uri有改变(r->uri_changed)则负责重新匹配location
+	 */
     NGX_HTTP_POST_REWRITE_PHASE,
 
+	/*
+	 * 对应checker方法是ngx_http_core_generic_phase()
+	 */
     NGX_HTTP_PREACCESS_PHASE,
 
+	/*
+	 * 对应checker方法是ngx_http_core_access_phase()
+	 */
     NGX_HTTP_ACCESS_PHASE,
-	// 不可介入
+	/*
+	 * 不可介入
+	 * 对应checker方法是ngx_http_core_post_access_phase()
+	 */
     NGX_HTTP_POST_ACCESS_PHASE,
 
-	// 不可介入
+	/*
+	 * 不可介入
+	 * 对应checker方法是ngx_http_core_try_files_phase()
+	 */
     NGX_HTTP_TRY_FILES_PHASE,
+	/*
+	 * 对应checker方法是ngx_http_core_content_phase()
+	 */
     NGX_HTTP_CONTENT_PHASE,
 
+	/*
+	 * 对应checker方法是ngx_http_core_generic_phase
+	 */
     NGX_HTTP_LOG_PHASE
 } ngx_http_phases;
 
@@ -582,6 +616,9 @@ struct ngx_http_core_loc_conf_s {
 #endif
 #endif
 
+    /*
+     * 含精确匹配(=)和无符号(^~|无符号)匹配的location块
+     */
     ngx_http_location_tree_node_t   *static_locations;
 #if (NGX_PCRE)
     // 存放正则匹配的location

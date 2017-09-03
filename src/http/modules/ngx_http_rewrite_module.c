@@ -397,6 +397,9 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_script_regex_end_code_t  *regex_end;
     u_char                             errstr[NGX_MAX_CONF_ERRSTR];
 
+    /*
+     * 在数组(lcf->codes)中分配一块sizeof(ngx_http_script_regex_code_t)大小的内存
+     */
     regex = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                        sizeof(ngx_http_script_regex_code_t));
     if (regex == NULL) {
@@ -453,11 +456,13 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             last = 1;
 
         } else if (ngx_strcmp(value[3].data, "redirect") == 0) {
+        	// 302跳转
             regex->status = NGX_HTTP_MOVED_TEMPORARILY;
             regex->redirect = 1;
             last = 1;
 
         } else if (ngx_strcmp(value[3].data, "permanent") == 0) {
+        	// 301跳转
             regex->status = NGX_HTTP_MOVED_PERMANENTLY;
             regex->redirect = 1;
             last = 1;

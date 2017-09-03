@@ -968,7 +968,12 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
             if (use_rewrite) {
             	// 使用了NGX_HTTP_REWRITE_PHASE阶段,所以NGX_HTTP_POST_REWRITE_PHASE阶段就需要占用一个ph
                 ph->checker = ngx_http_core_post_rewrite_phase;
-                // 执行完NGX_HTTP_POST_REWRITE_PHASE阶段后需要重新匹配location,所以他的下一个阶段是NGX_HTTP_FIND_CONFIG_PHASE
+                /*
+                 * 执行到NGX_HTTP_POST_REWRITE_PHASE阶段后,如果需要重新匹配location,则ph->next就是
+                 * NGX_HTTP_FIND_CONFIG_PHASE阶段在脚本引擎handlers数组中的开始索引
+                 *
+                 * r->uri_changed等于1表示需要重新匹配location
+                 */
                 ph->next = find_config_index;
                 n++;
                 ph++;
@@ -1299,7 +1304,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         clcf = lq->exact ? lq->exact : lq->inclusive;
 
         // 打印排好序的locations
-        printf("-------location------->%s %d  %s\n",clcf->name.data,clcf->noname,clcf->root.data);
+        // printf("-------location------->%s %d  %s\n",clcf->name.data,clcf->noname,clcf->root.data);
 
         if (ngx_http_init_locations(cf, NULL, clcf) != NGX_OK) {
             return NGX_ERROR;

@@ -893,6 +893,11 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 }
 
 
+/**
+ * 下面连个阶段执行该方法
+ * 	NGX_HTTP_SERVER_REWRITE_PHASE
+ * 	NGX_HTTP_REWRITE_PHASE
+ */
 ngx_int_t
 ngx_http_core_rewrite_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 {
@@ -900,10 +905,14 @@ ngx_http_core_rewrite_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "rewrite phase: %ui", r->phase_handler);
-
+    /*
+     * 调用模块在该阶段注册的方法
+     * 对于ngx_http_rewrite_module.c模块,它在该阶段的方法是ngx_http_rewrite_handler()方法
+     */
     rc = ph->handler(r);
 
     if (rc == NGX_DECLINED) {
+    	// 让阶段引擎执行下一个方法
         r->phase_handler++;
         return NGX_AGAIN;
     }
@@ -920,6 +929,13 @@ ngx_http_core_rewrite_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 }
 
 
+/*
+ * 查找location阶段,该阶段不允许第三方模块进入
+ *
+ * 找到后会设置r->loc_conf字段的值,通过该字段就可以获取当前请求要执行的操作和信息
+ *
+ *
+ */
 ngx_int_t
 ngx_http_core_find_config_phase(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph)
@@ -932,19 +948,27 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
     r->content_handler = NULL;
     r->uri_changed = 0;
 
+    /*
+     * 查找location,负责从ngx_http_core_loc_conf_t结构体的static_locations和regex_locations集合中
+     * 查找对应的location,找到后会设置对应的r->loc_conf字段
+     */
     rc = ngx_http_core_find_location(r);
+    // ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "------------匹配结果end: %O 指针:%p", rc,r->loc_conf);
 
     if (rc == NGX_ERROR) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return NGX_OK;
     }
 
+    /*
+     * 取出当前匹配到的locaiton{}块对应的ngx_http_core_loc_conf_t结构体
+     */
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
-
-    printf("+++++++++------->%s %d  %s  rc=%ld\n",clcf->name.data,clcf->noname,clcf->root.data,rc);
 
 
     if (!r->internal && clcf->internal) {
+        // ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "------------404? %d %d", r->internal,clcf->internal);
+
         ngx_http_finalize_request(r, NGX_HTTP_NOT_FOUND);
         return NGX_OK;
     }
@@ -954,6 +978,7 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
                    (clcf->noname ? "*" : (clcf->exact_match ? "=" : "")),
                    &clcf->name);
 
+    // 对当前请求设置信息,比如r->content_handler = clcf->handler;
     ngx_http_update_location_config(r);
 
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -1013,11 +1038,17 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
         return NGX_OK;
     }
 
+    // 该阶段执行完毕,退出后阶段执行引擎会执行cmcf->phase_engine.handlers中的下一个ph
     r->phase_handler++;
     return NGX_AGAIN;
 }
 
 
+/*
+ * NGX_HTTP_POST_REWRITE_PHASE阶段执行该方法
+ *
+ * 主要功能是根据改变的uri重新匹配locaiton
+ */
 ngx_int_t
 ngx_http_core_post_rewrite_phase(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph)
@@ -1027,10 +1058,17 @@ ngx_http_core_post_rewrite_phase(ngx_http_request_t *r,
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "post rewrite phase: %ui", r->phase_handler);
 
+    /*
+     * 判断当前uri是否被改写过,如果没有被改写过则直接执行下一个阶段
+     */
     if (!r->uri_changed) {
         r->phase_handler++;
+
+        // 该返回值没什么特殊意义,只要不反会NGX_OK阶段引擎就会执行下去
         return NGX_AGAIN;
     }
+
+    /* 走到这里说明uri被改写过,所以下面的逻辑会促使阶段引擎重新匹配location */
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "uri changes: %d", r->uri_changes);
@@ -1042,6 +1080,10 @@ ngx_http_core_post_rewrite_phase(ngx_http_request_t *r,
      *     unsigned  uri_changes:4
      */
 
+    /*
+     * 在ngx_http_create_request()方法中会设置r->uri_changes = NGX_HTTP_MAX_URI_CHANGES + 1
+     * 也就是说ngx最多允许rewrite操作10次
+     */
     r->uri_changes--;
 
     if (r->uri_changes == 0) {
@@ -1053,13 +1095,27 @@ ngx_http_core_post_rewrite_phase(ngx_http_request_t *r,
         return NGX_OK;
     }
 
+    /*
+     * 这时候ph->next的值是NGX_HTTP_FIND_CONFIG_PHASE阶段在阶段引擎handlers数组中的开始索引
+     * 所以该方法执行完毕后阶段引擎会开始重新匹配location
+     */
     r->phase_handler = ph->next;
 
+    /*
+     * 取出当前location{}块对应的上级server{}块的ngx_http_core_srv_conf_t结构体
+     * 因为已经确定要重新匹配location了,所以需要取出server{}块的loc_conf字段赋值个当前请求的r->loc_conf字段
+     */
     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
-    // 确定要重新匹配location,所以r->loc_conf变更为所有http模块在server{}块下产生的自定义配置项
-    // (这里自然包块http核心模块在server{}块下创建的ngx_http_core_loc_conf_t结构体)
+
+    /*
+     * 将server{}块的loc_conf赋值给当前请求的r->loc_conf字段
+     * 有了loc_conf字段就可以取出当前server{}块对应的ngx_http_core_loc_conf_t结构体,随后在
+     * NGX_HTTP_FIND_CONFIG_PHASE阶段就可以从该结构体的static_locations和regex_locations集合中
+     * 重新匹配location了
+     */
     r->loc_conf = cscf->ctx->loc_conf;
 
+    // 该返回值没什么特殊意义,只要不反会NGX_OK阶段引擎就会执行下去
     return NGX_AGAIN;
 }
 
@@ -1522,11 +1578,13 @@ ngx_http_update_location_config(ngx_http_request_t *r)
 
 
 /*
- * NGX_OK       - exact or regex match
- * NGX_DONE     - auto redirect
- * NGX_AGAIN    - inclusive match
- * NGX_ERROR    - regex error
- * NGX_DECLINED - no match
+ * NGX_OK  0     - exact or regex match: 精确匹配(=)或者正则匹配(~ | ~*)
+ * NGX_DONE -4    - auto redirect
+ * NGX_AGAIN -2  - inclusive match: TODO 貌似该方法不会返回该值,ngx_http_core_find_static_location()方法会返回该值
+ * NGX_ERROR -1  - regex error
+ * NGX_DECLINED -5 - no match: 注释很奇怪,其实并不是没有匹配,有下面几种情况会返回该结果
+ * 					1.没有匹配到,这时不会设置r->loc_conf字段
+ * 					2.匹配到一般匹配(无修饰符号|^~)这时会设置r->loc_conf字段
  *
  * 找到后会设置r->loc_conf
  */
@@ -1548,6 +1606,7 @@ ngx_http_core_find_location(ngx_http_request_t *r)
 
     // 该方法会根据不同的情况,更改r->loc_conf的值
     rc = ngx_http_core_find_static_location(r, pclcf->static_locations);
+    // ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "------------匹配结果static: %O 指针:%p", rc,r->loc_conf);
 
     if (rc == NGX_AGAIN) {
 
@@ -1610,10 +1669,10 @@ ngx_http_core_find_location(ngx_http_request_t *r)
 
 
 /*
- * NGX_OK       - exact match 精确匹配(=)
- * NGX_DONE     - auto redirect
- * NGX_AGAIN    - inclusive match 一般匹配(^~|无修饰符)
- * NGX_DECLINED - no match 没有匹配成功
+ * NGX_OK  0     - exact match 精确匹配(=)
+ * NGX_DONE  -4    - auto redirect
+ * NGX_AGAIN  -2  - inclusive match 一般匹配(^~|无修饰符)
+ * NGX_DECLINED  -5 - no match 没有匹配成功,这里的没有匹配成功表示没有在子级匹配成功
  */
 
 static ngx_int_t

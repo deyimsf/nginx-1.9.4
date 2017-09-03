@@ -436,10 +436,9 @@ struct ngx_http_request_s {
     ngx_http_posted_request_t        *posted_requests;
 
     /*
-     * 当前要执行的handler的索引
+     * 当前正在执行的handler的索引
      *
      * 这个索引是cmcf->phase_engine.handlers数组的一个下标
-     *
      */
     ngx_int_t                         phase_handler;
     ngx_http_handler_pt               content_handler;
@@ -500,6 +499,8 @@ struct ngx_http_request_s {
     unsigned                          add_uri_to_alias:1;
     unsigned                          valid_location:1;
     unsigned                          valid_unparsed_uri:1;
+
+    // 标记uri是否改变了
     unsigned                          uri_changed:1;
     unsigned                          uri_changes:4;
 
