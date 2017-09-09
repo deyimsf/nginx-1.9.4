@@ -149,6 +149,7 @@ typedef enum {
     NGX_HTTP_POST_REWRITE_PHASE,
 
 	/*
+	 * rewrite阶段执行完毕之后执行该阶段
 	 * 对应checker方法是ngx_http_core_generic_phase()
 	 */
     NGX_HTTP_PREACCESS_PHASE,

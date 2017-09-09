@@ -383,6 +383,11 @@ ngx_http_rewrite_init(ngx_conf_t *cf)
 }
 
 
+/*
+ * 解析rewrite指令
+ *
+ * 从代码中可以看到,只要rewrite指令携带了第三个参数(break、last等)都会结束脚本引擎的执行
+ */
 static char *
 ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -423,7 +428,9 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    // 脚本引擎要执行的方法
     regex->code = ngx_http_script_regex_start_code;
+    //
     regex->uri = 1;
     regex->name = value[1];
 
@@ -449,10 +456,16 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     if (cf->args->nelts == 4) {
         if (ngx_strcmp(value[3].data, "last") == 0) {
+            /*
+             * 向脚本引擎codes中添加终止标志,当脚本引擎检查到该标志后就不会继续向下执行了
+             * 但是否会重新走NGX_HTTP_FIND_CONFIG_PHASE阶段重新匹配uri,则看是否有break_cycle标记,有就不走,没有就走
+             */
             last = 1;
 
         } else if (ngx_strcmp(value[3].data, "break") == 0) {
+        	// 无视uri的改变
             regex->break_cycle = 1;
+            // 向脚本引擎codes中添加终止标志,当脚本引擎检查到该标志后就不会继续向下执行了
             last = 1;
 
         } else if (ngx_strcmp(value[3].data, "redirect") == 0) {
@@ -505,6 +518,7 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    // 				  ngx_http_script_regex_start_code
     regex_end->code = ngx_http_script_regex_end_code;
     regex_end->uri = regex->uri;
     regex_end->args = regex->args;
@@ -517,6 +531,24 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             return NGX_CONF_ERROR;
         }
 
+        /*
+         * 	code
+         * 	-----
+         * 	| * |
+         * 	-----
+         *		\
+         *		-------------
+         *		|   NULL    |
+         *		-------------
+         * 如果有last标记则在lcf->codes中放一个NULL的ngx_http_script_code_pt()方法,这样脚本引擎就不会往下走了
+         * 脚本引擎:
+         * 	while (*(uintptr_t *) e->ip) {
+         *		code = *(ngx_http_script_code_pt *) e->ip;
+         *		code(e);
+    	 *	}
+    	 * 所以有次可以推断出,该模块所有使用脚本引擎执行的指令就都不会被执行了,比如return指令
+    	 *
+         */
         *code = NULL;
     }
 
@@ -1125,7 +1157,7 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     /*
-     * 把变量值(ngx_http_script_value_code_t)放入到lcf->codesz中
+     * 把变量值(ngx_http_script_value_code_t)放入到lcf->codes中
      *
      * 执行完该代码后lcf->codes数组中存放的就是ngx_http_script_value_code_t
      *

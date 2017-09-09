@@ -1048,6 +1048,8 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
  * NGX_HTTP_POST_REWRITE_PHASE阶段执行该方法
  *
  * 主要功能是根据改变的uri重新匹配locaiton
+ *
+ * 脚本引擎是在该方法之前执行的(前两个rewrite阶段),所以走到这里的时候脚本引擎已经执行完毕
  */
 ngx_int_t
 ngx_http_core_post_rewrite_phase(ngx_http_request_t *r,
@@ -1060,6 +1062,15 @@ ngx_http_core_post_rewrite_phase(ngx_http_request_t *r,
 
     /*
      * 判断当前uri是否被改写过,如果没有被改写过则直接执行下一个阶段
+     *
+     * 脚本引擎启动后会执行在解析rewrite指令时放入到脚本引擎codes中的方法ngx_http_script_regex_start_code(),
+     * 该方法会根据break_cycle标记来设置r->uri_changed。
+     *
+     * 如果rewrite指令有携带break参数,那么在ngx_http_rewrite()方法中break_cycle会被设置为1,
+     * 而在ngx_http_script_regex_start_code()方法中r->uri_changed会被设置为0
+     *
+     * 如果rewirte指令没有携带break参数则r->uri_changed最终会被设置为1
+     * 如果rewirte指令携带break参数则r->uri_changed最终会被设置为0
      */
     if (!r->uri_changed) {
         r->phase_handler++;

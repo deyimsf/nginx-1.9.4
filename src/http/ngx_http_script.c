@@ -706,6 +706,11 @@ ngx_http_script_start_code(ngx_pool_t *pool, ngx_array_t **codes, size_t size)
 }
 
 
+/*
+ * 从codes数组中分配size个字节的内存空间
+ *
+ * code代表数组扩容前从数组中分配出去的一个内存地址,如果这次分配内存发生了扩容,则code就代表其本身扩容后的地址
+ */
 void *
 ngx_http_script_add_code(ngx_array_t *codes, size_t size, void *code)
 {
@@ -723,8 +728,65 @@ ngx_http_script_add_code(ngx_array_t *codes, size_t size, void *code)
         if (elts != codes->elts) {
         	/* 不相等代表数组扩容了 */
 
+        	/*
+        	 *   code		 p
+        	 *   -----	   -----
+        	 *   | * |	   | * |
+        	 *   -----     -----
+        	 *   	 \     /
+        	 *   	  -----
+        	 *   	  | * |
+        	 *   	  -----
+        	 *   		\
+        	 *   		-------------
+        	 *   		| 	结构体	|
+        	 *   		-------------
+        	 *
+        	 *  因为发生扩容了,所以从codes中分配出去的内存地址也会发生改变,如果在扩容之后不会对原来分配出去的地址有依赖,
+        	 *  则没有任何问题,但是如果有依赖则会发生错误,因为codes内中所有内存地址因为扩容的关系都发生了改变,下面的代码
+        	 *  就是为了解决扩容后仍然可以得到正确地址的方法。
+        	 *
+        	 *  举个例子:
+        	 *	假设codes初始内存结构如下图:
+        	 *		codes:
+        	 *			--------- 0x0
+        	 *			| 1byte	|
+        	 *			--------- 0x1
+        	 *			| 1byte	|
+        	 *			--------- 0x2
+        	 *			| 1byte |
+        	 *			---------
+        	 *	假设code需要占用两个字节空间,则需要用到codes中的0x1和0x2两个地址,而code的地址则为0x1。
+        	 *	假设这是需要为code2也分配连个字节空间,这时候codes就需要扩容了,假设扩容后codes的内存结构图如下:
+        	 *		codes:
+        	 *			--------- 0x5
+        	 *			| 1byte	|
+        	 *			--------- 0x6
+        	 *			| 1byte	|
+        	 *			--------- 0x7
+        	 *			| 1byte |
+        	 *			--------- 0x8
+        	 *			| 1byte |
+        	 *			--------- 0x9
+        	 *			| 1byte |
+        	 *			---------
+        	 *	从上图可以看到这个时候code的内存其实地址就发生了改变,但是它在数组中的位置是不会改变的,所以我们可以
+        	 *	通过几种方式计算出code在数组扩容后的地址。
+        	 *
+        	 *  第一种是下面ngx代码使用的方式,用扩容后的数组首地址(codes->elts)减去未扩容前数组的首地址(elts),
+        	 *  这样就可以计算出整个数组的偏移量,然后在加上code原来的地址就可以算出它现在的地址。
+        	 *
+        	 *  另一种我们可以先计算出code在codes中的偏移量,即code的内存地址减去codes未扩容前的首地址(elts),然后
+        	 *  再用扩容后的首地址(codes->elts)加上code原来的地址,这样就可以计算出它现在的地址。
+        	 *  code(扩容前地址) - elts(codes扩容前首地址) + codes->elts(codes扩容后首地址);
+        	 *
+        	 *  p = code;
+        	 *  *p = *p - elts + (u_char *)codes->elts;
+        	 *
+        	 */
             p = code;
             *p += (u_char *) codes->elts - elts;
+            // *p = *p +   (u_char *) codes->elts - elts;
         }
     }
 
