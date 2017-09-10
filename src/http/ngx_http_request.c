@@ -5,6 +5,17 @@
  */
 
 
+/*
+ * ngx_http_request_handler()方法是唯一负责执行
+ *       r->write_event_handler(r);
+ *       r->read_event_handler(r);
+ * 上面这两个方法的地方
+ *
+ *
+ *
+ */
+
+
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -1963,8 +1974,12 @@ ngx_http_process_request(ngx_http_request_t *r)
     // 设置链接中的读写事件handler
     // ngx_http_request_handler方法很简单，就是从事件中取出链接c，然后再从链接c中
     // 取出请求r,然后回调请求中的[write|read]_event_handler方法
+    /*
+     * 将该请求的读写事件都交给ngx_http_request_handler()方法执行
+     */
     c->read->handler = ngx_http_request_handler;
     c->write->handler = ngx_http_request_handler;
+
     // 请求读事件暂时设置为阻塞,所以这时不会读请求体,是否需要读请求体由请求的某个阶段指定
     r->read_event_handler = ngx_http_block_reading;
 
@@ -2246,6 +2261,11 @@ ngx_http_find_virtual_server(ngx_connection_t *c,
 
 /**
  * 负责执行原始请求的_event_handler()方法，并执行原始请求下的子请求
+ *
+ * 唯一执行
+ * 		r->write_event_handler(r)
+ * 		r->read_event_handler(r)
+ * 这两个方法的地方
  */
 static void
 ngx_http_request_handler(ngx_event_t *ev)
@@ -2354,6 +2374,10 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
     // 继续按11阶段的方式处理
     // 这种方式肯定要配合r->phase_handler一块使用
     if (rc == NGX_DECLINED) {
+    	/*
+    	 * 如果是在content阶段返回NGX_DECLINED代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
+    	 */
+
         r->content_handler = NULL;
         r->write_event_handler = ngx_http_core_run_phases;
         ngx_http_core_run_phases(r);
@@ -2400,6 +2424,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             }
         }
 
+        // 将请求的读写事件都交给ngx_http_request_handler()方法去执行
         c->read->handler = ngx_http_request_handler;
         c->write->handler = ngx_http_request_handler;
 
@@ -2675,7 +2700,7 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
 
     // ??为什么要把这个写事件重新加入到事件框架中
     // ??现在这个事件不是已经在事件框架中了吗
-    // ??难道每次事件发生后,在该连接上的该事件就被移除了？所以要再加？
+    // ??难道每次事件发生后,在该连接上的该事件就被移除了？(不会移除) 所以要再加？
     // ??还是说因为epoll的边沿触发的原因
     if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
         ngx_http_close_request(r, 0);

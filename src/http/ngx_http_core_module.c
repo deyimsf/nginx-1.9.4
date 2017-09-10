@@ -856,6 +856,9 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
 }
 
 
+/*
+ * 对应NGX_HTTP_PREACCESS_PHASE和NGX_HTTP_POST_READ_PHASE两个阶段
+ */
 ngx_int_t
 ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 {
@@ -869,23 +872,50 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "generic phase: %ui", r->phase_handler);
 
+    // 执行阶段方法
     rc = ph->handler(r);
 
+    /*
+     * 阶段引擎:
+     * 	ph = cmcf->phase_engine.handlers;
+     *	while (ph[r->phase_handler].checker) {
+     *   	rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
+	 *
+     *   	if (rc == NGX_OK) {
+     *       	return;
+     *   	}
+     *	}
+     */
+
     if (rc == NGX_OK) {
+    	/*
+    	 * rc == NGX_OK
+    	 * 代表本阶段执行结束,交给脚本引擎去执行下一个阶段
+    	 */
         r->phase_handler = ph->next;
         return NGX_AGAIN;
     }
 
     if (rc == NGX_DECLINED) {
+    	/*
+    	 * rc == NGX_DECLINED
+    	 * 代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
+    	 */
         r->phase_handler++;
         return NGX_AGAIN;
     }
 
     if (rc == NGX_AGAIN || rc == NGX_DONE) {
+    	/*
+    	 * rc == NGX_AGAIN || rc == NGX_DONE
+    	 * 表示当前方法未执行完毕,需要暂定本次阶段引擎的执行,等待下次事件到来后继续执行当前方法(ph->handler(r))
+    	 */
         return NGX_OK;
     }
 
     /* rc == NGX_ERROR || rc == NGX_HTTP_...  */
+
+    /* 发生错误则直接结束请求 */
 
     ngx_http_finalize_request(r, rc);
 
@@ -897,6 +927,7 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
  * 下面连个阶段执行该方法
  * 	NGX_HTTP_SERVER_REWRITE_PHASE
  * 	NGX_HTTP_REWRITE_PHASE
+ * 这两个阶段都会执行ngx_http_rewrite_handler()方法来启动脚本引擎
  */
 ngx_int_t
 ngx_http_core_rewrite_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
@@ -933,7 +964,6 @@ ngx_http_core_rewrite_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
  * 查找location阶段,该阶段不允许第三方模块进入
  *
  * 找到后会设置r->loc_conf字段的值,通过该字段就可以获取当前请求要执行的操作和信息
- *
  *
  */
 ngx_int_t
@@ -1131,6 +1161,11 @@ ngx_http_core_post_rewrite_phase(ngx_http_request_t *r,
 }
 
 
+/*
+ * 阶段NGX_HTTP_ACCESS_PHASE会用到该checker方法
+ *
+ *
+ */
 ngx_int_t
 ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 {
@@ -1145,43 +1180,87 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "access phase: %ui", r->phase_handler);
 
+    // 执行当前阶段方法
     rc = ph->handler(r);
 
     if (rc == NGX_DECLINED) {
+
+    	/*
+    	 * rc == NGX_DECLINED
+    	 * 代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
+    	 */
         r->phase_handler++;
         return NGX_AGAIN;
     }
 
     if (rc == NGX_AGAIN || rc == NGX_DONE) {
+       	/*
+		 * rc == NGX_AGAIN || rc == NGX_DONE
+		 * 表示当前方法未执行完毕,需要暂定本次阶段引擎的执行,等待下次事件到来后继续执行当前方法(ph->handler(r))
+		 */
+
         return NGX_OK;
     }
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
+    /*
+     * 	Syntax:	satisfy all | any;
+	 *	Default:satisfy all;
+	 *	Context:http, server, location
+     */
     if (clcf->satisfy == NGX_HTTP_SATISFY_ALL) {
+    	/*
+    	 * 必须在该阶段的所有方法都返回NGX_OK才算通过
+    	 */
 
         if (rc == NGX_OK) {
+
+        	/*
+			 * rc == NGX_OK && clcf->satisfy == NGX_HTTP_SATISFY_ALL
+			 *
+			 * 必须在该阶段的所有注册方法都返回NGX_OK才算通过,所以需要继续执行本阶段的下一个方法
+			 */
             r->phase_handler++;
             return NGX_AGAIN;
         }
 
     } else {
+    	/*
+    	 * satisfy指令对应any标记
+    	 */
+
         if (rc == NGX_OK) {
+
             r->access_code = 0;
 
             if (r->headers_out.www_authenticate) {
                 r->headers_out.www_authenticate->hash = 0;
             }
 
+            /*
+             * 没有satisfy标记所以,只要有一个方法返回NGX_OK(表示通过),则表示可以通过该阶段,
+			 * 所以本阶段执行结束,交给脚本引擎去执行下一个阶段
+			 */
             r->phase_handler = ph->next;
             return NGX_AGAIN;
         }
 
         if (rc == NGX_HTTP_FORBIDDEN || rc == NGX_HTTP_UNAUTHORIZED) {
+        	/*
+        	 * 当前handler不允许请求通过,但是satisfy指令对应any标记,表示只要有一个通过就算通过,
+        	 * 所以这里先记下不允许通过的原因(NGX_HTTP_FORBIDDEN|NGX_HTTP_UNAUTHORIZED),然后继续执行
+        	 * 本阶段的下一个方法,如果到最后本阶段的所有方法都没有通过,则当前请求会保留没有通过的原因(r->access_code),
+        	 * 到下一个阶段NGX_HTTP_POST_ACCESS_PHASE会根据该标记(r->access_code)来决定请求继续向下走,还是直接
+        	 * 返回。
+        	 */
             if (r->access_code != NGX_HTTP_UNAUTHORIZED) {
                 r->access_code = rc;
             }
 
+            /*
+             * 继续本阶段的下一个方法(如果当前方法就是本阶段的最后一个方法,那么r->phase_handler++就是下一个阶段的开始方法)
+             */
             r->phase_handler++;
             return NGX_AGAIN;
         }
@@ -1194,6 +1273,11 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 }
 
 
+/*
+ * 阶段NGX_HTTP_POST_ACCESS_PHASE会用到该方法
+ *
+ * 根据上一个阶段(NGX_HTTP_ACCESS_PHASE)设置的r->access_code标记来决定当前请求是否可以继续执行
+ */
 ngx_int_t
 ngx_http_core_post_access_phase(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph)
@@ -1203,24 +1287,40 @@ ngx_http_core_post_access_phase(ngx_http_request_t *r,
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "post access phase: %ui", r->phase_handler);
 
+    // 取出访问标记
     access_code = r->access_code;
 
     if (access_code) {
+    	/*
+    	 * 访问标记大于零表示不允许当前请求继续执行后续的阶段
+    	 */
+
         if (access_code == NGX_HTTP_FORBIDDEN) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                           "access forbidden by rule");
         }
 
+        // TODO 是什么用意?
         r->access_code = 0;
+        // 结束请求
         ngx_http_finalize_request(r, access_code);
         return NGX_OK;
     }
+
+    /* 访问标记等于零,表示访问通过,当前请求可以继续执行后续阶段 */
 
     r->phase_handler++;
     return NGX_AGAIN;
 }
 
 
+/*
+ * 阶段NGX_HTTP_TRY_FILES_PHASE会用到该方法
+ *
+ * 目前只涉及try_files指令
+ *
+ * TODO 目前对这块没什么兴趣,等以后有闲暇事件再看
+ */
 ngx_int_t
 ngx_http_core_try_files_phase(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph)
@@ -1432,6 +1532,10 @@ ngx_http_core_try_files_phase(ngx_http_request_t *r,
 }
 
 
+/*
+ * 阶段引擎执行的最后一个阶段(NGX_HTTP_CONTENT_PHASE)
+ *
+ */
 ngx_int_t
 ngx_http_core_content_phase(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph)
@@ -1440,15 +1544,31 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     ngx_int_t  rc;
     ngx_str_t  path;
 
-    // 对于该阶段有两种绑定handler的方式，一种就是通过http核心配置模块的ngx_http_core_locl_conf_t
-    // 结构体中的handler字段进行绑定,这种方式最终会在初始化请求的时候将handler放入到r->content_handler中
-    // 这种绑定方式只对某个location起作用
-    // 检查r->content_handler中是否绑定了自定义的handler方法
+    /*
+     * 检查r->content_handler中是否绑定了自定义的handler方法
+     *
+     * 对于该阶段有两种绑定handler的方式，一种就是通过http核心配置模块的ngx_http_core_locl_conf_t
+     * 结构体中的handler字段进行绑定,这种方式最终会在初始化请求的时候将handler放入到r->content_handler中
+     * 这种绑定方式只对某个location起作用,因为这种方式只有显示的配置了指令才会起作用。
+     *
+     * 如果是另一种方式则不关有没有配置指令,阶段引擎都会去执行对应的方法,对应的方法需要自行判断是否执行
+     */
     if (r->content_handler) {
     	// 先将写事件暂时设置为ngx_http_request_empty_handler方法,表示不再需要执行当前阶段的后续方法
         r->write_event_handler = ngx_http_request_empty_handler;
 
-        // 调用该方法去结束该请求，具体是不是可以关闭该请求需要看我们的handler回调方法的返回值
+        /*
+         * 调用该方法去结束该请求，具体是不是可以关闭该请求需要看我们的handler回调方法的返回值
+         *
+         * 如果r->content_handler(r)返回NGX_DECLINED,则下次就不走这块逻辑,而是直接走下面的逻辑
+         * 因为ngx_http_finalize_request()方法有这样的逻辑:
+		 * 		if (rc == NGX_DECLINED) {
+		 *			r->content_handler = NULL;
+		 *			r->write_event_handler = ngx_http_core_run_phases;
+		 *			ngx_http_core_run_phases(r);
+		 *			return;
+		 *		}
+         */
         ngx_http_finalize_request(r, r->content_handler(r));
         return NGX_OK;
     }
@@ -1456,16 +1576,28 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "content phase: %ui", r->phase_handler);
 
-    // 走到这里说明是使用一般的方式绑定的handler
-    // 就是ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers); 这种方式绑定的
-    // 这种绑定方式是全局性质的,对所有的location都会起作用
+    /*
+     * 执行阶段方法
+     *
+     * 走到这里说明是使用一般的方式绑定的handler
+     * 就是ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers); 这种方式绑定的
+     * 这种绑定方式是全局性质的,对所有的location都会起作用.
+     *
+     * 当匹配到的location{}块没有配置任何该阶段的指令的时候,所有使用这种方式注册的handler就会被执行,比如
+     * 		/src/http/modules/ngx_http_autoindex_module.c
+     * 		/src/http/modules/ngx_http_index_module.c
+     *
+     */
     rc = ph->handler(r);
 
 
-    // 返回非NGX_DECLINED就去正常结束请求
-    // 这时候所有过滤器都已经执行一遍了
-    // 如果一次发送完毕则rc == NGX_OK
-    // 没有一次发送完毕则返回NGX_AGAIN
+    /*
+     * 返回非NGX_DECLINED就去正常结束请求
+     * 这时候所有过滤器都已经执行一遍了
+     * 如果一次发送完毕则rc == NGX_OK
+     * 没有一次发送完毕则返回NGX_AGAIN
+     *
+     */
     if (rc != NGX_DECLINED) {
         ngx_http_finalize_request(r, rc);
         return NGX_OK;
@@ -1473,15 +1605,26 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
 
     /* rc == NGX_DECLINED */
 
+    /*
+     * rc == NGX_DECLINED: 代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
+     */
     ph++;
 
     if (ph->checker) {
+    	// 告诉阶段引擎去执行本阶段的下一个方法
         r->phase_handler++;
         return NGX_AGAIN;
     }
 
     /* no content handler was found */
 
+    /*
+     * 一般绑定方法,并且没有发现任何 content handler
+     * 		一种情况是location{}块里面没有配置任何content阶段的指令。
+     *		另一种情况是location{}块中存在content阶段的指令,但是这些指令对应的方法都返回的是NGX_DECLINED。
+     * 这两种情况都会导致阶段引擎无法正常结束.
+     *
+     */
     if (r->uri.data[r->uri.len - 1] == '/') {
 
         if (ngx_http_map_uri_to_path(r, &path, &root, 0) != NULL) {
@@ -4113,7 +4256,7 @@ ngx_http_core_create_main_conf(ngx_conf_t *cf)
 
     /*
      * 初始化用于存放server{}块的数组
-     * 初始化数组个数是4
+     * 初始化数组元素个数是4
      * 数组中每个元素的字节个数是存放一个指针的所需字节个数
      */
     if (ngx_array_init(&cmcf->servers, cf->pool, 4,

@@ -5,6 +5,18 @@
  */
 
 
+/*
+ * 该模块涉及了三个阶段
+ * 	NGX_HTTP_SERVER_REWRITE_PHASE  负责执行脚本引擎
+ * 	NGX_HTTP_REWRITE_PHASE 负责执行脚本引擎
+ * 	NGX_HTTP_POST_REWRITE_PHASE 负责阶段流转,继续下一个阶段还是重新config阶段
+ *
+ *
+ * rewrite指令中的第三个参数会终止该模块的脚本引擎执行,所以该模块任何使用脚本引擎执行的指令都会被终止
+ *
+ *
+ */
+
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>

@@ -122,11 +122,20 @@ typedef struct {
 
 
 typedef enum {
+	/*
+	 * 对应checker方法是ngx_http_core_generic_phase()
+	 *
+	 * 用到该阶段的模块有:
+	 * 		/src/http/modules/ngx_http_realip_module.c
+	 */
     NGX_HTTP_POST_READ_PHASE = 0,
 
 	/*
 	 * 对应checker方法是ngx_http_core_rewrite_phase()
 	 * rewrite_module.c模块在该阶段注册的是ngx_http_rewrite_handler()方法
+	 *
+	 * 用到该阶段的模块有:
+	 * 		/src/http/modules/ngx_http_rewrite_module.c
 	 */
     NGX_HTTP_SERVER_REWRITE_PHASE,
 
@@ -134,48 +143,90 @@ typedef enum {
 	 * 不可以介入
 	 * 对应checker方法是ngx_http_core_find_config_phase()
 	 * 作用是匹配location
+	 *
+	 * 该阶段不可介入,所以不会有模块直接使用该阶段,该阶段直接有http核心模块的
+	 * ngx_http_core_find_config_phase()方法负责执行
 	 */
     NGX_HTTP_FIND_CONFIG_PHASE,
+
 	/*
 	 * 对应checker方法是ngx_http_core_rewrite_phase()
 	 * rewrite_module.c模块在该阶段注册的是ngx_http_rewrite_handler()方法
+	 *
+	 * 用到该阶段的模块有:
+	 * 		/src/http/modules/ngx_http_rewrite_module.c
 	 */
     NGX_HTTP_REWRITE_PHASE,
+
 	/*
 	 * 不可以介入
 	 * 对应checker方法是ngx_http_core_post_rewrite_phase()
 	 * 如果uri有改变(r->uri_changed)则负责重新匹配location
+	 *
+	 * 该阶段不可介入,所以不会有模块直接使用该阶段,该阶段直接有http核心模块的
+	 * ngx_http_core_post_rewrite_phase()方法负责执行
 	 */
     NGX_HTTP_POST_REWRITE_PHASE,
 
 	/*
 	 * rewrite阶段执行完毕之后执行该阶段
 	 * 对应checker方法是ngx_http_core_generic_phase()
+	 *
+	 * 用到该阶段的模块有:
+	 * 		/src/http/modules/ngx_http_degradation_module.c
+	 * 		/src/http/modules/ngx_http_limit_conn_module.c
+	 * 		/src/http/modules/ngx_http_limit_req_module.c
+	 * 		/src/http/modules/ngx_http_realip_module.c
 	 */
     NGX_HTTP_PREACCESS_PHASE,
 
 	/*
 	 * 对应checker方法是ngx_http_core_access_phase()
+	 *
+	 * 用到该阶段的模块有:
+	 * 		/src/http/modules/ngx_http_access_module.c
+	 * 		/src/http/modules/ngx_http_auth_basic_module.c
+	 * 		/src/http/modules/ngx_http_auth_request_module.c
 	 */
     NGX_HTTP_ACCESS_PHASE,
+
 	/*
 	 * 不可介入
 	 * 对应checker方法是ngx_http_core_post_access_phase()
+	 *
+	 * 该阶段不可介入,所以不会有模块直接使用该阶段,该阶段直接有http核心模块的
+	 * ngx_http_core_post_access_phase()方法负责执行
 	 */
     NGX_HTTP_POST_ACCESS_PHASE,
 
 	/*
 	 * 不可介入
 	 * 对应checker方法是ngx_http_core_try_files_phase()
+	 *
+	 * 该阶段不可介入,所以不会有模块直接使用该阶段,该阶段直接有http核心模块的
+	 * ngx_http_core_try_files_phase()方法负责执行
 	 */
     NGX_HTTP_TRY_FILES_PHASE,
+
 	/*
 	 * 对应checker方法是ngx_http_core_content_phase()
+	 *
+	 * 用到该阶段的模块有(使用一般方式注册的handler):
+	 *		/src/http/modules/ngx_http_autoindex_module.c
+	 *		/src/http/modules/ngx_http_dav_module.c
+	 *		/src/http/modules/ngx_http_gzip_static_module.c
+	 *		/src/http/modules/ngx_http_index_module.c
+	 *		/src/http/modules/ngx_http_random_index_module.c
+	 *		/src/http/modules/ngx_http_static_module.c
 	 */
     NGX_HTTP_CONTENT_PHASE,
 
 	/*
-	 * 对应checker方法是ngx_http_core_generic_phase
+	 * 不对应任何checker方法,该阶段不在阶段引擎中执行
+	 * 在/src/http/ngx_http_request.c/ngx_http_log_request()方法中会用到
+	 *
+	 * 用到该阶段的模块有:
+	 *		/src/http/modules/ngx_http_log_module.c
 	 */
     NGX_HTTP_LOG_PHASE
 } ngx_http_phases;
@@ -189,7 +240,7 @@ struct ngx_http_phase_handler_s {
     ngx_http_phase_handler_pt  checker;
     ngx_http_handler_pt        handler;
 
-    // 下一个阶段的开发方法?
+    // 下一个阶段的开发方法坐标
     ngx_uint_t                 next;
 };
 
@@ -213,6 +264,8 @@ typedef struct {
 	/*
 	 * 存放http模块要执行的方法,目前方法签名是:
 	 * 		typedef ngx_int_t (*ngx_http_handler_pt)(ngx_http_request_t *r);
+	 *
+	 * 在/src/http/ngx_http.c/ngx_http_init_phases()方法中初始化该数组
 	 */
     ngx_array_t                handlers;
 } ngx_http_phase_t;

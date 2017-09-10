@@ -365,6 +365,13 @@ struct ngx_http_posted_request_s {
 
 /*
  * http模块阶段中要执行的方法
+ *
+ * 返回值代表的意思(基本如此,特殊情况看各自的checker方法,参考用):
+ *		NGX_DECLINED: 代表本阶段还未执行完毕
+ *		NGX_AGAIN | rc == NGX_DONE: 表示当前方法未执行完毕
+ *		NGX_OK: 代表本阶段执行结束,交给脚本引擎去执行下一个阶段(有特殊情况)
+ *
+ *
  */
 typedef ngx_int_t (*ngx_http_handler_pt)(ngx_http_request_t *r);
 typedef void (*ngx_http_event_handler_pt)(ngx_http_request_t *r);

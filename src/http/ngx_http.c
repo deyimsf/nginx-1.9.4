@@ -731,6 +731,8 @@ failed:
 
 /*
  * 初始化http模块的阶段,其实就是初始化每个阶段的数组
+ *
+ * 只初试化了7个阶段,其它四个阶段是不可介入的
  */
 static ngx_int_t
 ngx_http_init_phases(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
@@ -889,7 +891,13 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     n = use_rewrite + use_access + cmcf->try_files + 1 /* find config phase */;
 
     for (i = 0; i < NGX_HTTP_LOG_PHASE; i++) {
-    	// 把cmcf->phases中所有注册的方法个数都加起来
+    	/* 没有包括NGX_HTTP_LOG_PHASE阶段 */
+
+    	/*
+    	 * 把cmcf->phases中所有注册的方法个数都加起来,如果在对应的不可介入的阶段也注册了方法,那么这些方法的个数也会加起来,
+    	 * 这里主要是为了计算需要分配多少个ngx_http_phase_handler_t结构体,后续会根据这个个数来分配内存,但并不一定所有的
+    	 * 内存都会被用到,如果在不可介入的阶段也注册了方法,那么有几个多余的方法就会产生几个多余的内存。
+    	 */
         n += cmcf->phases[i].handlers.nelts;
     }
 
@@ -1043,14 +1051,13 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         	/*
         	 * NGX_HTTP_POST_READ_PHASE
         	 * NGX_HTTP_PREACCESS_PHASE
-        	 * NGX_HTTP_LOG_PHASE
         	 *
         	 * 以上三个阶段的checker方法固定为ngx_http_core_generic_phase
         	 */
             checker = ngx_http_core_generic_phase;
         }
 
-        // n在这里表示下一个阶段的开始方法偏移量
+        // n在这里表示下一个阶段的开始方法坐标
         n += cmcf->phases[i].handlers.nelts;
 
         for (j = cmcf->phases[i].handlers.nelts - 1; j >=0; j--) {
