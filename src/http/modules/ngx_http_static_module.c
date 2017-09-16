@@ -45,6 +45,13 @@ ngx_module_t  ngx_http_static_module = {
 };
 
 
+/*
+ * 处理uri结尾不是'/'字符的请求,比如
+ * 		locaion /my/static.html {
+ *			// 不配置任何指令
+ * 		}
+ *
+ */
 static ngx_int_t
 ngx_http_static_handler(ngx_http_request_t *r)
 {
@@ -59,10 +66,17 @@ ngx_http_static_handler(ngx_http_request_t *r)
     ngx_open_file_info_t       of;
     ngx_http_core_loc_conf_t  *clcf;
 
+    /*
+     * 只处理get、head、post三种方法
+     */
     if (!(r->method & (NGX_HTTP_GET|NGX_HTTP_HEAD|NGX_HTTP_POST))) {
         return NGX_HTTP_NOT_ALLOWED;
     }
 
+    /*
+     * 检查是否以'/'结尾, 如果是则返回NGX_DECLINED,该返回结果会告诉阶段引擎去执行本阶段的下一个方法
+     * 因为本模块只处理以'/'结尾的uri
+     */
     if (r->uri.data[r->uri.len - 1] == '/') {
         return NGX_DECLINED;
     }

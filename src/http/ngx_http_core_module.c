@@ -1533,6 +1533,8 @@ ngx_http_core_try_files_phase(ngx_http_request_t *r,
 
 
 /*
+ * checker方法
+ *
  * 阶段引擎执行的最后一个阶段(NGX_HTTP_CONTENT_PHASE)
  *
  */
@@ -1594,6 +1596,7 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     /*
      * 返回非NGX_DECLINED就去正常结束请求
      * 这时候所有过滤器都已经执行一遍了
+     *
      * 如果一次发送完毕则rc == NGX_OK
      * 没有一次发送完毕则返回NGX_AGAIN
      *
@@ -1615,6 +1618,8 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
         r->phase_handler++;
         return NGX_AGAIN;
     }
+
+    /**走到这里说明ph已经是最后一个了,并且这个ph的checker字段是空**/
 
     /* no content handler was found */
 

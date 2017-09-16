@@ -908,8 +908,13 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
      * 如果use_rewrite、use_access、cmcf->try_files这三个都有值,那么最终n的值会比阶段中注册的所有方法个数大4,
      * 从实际分配的空间来看,会比实际多出四个ngx_http_phase_handler_t和一个指针的空间大小。
      *
-     * TODO 多出一个指针空间是干嘛的? 对齐?
+     * 正常情况下cmcf->phase_engine.handlers数组中放的应该是ngx_http_phase_handler_t结构体空间的倍数,但是
+     * 这里最后且存放了一个指针空间,目的其实很简单,在cheker方法(ngx_http_core_content_phase)中判断是否是最后
+     * 一个ph,而判断的依据是ph->checker是否存在,我们知道ph->checker正好是一个方法指针,所以这里最后多出的指针空间
+     * 可以当做ngx_http_phase_handler_t结构体的checker字段占用的空间。
      *
+     * 如果最后不用一个指针空间,而是用一个完整的ngx_http_phase_handler_t结构体,这样该结构体中的另两个字段的空间
+     * 其实是浪费的,因为ngx判断ph是否是最后一个用的是checker字段,而不是另外两个。
      */
     ph = ngx_pcalloc(cf->pool,
                      n * sizeof(ngx_http_phase_handler_t) + sizeof(void *));

@@ -1,3 +1,136 @@
 
 Documentation is available at http://nginx.org
 
+# 从如何使用到如何实现
+
+
+# location使用和实现(location最常用,先讲他)
+
+
+# 基本数据结构和使用(了解基本数据结构,为理解以后内容打基础)
+	* 数组
+	* 内存池
+	* 队列
+	* 散列表
+	* list集合
+	
+	
+# 变量使用和实现(变量、if、locationg这三个其实应该放在一块讲)
+	* 内部变量http_、cookie_等
+	* 自定义变量 set指令、其它指令
+	* 变量脚本引擎
+
+
+# if语句和实现(变量、if、locationg这三个其实应该放在一块讲)
+	
+
+# ngx模块化和配置信息存储(ngx基本使用使用请情况了解后,讲解模块化的ngx以及模块信息的存储)
+	* 模块的管理方式
+	* 核心模块(事件、http)
+	* 普通模块(第三方http模块)
+	* 事件模块的配置信息存储
+	* http模块的配置信息存储
+	
+
+# ngx事件模型实现方式(为编写基于epoll和定时器事件的模块做准备)
+	* 定时器事件
+	* 惊群和负载
+	* epoll	
+
+
+# 编写ngx模块(基于实现模块)
+	* 核心模块(基于epoll实现模型编写核心模块)
+	* http模块(两种content阶段指令实现方式)
+		* 向数组cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers中添加方法
+			/http/modules/ngx_http_autoindex_module.c
+			/http/modules/ngx_http_index_module.c
+			/http/modules/ngx_http_static_module.c
+		* 为clcf->handler赋值
+			/http/modules/ngx_http_empty_gif_module.c
+		
+		
+# ngx指令和执行顺序
+	* 简单提一下ngx的11个阶段
+		
+
+# http模块的11个阶段checker
+	* ngx的http模块是分阶段执行的
+	* 阶段引擎循环
+	* 详解各个阶段的行为
+    
+
+# http请求过程(这里再穿插介绍前面的指令顺序和阶段的知识)
+	* 连接创建成功后的第一个方法(http_init_connection)
+	* 解析请求行
+	* 解析请求头
+	* 这里可以结合上面提到的指令执行顺序
+    * 讲解请求过程引出过滤器、子请求、upstream等
+    * 结束请求方法
+    
+	
+# filter实现和作用
+	* 过滤器
+	* 编写一个过滤器
+
+
+# subreqeust实现
+	* 什么是子请求
+	* 实现原理
+	* 编写一个subreqeust
+	
+
+# upstream实现
+	* 什么是upstream
+	* 实现原理
+	* 编写一个upstream
+
+
+# proxy_pass实现
+	* 细致的讲
+
+
+# ngx启动流程
+	* master模式
+	* worker模式
+	* 信号管理worker进程
+
+# TODO ngx通信机制(是否融入到其它讲解点中)  TODO
+	* 信号
+	* 共享缓存
+
+
+# 日志方法
+
+
+# 其它模块实现方式
+	* ngx_lua模块
+	* echo模块
+
+
+
+
+
+
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
