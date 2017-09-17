@@ -1619,7 +1619,13 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
         return NGX_AGAIN;
     }
 
-    /**走到这里说明ph已经是最后一个了,并且这个ph的checker字段是空**/
+    /*
+     * 在ngx_http_init_phase_handlers()方法中可以看到,在为cmcf->phase_engine.handlers指针数组分配空间
+     * 的时候,最后多了一个sizeof(void *)大写的空间,当ph是最后一个的的时候,ph的指向的地址就是这个空间的首地址,这个
+     * 空间的值是NULL,所以ph->checker也是NULL。
+     *
+     * 走到这里说明ph已经是最后一个了,并且这个ph的checker字段是空
+     */
 
     /* no content handler was found */
 
@@ -2218,6 +2224,9 @@ ngx_http_send_response(ngx_http_request_t *r, ngx_uint_t status,
 }
 
 
+/*
+ * 调用header过滤器来处理响应头,唯一启动header过滤器的方法
+ */
 ngx_int_t
 ngx_http_send_header(ngx_http_request_t *r)
 {
@@ -2240,6 +2249,9 @@ ngx_http_send_header(ngx_http_request_t *r)
 }
 
 
+/*
+ * 调用body过滤器来处理响应体,唯一启动body过滤器的方法
+ */
 ngx_int_t
 ngx_http_output_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {

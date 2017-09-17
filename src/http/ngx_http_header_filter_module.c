@@ -297,6 +297,9 @@ ngx_http_header_filter(ngx_http_request_t *r)
         }
     }
 
+    /*
+     * TODO 是否打印Content-Length头的关键点,要细看 TODO
+     */
     if (r->headers_out.content_length == NULL
         && r->headers_out.content_length_n >= 0)
     {
@@ -500,6 +503,9 @@ ngx_http_header_filter(ngx_http_request_t *r)
         *b->last++ = CR; *b->last++ = LF;
     }
 
+    /*
+     * TODO 是否打印 Content-Length 头的关键点, 要细看 TODO
+     */
     if (r->headers_out.content_length == NULL
         && r->headers_out.content_length_n >= 0)
     {
@@ -620,6 +626,9 @@ ngx_http_header_filter(ngx_http_request_t *r)
     out.buf = b;
     out.next = NULL;
 
+    /*
+     * 所有响应头信息都计算并设置好后在发送数据,现在数据已经存放到out中了
+     */
     return ngx_http_write_filter(r, &out);
 }
 

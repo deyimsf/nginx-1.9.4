@@ -7,6 +7,10 @@
 /**
  * ngx是一个模块化的软件架构,他将模块抽象化为ngx_moudle_t结构体。
  *
+ * ngx主框架只关心两种模块类型:
+ * 	 NGX_CORE_MODULE: 核心模块,有/src/core/ngx_conf_file.c/ngx_init_cycle方法启动
+ *   NGX_CONF_MODULE: 解析配置文件的模块,有ngx_conf_parse方法(在ngx_init_cycle方法中被调用)启动
+ *
  * 几乎所有的主要功能都是围绕着模块来做的,模块可以定义成不同的类型,
  * 如:NGX_CORE_MODULE(核心模块)、NGX_HTTP_MODULE(http模块).
  *
@@ -18,23 +22,49 @@
  * 就想是继承了超类的子类.
  *
  *
- * ngx中每个模块都有一个结构体,这个结构体用来保存该模块的一些配置信息,我们管他叫做配置信息结构体,
- * 具体每个模块需要创建多少个配置信息结构体则由他们的管理模块来决定。
- * 	 核心主模块(ngx_core_module)只需要一个ngx_core_conf_t配置信息结构体
+ * ngx中模块的定义有几个比较重要的字段
+ *    字段ctx:
+ *    	可以用来扩展模块,一般情况用来指定要扩展的模块的接口上下文,用该字段可以规定自定义模块的一些特性。
+ *    	比如核心模块:
+ *  		typedef struct {
+ *				ngx_str_t          name;
+ *				void               *(*create_conf)(ngx_cycle_t *cycle);
+ *				char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+ *			} ngx_core_module_t;
+ *		规定每个核心模块都要有一个描述该模块的名字,一个create_conf()方法用来创建该模块需要的结构体,
+ *		一个init_conf()方法做一些初始化操作。
  *
- *	 事件核心模块(ngx_event_core_module)只需要一个ngx_event_conf_t配置信息结构体
+ *		比如事件模块:
+ *	  		typedef struct {
+ *    			ngx_str_t            *name;
+ *    			void                 *(*create_conf)(ngx_cycle_t *cycle);
+ *    			char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+ *
+ *    			// 实现该模块必须定义ngx_event_actions_t中规定的10个抽象方法
+ *    			ngx_event_actions_t     actions;
+ * 	 		} ngx_event_module_t;
+ *		同样规了该模块的一些行为
+ *
+ *    字段commands:
+ *    		用来存放该模块的指令信息
+ *
+ *    字段type:
+ *    		用来标记模块的类型(核心模块、配置模块、http模块等)
+ *
+ *
+ * ngx中每个模块都有一个结构体,这个结构体用来保存该模块的一些配置信息,我们管他叫做配置信息结构体,
+ * 具体每个模块需要创建多少个配置信息结构体则由模块的类型和其管理者决定。
+ * 	 核心主模块(ngx_core_module)需要一个ngx_core_conf_t配置信息结构体
+ *
+ *	 事件核心模块(ngx_event_core_module)需要一个ngx_event_conf_t配置信息结构体
  *
  *	 核心http模块(ngx_http_module)需要一个ngx_http_conf_ctx_t结构体
  *
- *	 http核心模块(ngx_http_core_module)多个ngx_http_conf_ctx_t结构体,具体多少个取决于
- *	 有多少个server{}指令块和多少个location{}指令块
+ *	 http核心模块(ngx_http_core_module)需要ngx_http_core_main|srv|local_conf_t三种结构体
  *
- *	 在核心http模块(ngx_http_module)的ngx_http_block方法中,会调用所有http模块的
- *	 create_main_conf、create_srv_conf、create_loc_conf这三个方法。
- *	 在http核心模块(ngx_http_core_module)的ngx_http_core_server方法中,会再次调用所有http模块的
- *	 create_srv_conf、create_loc_conf这两个方法。
- *   在http核心模块(ngx_http_core_module)的ngx_http_core_location方法中,会再次调用所有http模块
- *   的create_loc_conf方法。
+ *	 在核心http模块(ngx_http_module)的ngx_http_block方法中,会调用所有http模块的create_main_conf、create_srv_conf、create_loc_conf这三个方法。
+ *	 在http核心模块(ngx_http_core_module)的ngx_http_core_server方法中,会再次调用所有http模块的create_srv_conf、create_loc_conf这两个方法。
+ *   在http核心模块(ngx_http_core_module)的ngx_http_core_location方法中,会再次调用所有http模块的create_loc_conf方法。
  *
  */
 

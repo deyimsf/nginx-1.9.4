@@ -2505,6 +2505,10 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         return;
     }
 
+    /*
+     * 如果已经到了发送数据阶段,并且有数据没有发送完毕,比如调用过滤器ngx_http_write_filter后返回NGX_AGAIN,
+     * 表示需要继续发送数据,所以这里调用ngx_http_set_write_handler()方法来更改当前链路上的写事件方法
+     */
     if (r->buffered || c->buffered || r->postponed || r->blocked) {
 
         if (ngx_http_set_write_handler(r) != NGX_OK) {
@@ -2711,6 +2715,9 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
 }
 
 
+/**
+ * 重新启动过滤器ngx_http_output_filter
+ */
 static void
 ngx_http_writer(ngx_http_request_t *r)
 {

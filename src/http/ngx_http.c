@@ -6,15 +6,95 @@
 
 /*
  * http模块中,各个配置信息结构体的关联方式:
- *
  * 	1.在http核心模块的ngx_http_core_main_conf_t里面有一个servers数组,用来关联http{}块下的所有server{}
  *
  *	2.在http核心模块的ngx_http_core_srv_conf_t里面有一个ctx(ngx_http_conf_ctx_t),该结构体的srv_conf字段用来关联
  *    所有http模块在server{}块内的配置信息结构体;
  *    loc_conf字段用来关联所有http模块在location{}块内的指令在上层server{}块内的合并项;
- *    在loc_conf数组的第一个位置放的是ngx_http_core_loc_conf_t结构体,该结构体的locations队列用来关联当前server{}块下的所有location{}块
+ *    在loc_conf数组的第一个位置放的是ngx_http_core_loc_conf_t结构体,该结构体的locations队列用来关联当前server{}块
+ *    下的所有location{}块
  *
  *  3.同理ngx_http_core_loc_conf_t里面的locations队列关联当前locaiton{}块下的所有location{}块
+ *
+ *
+ * 第三方模块如要要介入到http的执行阶段中,需要在ngx_http_module_t.postconfiguration()方法中将自己的handler注册到
+ * 对应的阶段数组中.不能再ngx_http_module_t.preconfiguration()方法中注册,因为preconfiguration()方法执行时各个阶段
+ * 的数组还没有被初始化。
+ *
+ *
+ * 过滤器有三种:
+ * 		ngx_http_output_header_filter_pt ngx_http_top_header_filter: 处理响应头的过滤器
+ * 		ngx_http_output_body_filter_pt ngx_http_top_body_filter: 处理响应体的过滤器
+ * 		ngx_http_request_body_filter_pt ngx_http_top_request_body_filter: 处理请求体的过滤器,当需要读取请求体时使用
+ * 上面这三种变量是一个全局变量,每一个变量代表一种过滤器链,每一个想把自己加入到这个链中的过滤器,都会把自己设置为链头,当然为了避免链的断
+ * 裂,在把自己设置为链头之前会把原先的链头保存起来,等自己的过滤器方法执行完毕之后再调用原来的链头,所以ngx这种过滤器组装链的形式很像是一
+ * 个压栈的过程.
+ *
+ * 举个例子:
+ *	假设有5个过滤器,注册顺序分别是A、B、C、D、E,组装链的过程我们用一个压栈的方式来解释,当然实际上并没有这个栈,只是用它了辅助解释:
+ *	1.把过滤器A压人栈顶
+ *		| A |
+ *		-----
+ *	 此时过滤器A就是链头
+ *
+ *	2.把过滤器B压人栈顶
+ *		| B |
+ *		| A |
+ *		-----
+ *   在压的过程中过滤器B会先把链头保存起来,之后把自己设置为链头,所以此时B即使栈顶有是链头
+ *
+ *  3.把过滤器C压人栈顶
+ *  	| C |
+ *  	| B |
+ *  	| A |
+ *		-----
+ *	  这个过程跟过滤器B是一样的,同样C先把链头保存下来,把自己设置为链头,此时C就是新链头了,而C保存的老链头就是B
+ *
+ *	4.接着继续把D、E压人栈顶,结果如下
+ *	  	| E |
+ *	  	| D |
+ *	  	| C |
+ *	  	| B |
+ *	  	| A |
+ *	  	-----
+ *	 这样就形成了一个过滤器链,链头是E, 从栈的结构可以看出,注册时排在最前面的过滤器A处于栈底,也就是过滤链的最尾部,
+ *	 而注册顺序排在最后的过滤器E且变成了链头,也就是说注册顺序和执行顺序是相反的。
+ *
+ * 上面的例子是一个过滤链组装过程的解释,过滤器的执行过程就是一个遍历链表的过程,举例如下:
+ * 	1.执行过滤器E本身的过滤方法
+ * 	2.调用过滤器E之前存放的链头过滤器D的方法
+ *	   --->	| E |
+ *			| D |
+ *			| C |
+ *			| B |
+ *			| A |
+ *			-----
+ *
+ * 	3.执行过滤器D本身的过滤方法
+ * 	4.调用过滤器D之前存放的链头过滤器C的方法
+ * 			| E |
+ *	   ---> | D |
+ *			| C |
+ *			| B |
+ *			| A |
+ *			-----
+ *
+ * 	5.依次类推,最后就会指向到过滤器A,因为过滤A是最后一个,所以他不会再调用其它的过滤了,它的功能就是输出数据并结束过滤器链的调用
+ *	 		| E |
+ *	   		| D |
+ *			| C |
+ *			| B |
+ *	   --->	| A |
+ *			-----
+ *
+ * 举一个实际的例子,对于一个header类型的过滤器,过滤器方法取名为my_header_filter,他需要有一个header类型的过滤器变量,如
+ * 		ngx_http_output_header_filter_pt ngx_http_next_header_filter
+ * 我们用它来存储老的链头,这里为他取名next是按照执行循序命名的,因为执行的时候老的链头过滤器就是下一个要执行的过滤器.
+ * 当前过滤器存储老链头过滤器:
+ * 		ngx_http_next_header_filter = ngx_http_top_head_filter
+ * 把当前过滤器方法设置为新链头:
+ * 		ngx_http_top_head_filter = my_header_filter
+ * 如此一来就把自定义的过滤器放入到了过滤器链表中,过滤器执行的时候只需要调用链头方法(ngx_http_top_head_filter)就可以了.
  *
  */
 
@@ -83,8 +163,57 @@ static ngx_int_t ngx_http_add_addrs6(ngx_conf_t *cf, ngx_http_port_t *hport,
 ngx_uint_t   ngx_http_max_module;
 
 
+/*
+ * 处理响应头的过滤器,目前有以下模块:
+ * 		/src/http/ngx_http_header_filter_module.c				(header)
+ * 		/src/http/modules/ngx_http_chunked_filter_module.c		(body|header)
+ * 		/src/http/modules/ngx_http_range_filter_module.c		(body|header)
+ * 		/src/http/modules/ngx_http_gzip_filter_module.c			(body|header)
+ * 		/src/http/modules/ngx_http_ssi_filter_module.c			(body|header)
+ * 		/src/http/modules/ngx_http_charset_filter_module.c 		(body|header)
+ * 		/src/http/modules/ngx_http_userid_filter_module.c		(header)
+ * 		/src/http/modules/ngx_http_headers_filter_module.c		(header)
+ * 		/src/http/modules/ngx_http_not_modified_filter_module.c (header)
+ *
+ *		/src/http/modules/ngx_http_addition_filter_module.c 	(body|header)
+ *		/src/http/modules/ngx_http_gunzip_filter_module.c		(body|header)
+ *		/src/http/modules/ngx_http_image_filter_module.c		(body|header)
+ *		/src/http/modules/ngx_http_sub_filter_module.c			(body|header)
+ *		/src/http/modules/ngx_http_xslt_filter_module.c			(body|header)
+ *		/src/http/ngx_http_spdy_filter_module.c
+ *
+ *	其中ngx_http_header_filter_module是header类型的最后一个过滤器,只有这个过滤器才会真正
+ *	发送数据,并且还是调用的ngx_http_write_filter_module过滤器中的方法,中间的其它过滤器基本
+ *	都是在设置响应头
+ *
+ */
 ngx_http_output_header_filter_pt  ngx_http_top_header_filter;
+
+/*
+ * 处理响应体的过滤器,目前有以下模块:
+ *  	/src/http/ngx_http_write_filter_module.c				(body)
+ * 		/src/http/modules/ngx_http_chunked_filter_module.c		(body|header)
+ * 		/src/http/modules/ngx_http_gzip_filter_module.c			(body|header)
+ * 		/src/http/ngx_http_postpone_filter_module.c				(body)
+ * 		/src/http/modules/ngx_http_ssi_filter_module.c			(body|header)
+ * 		/src/http/modules/ngx_http_charset_filter_module.c		(body|header)
+ *  	/src/http/ngx_http_copy_filter_module.c					(body)
+ * 		/src/http/modules/ngx_http_range_filter_module.c		(body|header)
+ *
+ *		/src/http/modules/ngx_http_addition_filter_module.c		(body|header)
+ *		/src/http/modules/ngx_http_gunzip_filter_module.c		(body|header)
+ *		/src/http/modules/ngx_http_image_filter_module.c		(body|header)
+ *		/src/http/modules/ngx_http_sub_filter_module.c			(body|header)
+ *		/src/http/modules/ngx_http_xslt_filter_module.c			(body|header)
+ *
+ * 其中ngx_http_write_filter_module是body类型的最后一个过滤器
+ *
+ */
 ngx_http_output_body_filter_pt    ngx_http_top_body_filter;
+/*
+ * 处理请求体的过滤器,目前有以下模块:
+ *		/src/http/ngx_http_core_module.c  (ngx_http_top_request_body_filter = ngx_http_request_body_save_filter)
+ */
 ngx_http_request_body_filter_pt   ngx_http_top_request_body_filter;
 
 

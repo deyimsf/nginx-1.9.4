@@ -44,7 +44,11 @@ ngx_module_t  ngx_http_write_filter_module = {
 };
 
 
-// 这个是所有过滤器最后一个模块
+/*
+ * 这个是所有过滤器最后一个模块,用来把in中的数据发送给客户端
+ *
+ * 最后一个头过滤器(ngx_http_header_filter_module)也是调用这个方法来真正发送头数据
+ */
 ngx_int_t
 ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
@@ -263,7 +267,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http write filter limit %O", limit);
 
-    // 发送数据
+    // 发送数据 TODO 此时chain是不是和r->out相同了 ?
     chain = c->send_chain(c, r->out, limit);
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,

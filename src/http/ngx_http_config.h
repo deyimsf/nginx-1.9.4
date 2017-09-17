@@ -138,23 +138,62 @@ typedef struct {
 
 
 typedef struct {
+
+	/*
+	 * 在ngx_http_block()方法中,当调用完毕http{}块中涉及的create_main|srv|loc_conf()方法后调用该方法,
+	 * 此时只是创建了各个http模块在http{}块中的配置信息结构体,指令还没有开始解析
+	 *
+	 * 这一步发生在执行ngx_http_init_phases()方法之前,该方法用来初始化各个阶段用来存放注册handler的数组,
+	 * 所以向http各个阶段中注册自己的方法,在此时是行不通的.
+	 */
     ngx_int_t   (*preconfiguration)(ngx_conf_t *cf);
+    /*
+     * 在ngx_http_block()方法中,当所有指令解析完毕,并且也初始化和合并完毕后执行.
+     *
+     * 这一步发生在ngx_http_init_phases()方法之后,当ngx_http_init_phases()方法执行完后,存放各个阶段handlr的
+     * 数组也就初始化完毕了,所以这一步就可以把自己的handler注册到相应的阶段了.
+     *
+     * 这一步发生在ngx_http_init_phase_handlers()方法之前,ngx_http_init_phase_handlers()方法的作用是把用户
+     * 注册到cmcf->phases[i].handlers数组中的handler()方法,放到cmcf->phase_engine.handlers阶段引擎中.所以
+     * 这一步要在ngx_http_init_phase_handlers()方法之前执行.
+     */
     ngx_int_t   (*postconfiguration)(ngx_conf_t *cf);
 
+
+    /*
+     * 在preconfiguration()方法之前调用,此时指令还没有开始解析
+     * 当遇见http{}时,会调用所有http模块的这个方法.
+     *
+     */
     void       *(*create_main_conf)(ngx_conf_t *cf);
     /*
+     * 在http{}块内的指令解析完毕后调用,用来做一些初始化操作
+     *
      * conf: 该模块在本级区域创建的配置信息结构体(已经赋值完毕)
      */
     char       *(*init_main_conf)(ngx_conf_t *cf, void *conf);
 
+
+    /*
+     * 每遇见一个server{}块就会调用所有http模块的这个方法
+     */
     void       *(*create_srv_conf)(ngx_conf_t *cf);
     /*
+     * 对应的http模块在server{}块的指令信息解析完毕后调用方法,用来合并上级配置信息
+     *
      * prev: 该模块在上级区域创建的配置信息结构体(已经赋值完毕)
      * conf: 该模块在本级区域创建的配置信息结构体(已经赋值完毕)
      */
     char       *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);
 
+
+    /*
+     * 每遇到一个location{}、if{}块等就会调用所有http模块的这个方法
+     */
     void       *(*create_loc_conf)(ngx_conf_t *cf);
+    /*
+     * 对应的location{}块的指令信息解析完毕后调用该方法,用来合并上级配置信息
+     */
     char       *(*merge_loc_conf)(ngx_conf_t *cf, void *prev, void *conf);
 } ngx_http_module_t;
 
