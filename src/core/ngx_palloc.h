@@ -63,22 +63,27 @@ typedef struct {
 
 
 struct ngx_pool_s {
-	//实际存放数据的地方
+	// 实际存放数据的地方
     ngx_pool_data_t       d;
-    //每个ngx_pool_data_t可容纳的空间大小
+    // 每个ngx_pool_data_t可容纳的空间大小
     size_t                max;
-    //在整个pool链中,当前正在被使用pool
+    // 在整个pool链中,当前正在被使用pool
     ngx_pool_t           *current;
+    /*
+     * 一个空闲链,这个链里面存放了被释放的链项
+     * 当释放掉不需要的链的时候,ngx并没有将其销毁,而是放在了chain字段中,以后再需要分配ngx_chain_t
+     * 结构体的时候可以优先从这个chain中获取。
+     */
     ngx_chain_t          *chain;
-    //同样是个单链表,当ngx_pool_data_t的最大容量都无法满足时使用
+    // 同样是个单链表,当ngx_pool_data_t的最大容量都无法满足时使用
     ngx_pool_large_t     *large;
-    //该结构可以用来注册一些方法,当整个pool销毁时用到
+    // 该结构可以用来注册一些方法,当整个pool销毁时用到
     ngx_pool_cleanup_t   *cleanup;
     ngx_log_t            *log;
 };
 
 
-//关闭fd用的数据结构
+// 关闭fd用的数据结构
 typedef struct {
 	//文件描述符
     ngx_fd_t              fd;
