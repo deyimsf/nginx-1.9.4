@@ -21,7 +21,7 @@ struct ngx_buf_s {
 	/*
 	 * pos和last代表实际使用的内存大小。
 	 *
-	 * pos <= start
+	 * pos >= start
 	 * last <= end
 	 *
 	 * 从缓存读内容,则增加pos值就可以,但是不能大于end
@@ -191,6 +191,9 @@ typedef struct {
 #define ngx_buf_in_memory(b)        (b->temporary || b->memory || b->mmap)
 #define ngx_buf_in_memory_only(b)   (ngx_buf_in_memory(b) && !b->in_file)
 
+/**
+ * TODO 特殊buf
+ */
 #define ngx_buf_special(b)                                                   \
     ((b->flush || b->last_buf || b->sync)                                    \
      && !ngx_buf_in_memory(b) && !b->in_file)
@@ -291,6 +294,9 @@ void ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free,
 
 off_t ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit);
 
+/*
+ * 该方法的功能是把链表in中已经发送出去的数据排除掉
+ */
 ngx_chain_t *ngx_chain_update_sent(ngx_chain_t *in, off_t sent);
 
 #endif /* _NGX_BUF_H_INCLUDED_ */

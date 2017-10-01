@@ -58,10 +58,24 @@ ngx_chain_t *ngx_writev_chain(ngx_connection_t *c, ngx_chain_t *in,
 #endif
 
 
+/*
+ * 用来映射ngx_chain_t中数据的结构体
+ */
 typedef struct {
     struct iovec  *iovs;
+
+    /*
+     * 映射的链表项用到的struct iovec结构体的个数
+     *
+     * nalloc相当于 iovs数组的最大容量
+     * count相当于 iovs数组已使用的容量
+     */
     ngx_uint_t     count;
+
+    // 总共映射的内存大小
     size_t         size;
+
+    // iovs数组的个数,是对iovs数组的一个限制,最多就nalloc个
     ngx_uint_t     nalloc;
 } ngx_iovec_t;
 

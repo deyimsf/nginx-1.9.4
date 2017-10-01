@@ -402,6 +402,17 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
 }
 
 
+/*
+ * 调用该方法的位置:
+ * 	/src/os/unix/ngx_darwin_sendfile_chain.c
+ *  /src/os/unix/ngx_freebsd_sendfile_chain.c
+ *  /src/os/unix/ngx_linux_sendfile_chain.c
+ *  	ngx_linux_sendfile_chain()
+ *
+ * 将和链表项*in中属于同一个文件描述符的链表项踢出去,比如*in->buf->file->fd中的
+ * fd等13,那么从链表项*in开始,所有fd等于13的链表项都会被踢出去
+ *
+ */
 off_t
 ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
 {
@@ -444,6 +455,66 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
 }
 
 
+/**
+ * 调用该方法的地方有:
+ *	 /src/os/unix/ngx_darwin_sendfile_chain.c
+ *	 /src/os/unix/ngx_freebsd_sendfile_chain.c
+ *	 /src/os/unix/ngx_solaris_sendfilev_chain.c
+ *
+ *	 /src/os/unix/ngx_writev_chain.c
+ *	 /src/os/unix/ngx_linux_sendfile_chain.c
+ * 我们只关心后两个
+ *
+ * in: 表示要更新的链表
+ * sent: 表示在链表in中已经发送出去的数据
+ *
+ * 该方法的功能是把链表in中已经发送出去的数据排除掉,假设链表如下
+ *   in链表:
+ *    		  	  ngx_chain_t						     ngx_chain_t
+ *   			----------------					  ----------------
+ *   			| *buf | *next | ------------------>  | *buf | *next |
+ *    			----------------					  ----------------
+ *    			 / ngx_buf_t      					    /
+ *            ----------------			  		--------------------------
+ *            | *pos | *last |  				| *file_pos | *file_last |
+ *    	      ----------------			  		---------------------------
+ *			/            |						 /			       |
+ *         -----------------------				----------------------------
+ *         |   50个字节   |	...	 |				|  文件中的60个字节   |  ...  |
+ *         -----------------------				----------------------------
+ *
+ * 如果sent值是50那么链表中的第一个链表项就会被踢出去,最后结果如下:
+ * 	 in链表:
+ *    		  	  									     ngx_chain_t
+ *   												  ----------------
+ *   												  | *buf | *next |
+ *    												  ----------------
+ *    			 		 	    					    /
+ *            							  		--------------------------
+ *            					  				| *file_pos | *file_last |
+ *    	      							  		---------------------------
+ *												 /			       |
+ *         										----------------------------
+ *         										|  文件中的60个字节   |  ...  |
+ *         										----------------------------
+ * 如果sent值是40那么链表中的第一个链的变化如下:
+ *   in链表:
+ *    		  	  ngx_chain_t						     ngx_chain_t
+ *   			----------------					  ----------------
+ *   			| *buf | *next | ------------------>  | *buf | *next |
+ *    			----------------					  ----------------
+ *    			 / ngx_buf_t      					    /
+ *            ----------------			  		--------------------------
+ *            | *pos | *last |  				| *file_pos | *file_last |
+ *    	      ----------------			  		---------------------------
+ *			        \      |					 /			       |
+ *         -----------------------				----------------------------
+ *         | 40个字节 |10字节| ...	 |				|  文件中的60个字节   |  ...  |
+ *         -----------------------				----------------------------
+ * 所以最终结果取决于sent的值和链表中的实际字节个数,如果sent值等于链表中的实际字节个数,这就表示链表
+ * in中的数据都被发送出去了,那么该方法就会返回null
+ *
+ */
 ngx_chain_t *
 ngx_chain_update_sent(ngx_chain_t *in, off_t sent)
 {
@@ -451,23 +522,50 @@ ngx_chain_update_sent(ngx_chain_t *in, off_t sent)
 
     for ( /* void */ ; in; in = in->next) {
 
-        if (ngx_buf_special(in->buf)) {
+    	/*
+    	 * #define ngx_buf_special(b) ((b->flush || b->last_buf || b->sync) && !ngx_buf_in_memory(b) && !b->in_file)
+    	 *
+    	 * 特殊数据直接跳过
+    	 *
+    	 * TODO 特殊数据表示已经发送出去了? 还是没有发送数据?
+    	 */
+    	if (ngx_buf_special(in->buf)) {
             continue;
         }
 
+    	/* 0表示链表in中没有数据被发送出去,所以什么也不做直接返回 */
         if (sent == 0) {
             break;
         }
 
+        /*
+         * 计算链表项in->buf中有效的数据大小
+         */
         size = ngx_buf_size(in->buf);
 
+        /*
+         * 如果已经发送出去的数据大于等于当前in->buf中的数据,那么就说明in->buf中的数据已经全部被发送出去了
+         * 所以我们需要更新这块buf
+         */
         if (sent >= size) {
+        	// 已发送数据减去当前这块buf的大小
             sent -= size;
 
+            /*
+             * #define ngx_buf_in_memory(b)  (b->temporary || b->memory || b->mmap)
+             * 这三个标志代表buf中的数据在内存中
+             *
+             * 这里将buf->pos的地址移动到buf->last,表示这块数据已经被消费完毕,当前链表项in会被踢出链表
+             */
             if (ngx_buf_in_memory(in->buf)) {
                 in->buf->pos = in->buf->last;
             }
 
+            /*
+             * buf->in_file 这个标志代表buf中的数据在文件中(可以同时在内存中),所以和在内存中的数据一样,需要
+             * 把buf->file_pos的地址移动到buf->file_last,表示这块数据已经被消费完毕,当前链表项in会被踢出链表
+             *
+             */
             if (in->buf->in_file) {
                 in->buf->file_pos = in->buf->file_last;
             }
@@ -475,6 +573,11 @@ ngx_chain_update_sent(ngx_chain_t *in, off_t sent)
             continue;
         }
 
+        /*
+         * 走到这里表示此时sent的值要小于当前遍历到的buf中的数据
+         *
+         * 所以这次只需要把对应的pos增加sent就可以了,,当前链表项in不会被踢出链表
+         */
         if (ngx_buf_in_memory(in->buf)) {
             in->buf->pos += (size_t) sent;
         }

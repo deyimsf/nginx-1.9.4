@@ -56,7 +56,10 @@ struct ngx_event_s {
     unsigned         disabled:1;
 
     /* the ready event; in aio mode 0 means that no operation can be posted */
-    // 有数据可读
+    // 准备好的事件? TODO
+    /*
+     * /src/os/unix/ngx_write_chain.c/ngx_writev_chain()方法有用到
+     */
     unsigned         ready:1;
 
     unsigned         oneshot:1;
