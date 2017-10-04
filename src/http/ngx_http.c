@@ -5,6 +5,14 @@
  */
 
 /*
+ * 如果操作系统支持sendfile方法,那么ngx就使用/src/os/unix/ngx_linux_sendfile_chain()方法
+ * 来发送数据,即使sendfile指令为off也会使用这个方法因为这个方法既可以发送(ngx_writev)内存中buf,
+ * 也可以发送(ngx_linux_sendfile)文件中buf
+ *
+ * 如果操作系统不支持sendfile方法,那么ngx就使用/src/os/unix/ngx_writev_chain()方法发送数据
+ *
+ *
+ *
  * http模块中,各个配置信息结构体的关联方式:
  * 	1.在http核心模块的ngx_http_core_main_conf_t里面有一个servers数组,用来关联http{}块下的所有server{}
  *
@@ -95,6 +103,32 @@
  * 把当前过滤器方法设置为新链头:
  * 		ngx_http_top_head_filter = my_header_filter
  * 如此一来就把自定义的过滤器放入到了过滤器链表中,过滤器执行的时候只需要调用链头方法(ngx_http_top_head_filter)就可以了.
+ *
+ *
+ *
+ * 一般使用的处理响应头的过滤器有以下几种,他们的位置是固定的,按倒序执行
+ *  	/src/http/ngx_http_header_filter_module.c				(header)
+ * 		/src/http/modules/ngx_http_chunked_filter_module.c		(body|header)
+ * 		/src/http/modules/ngx_http_range_filter_module.c		(body|header) 	(ngx_http_range_header_filter_module)
+ * 		/src/http/modules/ngx_http_gzip_filter_module.c			(body|header)
+ * 		/src/http/modules/ngx_http_ssi_filter_module.c			(body|header)
+ * 		/src/http/modules/ngx_http_charset_filter_module.c 		(body|header)
+ * 		/src/http/modules/ngx_http_userid_filter_module.c		(header)
+ * 		/src/http/modules/ngx_http_headers_filter_module.c		(header)
+ * 		/src/http/modules/ngx_http_not_modified_filter_module.c (header)
+ *
+ * 一般使用的处理响应体的过滤器有以下几种,他们的位置是固定的,按倒序执行
+ *  	/src/http/ngx_http_write_filter_module.c				(body)
+ * 		/src/http/modules/ngx_http_chunked_filter_module.c		(body|header)
+ * 		/src/http/modules/ngx_http_gzip_filter_module.c			(body|header)
+ * 		/src/http/ngx_http_postpone_filter_module.c				(body)
+ * 		/src/http/modules/ngx_http_ssi_filter_module.c			(body|header)
+ * 		/src/http/modules/ngx_http_charset_filter_module.c		(body|header)
+ *  	/src/http/ngx_http_copy_filter_module.c					(body)
+ * 		/src/http/modules/ngx_http_range_filter_module.c		(body|header)   (ngx_http_range_body_filter_module)
+ *
+ *
+ *
  *
  */
 

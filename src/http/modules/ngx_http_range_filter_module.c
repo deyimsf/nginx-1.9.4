@@ -44,6 +44,13 @@
  * "--0123456789--" CRLF
  */
 
+/*
+ * 如果请求头中包含正确的Range头,则会走这里的头过滤器和响应体过滤器
+ *
+ *
+ *
+ */
+
 
 typedef struct {
     off_t        start;
@@ -167,6 +174,9 @@ ngx_http_range_header_filter(ngx_http_request_t *r)
         return ngx_http_next_header_filter(r);
     }
 
+    /*
+     * 检查请求头是否包含Range头,以及格式是否正确,如果正确的话就会试着走206响应码
+     */
     if (r->headers_in.range == NULL
         || r->headers_in.range->value.len < 7
         || ngx_strncasecmp(r->headers_in.range->value.data,
@@ -233,6 +243,10 @@ parse:
     switch (ngx_http_range_parse(r, ctx, ranges)) {
 
     case NGX_OK:
+    	/*
+    	 * 为ngx_http_range_body_filter_module模块设置一个ctx上下文,只有设置了这个才说明状态吗是206,这样在后学的
+    	 * ngx_http_range_body_filter()方法中才会按照206响应码的协议进行发送数据
+    	 */
         ngx_http_set_ctx(r, ctx, ngx_http_range_body_filter_module);
 
         r->headers_out.status = NGX_HTTP_PARTIAL_CONTENT;
@@ -601,6 +615,10 @@ ngx_http_range_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_range_body_filter_module);
 
+    /*
+     * 判断在ngx_http_range_body_filter()方法中是设置了ctx,如果设置了说明需要按照206码的协议传输协议,如果没有
+     * 则直接执行下一个过滤器
+     */
     if (ctx == NULL) {
         return ngx_http_next_body_filter(r, in);
     }

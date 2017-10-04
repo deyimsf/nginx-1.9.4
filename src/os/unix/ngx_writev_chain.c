@@ -1,9 +1,18 @@
 
 /*
  * Copyright (C) Igor Sysoev
+
  * Copyright (C) Nginx, Inc.
  */
-
+/*
+ * 如果操作系统支持sendfile方法,那么ngx就使用/src/os/unix/ngx_linux_sendfile_chain()方法
+ * 来发送数据,即使sendfile指令为off也会使用这个方法因为这个方法既可以发送(ngx_writev)内存中buf,
+ * 也可以发送(ngx_linux_sendfile)文件中buf
+ *
+ * 如果操作系统不支持sendfile方法,那么ngx就使用/src/os/unix/ngx_writev_chain()方法发送数据
+ *
+ *
+ */
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -76,6 +85,8 @@ ngx_writev_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
 
         /*
          * 该方法不处理文件中的数据,所以如果有这样的数据则直接返回错误
+         *
+         * TODO 文件中的数据谁处理
          */
         if (cl && cl->buf->in_file) {
             ngx_log_error(NGX_LOG_ALERT, c->log, 0,

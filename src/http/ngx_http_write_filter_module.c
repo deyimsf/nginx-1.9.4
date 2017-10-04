@@ -268,6 +268,10 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
                    "http write filter limit %O", limit);
 
     // 发送数据 TODO 此时chain是不是和r->out相同了 ?
+    /*
+     * ngx_linux_sendfile_chain()
+     * ngx_writev_chain()
+     */
     chain = c->send_chain(c, r->out, limit);
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,

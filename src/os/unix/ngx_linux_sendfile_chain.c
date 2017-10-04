@@ -4,6 +4,16 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/*
+ * 如果操作系统支持sendfile方法,那么ngx就使用/src/os/unix/ngx_linux_sendfile_chain()方法
+ * 来发送数据,即使sendfile指令为off也会使用这个方法因为这个方法既可以发送(ngx_writev)内存中buf,
+ * 也可以发送(ngx_linux_sendfile)文件中buf
+ *
+ * 如果操作系统不支持sendfile方法,那么ngx就使用/src/os/unix/ngx_writev_chain()方法发送数据
+ *
+ *
+ */
+
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -43,6 +53,14 @@ static void ngx_linux_sendfile_thread_handler(void *data, ngx_log_t *log);
 #define NGX_SENDFILE_MAXSIZE  2147483647L
 
 
+/*
+ * 如果操作系统支持sendfile方法,那么ngx就使用/src/os/unix/ngx_linux_sendfile_chain()方法
+ * 来发送数据,即使sendfile指令为off也会使用这个方法因为这个方法既可以发送(ngx_writev)内存中buf,
+ * 也可以发送(ngx_linux_sendfile)文件中buf
+ *
+ * 如果操作系统不支持sendfile方法,那么ngx就使用/src/os/unix/ngx_writev_chain()方法发送数据
+ *
+ */
 ngx_chain_t *
 ngx_linux_sendfile_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
 {

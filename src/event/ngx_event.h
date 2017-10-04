@@ -453,6 +453,11 @@ extern ngx_event_actions_t   ngx_event_actions;
 #define ngx_del_timer        ngx_event_del_timer
 
 
+/*
+ * 该变量值有具体事件模块决定
+ * 比如eopll事件模块 /src/event/modules/ngx_epoll_module.c/ngx_io 变量
+ *
+ */
 extern ngx_os_io_t  ngx_io;
 
 #define ngx_recv             ngx_io.recv

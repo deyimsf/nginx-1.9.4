@@ -113,6 +113,14 @@ ngx_http_static_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
+    /*
+     * 关闭sendfile
+     * 去掉NGX_HAVE_SENDFILE
+     * 		此时send_chain = ngx_writev_chain
+     *
+     *
+     * of.size 执行完毕该方法后会有值
+     */
     if (ngx_open_cached_file(clcf->open_file_cache, &path, &of, r->pool)
         != NGX_OK)
     {

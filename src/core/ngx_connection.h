@@ -230,6 +230,9 @@ struct ngx_connection_s {
     unsigned            reusable:1;
     unsigned            close:1;
 
+    /*
+     * 如果操作系统支持sendfile()方法,并且ngx支持sendfile指令,则该值为1
+     */
     unsigned            sendfile:1;
     unsigned            sndlowat:1;
     unsigned            tcp_nodelay:2;   /* ngx_connection_tcp_nodelay_e */

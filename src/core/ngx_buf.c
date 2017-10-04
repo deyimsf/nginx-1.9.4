@@ -5,9 +5,20 @@
  */
 
 /*
+ * 如果操作系统支持sendfile方法,那么ngx就使用/src/os/unix/ngx_linux_sendfile_chain()方法
+ * 来发送数据,即使sendfile指令为off也会使用这个方法因为这个方法既可以发送(ngx_writev)内存中buf,
+ * 也可以发送(ngx_linux_sendfile)文件中buf
+ *
+ * 如果操作系统不支持sendfile方法,那么ngx就使用/src/os/unix/ngx_writev_chain()方法发送数据
+ *
+ *
+ *
  * 把实际缓存和链分开,这种设计对内存的管理更灵活
  * 1.职责划分更清晰,缓存就是缓存，链表就是链表
  * 2.当需要使用小块内存是可以直接选取小的ngx_buf_t,避免直接使用大ngx_buf_t造成内存的浪费
+ *
+ *
+ *
  *
  */
 
@@ -334,12 +345,14 @@ ngx_chain_get_free_buf(ngx_pool_t *p, ngx_chain_t **free)
 
 
 /*
- * 将链表busy和out中的链表项释放到free链表中,释放的前提是busy和out中的链表项对应的buf缓存空间为零(pos-last 或者 file_pos-file_last为零)
+ * 首先将out中的链表项追加到busy的尾部,如果busy链表为空则直接释放out链表,追加完毕后*out为空
  *
- * 在释放的过程中会首先将out中的链表项追加到busy的尾部,如果busy链表为空则直接释放out链表
+ * 将链表busy和out中的空闲链表项释放到free链表或pool->chain链表中,释放的前提是busy和out中的链表项对应的
+ * buf缓存空间为零(pos-last 或者 file_pos-file_last为零)
+ *
  *
  * 如果该方法传入的tag值和busy链表中buf的tag值不同,那么该buf对应的链表项不会释放到free链表中,而是
- * 释放到p->chain链表中
+ * 释放到pool->chain链表中
  *
  * 如果在释放的过程中遇到一个buf非空的链表项,则终止后续的释放,在此之前的释放仍有效
  *
@@ -403,14 +416,42 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
 
 
 /*
+ * 返回本次可以发送的字节数,结果会小于等于limit;并且传入的值*in也会变成返回结果
+ *
+ * 该方法的作用和/src/os/nginx/ngx_writev_chain.c/ngx_output_chain_to_iovec()方法类似
+ * 不同的是ngx_output_chain_to_iovec()方法是用来计算内存中将要发送的数据,而ngx_chain_coalesce_file()方法
+ * 计算文件中将要发送的数据.
+ *
+ * 那么对于已经发送出去的数据,更新其对应的chian和buf是在ngx_chain_update_sent()方法中完成的,跟上面两个方法没有直接关系
+ *
+ * 举一个调用该方法的例子:
+ * 		ngx_chain_t *cl; // 假设cl已经有值了,并且cl->buf->in_file为1
+ * 	    off_t file_size = ngx_chain_coalesce_file(&cl, limit);
+ * 其中cl在传递时候的内存结构如下:
+ * 			 &cl
+ * 			-----
+ * 			| * |
+ * 			-----
+ *			  \ cl
+ *			  -----
+ *			  | * |
+ *			  -----
+ *			  	\
+ *			  	---------------  		---------------
+ *			  	| ngx_chain_t |	----->	| ngx_chain_t |
+ *			  	---------------			---------------
+ * 最终file_size就是返回的可以发送的字节数,cl就是不可以发送数据的链表
+ *
+ *
  * 调用该方法的位置:
  * 	/src/os/unix/ngx_darwin_sendfile_chain.c
  *  /src/os/unix/ngx_freebsd_sendfile_chain.c
+ *
  *  /src/os/unix/ngx_linux_sendfile_chain.c
  *  	ngx_linux_sendfile_chain()
  *
- * 将和链表项*in中属于同一个文件描述符的链表项踢出去,比如*in->buf->file->fd中的
- * fd等13,那么从链表项*in开始,所有fd等于13的链表项都会被踢出去
+ * 将和链表项*in中属于同一个文件描述符的链表项排除出去(实际链表并没有断裂),比如*in->buf->file->fd中的
+ * fd等13,那么从链表项*in开始,所有fd等于13的链表项都会被排除出去(实际链表并没有断裂)
  *
  */
 off_t
@@ -422,15 +463,32 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
 
     total = 0;
 
+    /*
+     * cl 和 in的内存结构如下:
+     * 			   in
+     * 			  -----
+     * 			  | * |
+     * 			  -----
+     * 			  	\*in               cl
+     * 			  	-----		      -----
+     * 			  	| * |		      | * |
+     * 			  	-----		      -----
+     * 			  		\			  /
+     * 			  		---------------          ---------------		  ---------------
+     * 			  		| ngx_chain_t |	-------> | ngx_chain_t | -------> | ngx_chain_t |
+     *					---------------			 ---------------		  ---------------
+     */
     cl = *in;
     fd = cl->buf->file->fd;
 
     do {
         size = cl->buf->file_last - cl->buf->file_pos;
 
+        // 每次发送不允许大于limit的限制
         if (size > limit - total) {
             size = limit - total;
 
+            // TODO 不懂,这里对齐的优化是针对谁的
             aligned = (cl->buf->file_pos + size + ngx_pagesize - 1)
                        & ~((off_t) ngx_pagesize - 1);
 
@@ -440,36 +498,53 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
         }
 
         total += size;
+        /*
+         * fprev代表当前已经可以发送的数据的末尾地址
+         *
+         * 用它来判断是否是连续地址
+         */
         fprev = cl->buf->file_pos + size;
+        // 下一个链表项
         cl = cl->next;
 
-    } while (cl
-             && cl->buf->in_file
-             && total < limit
-             && fd == cl->buf->file->fd
-             && fprev == cl->buf->file_pos);
+    } while (cl // 存在链表项
+             && cl->buf->in_file // 该缓存实际数据在文件中,不再内存中
+             && total < limit // 这次要发送的数据要小于限制limit
+             && fd == cl->buf->file->fd // 文件描述符要和刚开始传过来的描述符相等
+             && fprev == cl->buf->file_pos); // 本次要发送的数据在文件中必须是连续数据
 
+
+    /*
+	 * 最终cl和in的内存结构 可能 如下:
+	 *													 in
+	 *													-----
+	 *													| * |
+	 *													-----
+	 *														\*in              cl
+	 *														-----		     -----
+	 *														| * |		     | * |
+	 *														-----		     -----
+	 *														  \			    /
+ 	 *	  	---------------          ---------------		  ---------------
+ 	 *		| ngx_chain_t |	-------> | ngx_chain_t | -------> | ngx_chain_t |
+	 *		---------------			 ---------------		  ---------------
+	 * 这样*in变量就变成了出参
+	 */
     *in = cl;
 
+    // 返回这次将要发出去的数据大小
     return total;
 }
 
 
-/**
- * 调用该方法的地方有:
- *	 /src/os/unix/ngx_darwin_sendfile_chain.c
- *	 /src/os/unix/ngx_freebsd_sendfile_chain.c
- *	 /src/os/unix/ngx_solaris_sendfilev_chain.c
- *
- *	 /src/os/unix/ngx_writev_chain.c
- *	 /src/os/unix/ngx_linux_sendfile_chain.c
- * 我们只关心后两个
+/*
+ * 该方法的功能是把链表in中已经发送出去的数据排除掉(链表并没有断裂和回收),返回未发送出数据的链表
  *
  * in: 表示要更新的链表
  * sent: 表示在链表in中已经发送出去的数据
  *
- * 该方法的功能是把链表in中已经发送出去的数据排除掉,假设链表如下
- *   in链表:
+ * 假设链表如下
+ *  in链表:
  *    		  	  ngx_chain_t						     ngx_chain_t
  *   			----------------					  ----------------
  *   			| *buf | *next | ------------------>  | *buf | *next |
@@ -483,7 +558,7 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
  *         |   50个字节   |	...	 |				|  文件中的60个字节   |  ...  |
  *         -----------------------				----------------------------
  *
- * 如果sent值是50那么链表中的第一个链表项就会被踢出去,最后结果如下:
+ * 如果sent值是50那么链表中的第一个链表项就会被排除出去(实际链表并没有断裂),最后结果如下:
  * 	 in链表:
  *    		  	  									     ngx_chain_t
  *   												  ----------------
@@ -513,6 +588,16 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
  *         -----------------------				----------------------------
  * 所以最终结果取决于sent的值和链表中的实际字节个数,如果sent值等于链表中的实际字节个数,这就表示链表
  * in中的数据都被发送出去了,那么该方法就会返回null
+ *
+ *
+ * 调用该方法的地方有:
+ *	 /src/os/unix/ngx_darwin_sendfile_chain.c
+ *	 /src/os/unix/ngx_freebsd_sendfile_chain.c
+ *	 /src/os/unix/ngx_solaris_sendfilev_chain.c
+ *
+ *	 /src/os/unix/ngx_writev_chain.c
+ *	 /src/os/unix/ngx_linux_sendfile_chain.c
+ * 我们只关心后两个
  *
  */
 ngx_chain_t *
@@ -574,7 +659,7 @@ ngx_chain_update_sent(ngx_chain_t *in, off_t sent)
         }
 
         /*
-         * 走到这里表示此时sent的值要小于当前遍历到的buf中的数据
+         * 走到这里表示此时已经发送出去的数据要小于当前遍历到的buf中的数据
          *
          * 所以这次只需要把对应的pos增加sent就可以了,,当前链表项in不会被踢出链表
          */

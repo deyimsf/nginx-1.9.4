@@ -4,6 +4,13 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/*
+ * 该过滤器只负责处理响应体
+ *
+ *
+ *
+ */
+
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -16,18 +23,19 @@ typedef struct {
 
 
 #if (NGX_HAVE_FILE_AIO)
-static void ngx_http_copy_aio_handler(ngx_output_chain_ctx_t *ctx,
-    ngx_file_t *file);
-static void ngx_http_copy_aio_event_handler(ngx_event_t *ev);
-#if (NGX_HAVE_AIO_SENDFILE)
-static ssize_t ngx_http_copy_aio_sendfile_preload(ngx_buf_t *file);
-static void ngx_http_copy_aio_sendfile_event_handler(ngx_event_t *ev);
+	static void ngx_http_copy_aio_handler(ngx_output_chain_ctx_t *ctx,
+		ngx_file_t *file);
+	static void ngx_http_copy_aio_event_handler(ngx_event_t *ev);
+	#if (NGX_HAVE_AIO_SENDFILE)
+		static ssize_t ngx_http_copy_aio_sendfile_preload(ngx_buf_t *file);
+		static void ngx_http_copy_aio_sendfile_event_handler(ngx_event_t *ev);
+	#endif
 #endif
-#endif
+
 #if (NGX_THREADS)
-static ngx_int_t ngx_http_copy_thread_handler(ngx_thread_task_t *task,
-    ngx_file_t *file);
-static void ngx_http_copy_thread_event_handler(ngx_event_t *ev);
+	static ngx_int_t ngx_http_copy_thread_handler(ngx_thread_task_t *task,
+		ngx_file_t *file);
+	static void ngx_http_copy_thread_event_handler(ngx_event_t *ev);
 #endif
 
 static void *ngx_http_copy_filter_create_conf(ngx_conf_t *cf);
@@ -97,6 +105,9 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http copy filter: \"%V?%V\"", &r->uri, &r->args);
 
+    /*
+     * 获取ngx_http_copy_filter_module的自定义上下文,如果为空的话后面会创建一个
+     */
     ctx = ngx_http_get_module_ctx(r, ngx_http_copy_filter_module);
 
     if (ctx == NULL) {
@@ -110,11 +121,15 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
         conf = ngx_http_get_module_loc_conf(r, ngx_http_copy_filter_module);
         clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
+        // 设置sendfile标记,如果操作系统支持并开启了sendfile指令则该值为1
         ctx->sendfile = c->sendfile;
         ctx->need_in_memory = r->main_filter_need_in_memory
                               || r->filter_need_in_memory;
         ctx->need_in_temp = r->filter_need_temporary;
 
+        /*
+         * directio要求的对齐值
+         */
         ctx->alignment = clcf->directio_alignment;
 
         ctx->pool = r->pool;
@@ -149,6 +164,12 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ctx->aio = r->aio;
 #endif
 
+    /*
+     * 从这里可以看出cony过滤器对他后面的所有过滤器是一个包围结构,也就是说后面所有的过滤器都返回后,
+     * copy过滤器会再设置完r->buffered后才返回给上一个过滤器
+     *
+     * 但过滤器是可以反复执行的,执行的依据是链表in,每个过滤器都会根据当次传入的链表in来做一些判断
+     */
     rc = ngx_output_chain(ctx, in);
 
     if (ctx->in == NULL) {
@@ -327,6 +348,9 @@ ngx_http_copy_filter_merge_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_http_copy_filter_conf_t *prev = parent;
     ngx_http_copy_filter_conf_t *conf = child;
 
+    /*
+     * 1.9.6及其之后的版本默认是2个buf,每个buf 32k
+     */
     ngx_conf_merge_bufs_value(conf->bufs, prev->bufs, 1, 32768);
 
     return NULL;

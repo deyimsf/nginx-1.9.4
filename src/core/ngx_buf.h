@@ -140,6 +140,10 @@ struct ngx_output_chain_ctx_s {
     ngx_chain_t                 *free;
     ngx_chain_t                 *busy;
 
+    /*
+     * 如果操作系统支持sendfile方法,并且ngx开启了sendfile命令则该值为1
+     *
+     */
     unsigned                     sendfile:1;
     unsigned                     directio:1;
 #if (NGX_HAVE_ALIGNED_DIRECTIO)
