@@ -344,7 +344,8 @@ ngx_palloc_large(ngx_pool_t *pool, size_t size)
 /**
  *该方法类似ngx_palloc_large方法的一个内存对齐版本
  *
- *分配一个size字节的对齐内存,该内存按照alignment字节对内存对齐
+ *分配一个size字节的对齐内存,该内存按照alignment字节对内存对齐,比如按512字节对齐(磁盘块大小)
+ *
  *新分配的内存放到ngx_pool_large_t对象中,该对象最终会被放入到pool->large的顶部
  */
 void *

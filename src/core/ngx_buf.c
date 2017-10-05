@@ -28,7 +28,7 @@
 
 
 /*
- * 创建一个ngx_buf_t结构体,并为这个结构体分配size个字节
+ * 创建一个ngx_buf_t结构体,并为这个结构体分配size个用于管理的字节
  * size不包含ngx_buf_t这个结构体的大小
  *
  * 此时buf和chain还没有关联
@@ -391,8 +391,11 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
         }
 
         if (cl->buf->tag != tag) {
+
+        	/*
+        	 * 如果传入的tag和当前buf中的tag不相同,则把他释放到pool->chain链中
+        	 */
             *busy = cl->next;
-            // free到p->chain中
             ngx_free_chain(p, cl);
             continue;
         }

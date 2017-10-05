@@ -171,10 +171,24 @@ struct ngx_output_chain_ctx_s {
     off_t                        alignment;
 
     ngx_pool_t                  *pool;
+
+    /*
+     * 实际分配的buf,一般不会大于bufs.num
+     */
     ngx_int_t                    allocated;
+    /*
+     * 标记可以分配的buf的个数(bufs.num)
+     * 标记可以分配的buf的大小(bufs.size)
+     */
     ngx_bufs_t                   bufs;
+    /*
+     * 当前上下文的一个标记,比如表明当前ctx是数据哪个模块的
+     */
     ngx_buf_tag_t                tag;
 
+    /*
+     * 指定用户输出当前chain的过滤器
+     */
     ngx_output_chain_filter_pt   output_filter;
     void                        *filter_ctx;
 };
@@ -251,6 +265,7 @@ ngx_chain_t *ngx_alloc_chain_link(ngx_pool_t *pool);
 
 ngx_int_t ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in);
 ngx_int_t ngx_chain_writer(void *ctx, ngx_chain_t *in);
+
 
 /*
  * 将链表in中的buf链接到*chain表的尾部

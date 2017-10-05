@@ -252,20 +252,21 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 				 *		   -----
 				 *		   | * |
 				 *		   -----
-				 *		   	  \cl
-				 *		   	 -----
-				 *		   	 | * |
-				 *		   	 -----
-				 *				\			 	 last_out|&cl->next
-				 *		   	 ----------------			-----
-				 *		   	 | *buf | *next |			| * |
-				 *		   	 ----------------			-----
-				 *		   	 			  	 \ cl->next /
-				 *		   	 			   	  ----------
-				 *		   	 			   	  |   *    |
-				 *		   	 			   	  ----------
+				 *		   	  \cl		last_out|&cl->next
+				 *		   	 -----			-----
+				 *		   	 | * |			| * |
+				 *		   	 -----			-----
+				 *			   \			/
+				 *		   	 --------------/-
+				 *		   	 | *buf | *next |
+				 *		   	 ----------------
+				 *		   	 			 \ cl->next
+				 *		   	 			 ---------------
+				 *		   	 			 | ngx_chain_t |
+				 *		   	 			 ---------------
+				 *
 				 * 从这个图就可以看出last_out始终指向的位置,就是out链表尾部链表项的next变量的地址
-				 * 如此反复就可以把所有在ctx->in中的链表项追加到out中
+				 * 如此反复就可以把在ctx->in中的链表项追加到out中
 				 *
 				 */
                 last_out = &cl->next;
@@ -278,6 +279,9 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
             	/*
             	 * 走到这里说明需要进行数据拷贝了,拷贝之前需要先创建一个临时buf,大小以bsize为参考
+            	 *
+            	 * bsize是ctx->in->buf中实际使用的缓存大小
+            	 *
             	 */
                 rc = ngx_output_chain_align_file_buf(ctx, bsize);
 
@@ -291,16 +295,33 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
                         /* get the free buf */
 
+                    	/*
+                    	 * 从ctx->free中获取一个buf
+                    	 *
+                    	 * ctx->free的作用是重新利用free中的buf,buf对应的chain会被释放到ctx->pool中去
+                    	 * 所以当分配buf不成功的时候会试着从ctx->free中获取
+                    	 */
+
                         cl = ctx->free;
                         ctx->buf = cl->buf;
                         ctx->free = cl->next;
 
+                        /*
+                         * 释放掉和cl->buf关联的cl
+                         */
                         ngx_free_chain(ctx->pool, cl);
 
                     } else if (out || ctx->allocated == ctx->bufs.num) {
 
+                    	/*
+                    	 * 如果实际已经创建的buf达到了我们配置的个数(ctx->bufs.num),就不再创建新的buf而是等数据
+                    	 * 输出完毕后使用原来分配的buf(ctx->free)
+                    	 */
                         break;
 
+                        /*
+                         * 创建一个新的buf并分配内存
+                         */
                     } else if (ngx_output_chain_get_buf(ctx, bsize) != NGX_OK) {
                         return NGX_ERROR;
                     }
@@ -348,6 +369,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
             /*
              * 为上面拷贝好的ctx->buf分配一个ngx_chain_t进行关联
+             *
              */
             cl = ngx_alloc_chain_link(ctx->pool);
             if (cl == NULL) {
@@ -411,8 +433,6 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
  * 	  如果file有directio标记则并且开启了aio则使用aio读文件
  * 	  如果没有则就只能用传统的方式把数据读到内存(比如pread方法)
  *
- *
- * 所以这里的as 可以是 aio and sendfile ? TODO
  */
 static ngx_inline ngx_int_t
 ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
@@ -589,6 +609,10 @@ ngx_output_chain_add_copy(ngx_pool_t *pool, ngx_chain_t **chain,
 }
 
 
+/*
+ * 获取一个对齐文件的buf
+ *
+ */
 static ngx_int_t
 ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 {
@@ -598,14 +622,37 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     in = ctx->in->buf;
 
     if (in->file == NULL || !in->file->directio) {
+
+    	/*
+		 * 因为一般情况我们很少开启directio所以大部分情况会走这段逻辑
+		 */
         return NGX_DECLINED;
     }
 
+    /*
+     * 走到这里说明数据在文件中,并且开启了directio
+     *
+     * 所以这里对ctx->directio类型的内存分配和,ngx_output_chain_get_buf()方法中对ctx->directio类型
+     * 的内存分配的对齐方式是不一样的
+     * 	  一个使用ngx_create_temp_buf(pool, size)方法分配
+     * 	  一个使用ngx_pmemalign(pool,size,ctx->alignment)方法分配
+     * 为啥要不一样? TODO 这算什么形式的优化?
+     *
+     */
+
     ctx->directio = 1;
 
+    /*
+     * 这一句是啥意思,等于零又是啥意思
+     */
     size = (size_t) (in->file_pos - (in->file_pos & ~(ctx->alignment - 1)));
 
     if (size == 0) {
+
+    	/*
+    	 * 如果要分配的内存大于等于设置的(ctx->bufs.size)内存,那就直接返回,后续的逻辑会尝试从ctx->free中
+    	 * 或者使用ngx_output_chain_get_buf()方法来创建这块缓存
+    	 */
 
         if (bsize >= (off_t) ctx->bufs.size) {
             return NGX_DECLINED;
@@ -621,6 +668,10 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
         }
     }
 
+    /*
+     * 在这里创建的buf会突破ctx->bufs.num的限制
+     * 并且因为该buf没有设置对应的tag,所以也不会释放到ctx->free中,而是会被释放到ctx->pool
+     */
     ctx->buf = ngx_create_temp_buf(ctx->pool, size);
     if (ctx->buf == NULL) {
         return NGX_ERROR;
@@ -639,6 +690,12 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 }
 
 
+/*
+ * 创建一个ngx_buf_t并为其分配内存,以bsize为参考来分配
+ * 		ctx->bufs.size <= bsize <= ctx->bufs.size * 1.25
+ *
+ *
+ */
 static ngx_int_t
 ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 {
@@ -653,6 +710,11 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     if (in->last_in_chain) {
 
         if (bsize < (off_t) size) {
+        	/*
+			 * 如果缓存in在当前链表中位于最后一个链表项,并且要分配的内存比配置的ctx->bufs.size要小,并且未开启
+			 * directio,那么就是用bsize来为ctx->buf分配内存大小
+			 *
+			 */
 
             /*
              * allocate a small temp buf for a small last buf
@@ -666,6 +728,12 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
                    && ctx->bufs.num == 1
                    && (bsize < (off_t) (size + size / 4)))
         {
+        	/*
+        	 * 如果缓存in在当前链表中位于最后一个链表项,并且未开启directio,并且我们配置最多使用一个buf来处理数据,并且
+        	 * 要分配的内存我们设置的buf的大小的1.25倍,那么我们就直接用bsize来分配buf大小,也就是说buf大小可以超25%
+        	 *
+        	 */
+
             /*
              * allocate a temp buf that equals to a last buf,
              * if there is no directio, the last buf size is lesser
@@ -677,6 +745,7 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
         }
     }
 
+    // 创建一个ngx_buf_t结构体
     b = ngx_calloc_buf(ctx->pool);
     if (b == NULL) {
         return NGX_ERROR;
@@ -689,12 +758,22 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
          * userland buffer direct usage conjunctly with directio
          */
 
+    	/*
+    	 * 如果开启directio,那么ngx会直接跟磁盘打交道不走page cache,所以这里就要自己考虑内存地址和磁盘
+    	 * 块对齐的行为
+    	 */
+
         b->start = ngx_pmemalign(ctx->pool, size, (size_t) ctx->alignment);
         if (b->start == NULL) {
             return NGX_ERROR;
         }
 
     } else {
+
+    	/*
+    	 * 如果没有开启directio则表明ngx不会绕过内存直接跟磁盘打交道,直接使用ngx默认对齐方式
+    	 */
+
         b->start = ngx_palloc(ctx->pool, size);
         if (b->start == NULL) {
             return NGX_ERROR;
@@ -704,12 +783,12 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     b->pos = b->start;
     b->last = b->start;
     b->end = b->last + size;
-    b->temporary = 1;
-    b->tag = ctx->tag;
+    b->temporary = 1; // 临时内存
+    b->tag = ctx->tag; // 标记这个buf
     b->recycled = recycled;
 
     ctx->buf = b;
-    ctx->allocated++;
+    ctx->allocated++; // 实际分配的buf加一
 
     return NGX_OK;
 }
