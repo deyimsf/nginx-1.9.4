@@ -7,10 +7,12 @@
 /*
  * 如果操作系统支持sendfile方法,那么ngx就使用/src/os/unix/ngx_linux_sendfile_chain()方法
  * 来发送数据,即使sendfile指令为off也会使用这个方法因为这个方法既可以发送(ngx_writev)内存中buf,
- * 也可以发送(ngx_linux_sendfile)文件中buf
+ * 也可以发送(ngx_linux_sendfile)文件中buf.
  *
  * 如果操作系统不支持sendfile方法,那么ngx就使用/src/os/unix/ngx_writev_chain()方法发送数据
  *
+ * 不用ngx_linux_sendfile_chain()代替ngx_writev_chain()这样可以在不支持sendfile的系统中,
+ * 发现in链表中有in_file的数据.
  *
  */
 
@@ -20,16 +22,10 @@
 
 
 /*
- * 该方法不负责发送文件中的数据,如果链表in中有文件数据的映射则返回错误
+ * 该方法同/src/os/unix/ngx_linux_sendfile_chain()方法,不过该方法只能发送内存中数据,不支持sendfile方式
  *
- * 文件中的数据由/src/os/unix/ngx_linux_sendfile_chain.c/ngx_linux_sendfile()方法负责发送
+ * 将链表in中的数据发送出去,并且返回未发送的链
  *
- * 另外/src/os/unix/ngx_linux_sendfile_chain.c/ngx_linux_sendfile_chain()方法既可以发送
- * 内存数据,也可以发送文件数据;它发送内存数据的方式和ngx_writev_chain()方法类似,最终用ngx_writev()
- * 方法发送出去;发送文件数据就是用ngx_linux_sendfile()方法
- *
- *
- * 该方法将链表in中的数据发送出去,并且返回未发送的链
  * 比如说in链表中有三个链表项,此次调用只把第一个链表项中的数据发送完毕,那么返回的链表就会以第二个链表项作为链头返回
  * 如果此次调用只发送了第一个链表项中的部分数据,那么第一个链表项仍然作为链表头被返回出去,只不过链表项中buf的指针有改动
  */
@@ -84,9 +80,9 @@ ngx_writev_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
         }
 
         /*
-         * 该方法不处理文件中的数据,所以如果有这样的数据则直接返回错误
+         * 该方法不处理文件中的数据(不支持sendfile),所以如果有这样的数据则直接返回错误
          *
-         * TODO 文件中的数据谁处理
+         * ngx_linux_sendfile_chain()才支持sendfile
          */
         if (cl && cl->buf->in_file) {
             ngx_log_error(NGX_LOG_ALERT, c->log, 0,

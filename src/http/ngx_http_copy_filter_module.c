@@ -7,10 +7,16 @@
 /*
  * 该过滤器只负责处理响应体
  *
+ * 这个过滤器的主要作用是处理如何读取文件中的数据,具体逻辑看/src/core/ngx_output_chain.c文件中方法
  *
+ * 基本逻辑有以下几种情况:
+ * 	1.如果数据在文件中,并且不支持sendfile方式,那么就要把文件读取到内存中,然后才能发出去,copy_filter的
+ * 	  大部分逻辑都是在做这个事
+ * 	2.如果数据在文件中,并且支持sendfile方式,那么就直接把对应的chian和buf传递到下一个过滤器发出去就可以了
+ * 	3.如果数据在内存中,那就直接把对应的chian和buf传递到下一个过滤器发出去就可以了
+ * 这个过滤器依赖于ngx_output_chain_ctx_t结构体作为当前request的上下文来处理上面的逻辑
  *
  */
-
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -46,6 +52,9 @@ static ngx_int_t ngx_http_copy_filter_init(ngx_conf_t *cf);
 
 static ngx_command_t  ngx_http_copy_filter_commands[] = {
 
+		/*
+		 * 这个指令只为从硬盘读取数据时候才会用到,也就是说当读文件时不支持sendfile方法才会用到他
+		 */
     { ngx_string("output_buffers"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE2,
       ngx_conf_set_bufs_slot,
@@ -123,8 +132,18 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
         // 设置sendfile标记,如果操作系统支持并开启了sendfile指令则该值为1
         ctx->sendfile = c->sendfile;
+
+        /*
+         * 标记当前处理的数据是否需要在内存中,如果这个标记为1,那么即使支持sendfile,则当前数据也需要
+         * 拷贝到内存中才能发送出去
+         *
+         * TODO 用这块逻辑的目的是啥? 谁在用?
+         */
         ctx->need_in_memory = r->main_filter_need_in_memory
                               || r->filter_need_in_memory;
+        /*
+         * 类似ctx->need_in_memory,决定数据能否直接发送出去,不能的话就需要拷贝到内存中
+         */
         ctx->need_in_temp = r->filter_need_temporary;
 
         /*
@@ -133,6 +152,7 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
         ctx->alignment = clcf->directio_alignment;
 
         ctx->pool = r->pool;
+        // 设置读文件用的的缓存个数和大小
         ctx->bufs = conf->bufs;
         ctx->tag = (ngx_buf_tag_t) &ngx_http_copy_filter_module;
 
@@ -156,6 +176,7 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
 #endif
 
         if (in && in->buf && ngx_buf_size(in->buf)) {
+        	// TODO 干啥的
             r->request_output = 1;
         }
     }
@@ -168,7 +189,9 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
      * 从这里可以看出cony过滤器对他后面的所有过滤器是一个包围结构,也就是说后面所有的过滤器都返回后,
      * copy过滤器会再设置完r->buffered后才返回给上一个过滤器
      *
-     * 但过滤器是可以反复执行的,执行的依据是链表in,每个过滤器都会根据当次传入的链表in来做一些判断
+     * 过滤器是可以反复执行的,执行的依据是链表in,每个过滤器都会根据当次传入的链表in来做一些判断
+     *
+     * 这一步才是正真涉及拷贝的方法,说是拷贝实际上是读取数据,文件中的数据读到内存,或者内存中的数据读到内存
      */
     rc = ngx_output_chain(ctx, in);
 
@@ -360,6 +383,10 @@ ngx_http_copy_filter_merge_conf(ngx_conf_t *cf, void *parent, void *child)
 static ngx_int_t
 ngx_http_copy_filter_init(ngx_conf_t *cf)
 {
+	/*
+	 * 注册过滤器
+	 */
+
     ngx_http_next_body_filter = ngx_http_top_body_filter;
     ngx_http_top_body_filter = ngx_http_copy_filter;
 

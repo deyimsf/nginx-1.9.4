@@ -142,13 +142,20 @@ struct ngx_output_chain_ctx_s {
 
     /*
      * 如果操作系统支持sendfile方法,并且ngx开启了sendfile命令则该值为1
-     *
      */
     unsigned                     sendfile:1;
     unsigned                     directio:1;
 #if (NGX_HAVE_ALIGNED_DIRECTIO)
+    /*
+     * 对于directio模式,buf->file_pos是否和directio_alingment是对齐的
+     * 如果对齐则该值是1
+     */
     unsigned                     unaligned:1;
 #endif
+    /*
+	 * 标记当前处理的数据是否需要在内存中,如果这个标记为1,那么即使支持sendfile,则当前数据也需要
+	 * 拷贝到内存中才能发送出去
+	 */
     unsigned                     need_in_memory:1;
     unsigned                     need_in_temp:1;
 #if (NGX_HAVE_FILE_AIO || NGX_THREADS)

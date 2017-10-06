@@ -19,13 +19,14 @@
  * 一般情况下文件的读写,应用程序都只跟page cache打交道,当未命中cache的时候由底层去更新page cache,之后
  *	用户在跟page cache打交道
  *
- * direct-io的文件读写形式是,用户直接跟磁盘打交道,cache这一层有用户自己在用户态负责
+ * directio的文件读写形式是,用户直接跟磁盘打交道,cache这一层有用户自己在用户态负责
  *
  * linux中的aio需要directio为打开状态,因为在linux中,如果不是用directio,那么应用程序是只跟page cache
  * 打交道的,也就是直接跟内存(page cache)玩,所以这种状态根本不需要异步操作; 但是当打开directio选项后,就是
  * 用户直接跟磁盘打交道了,这个时候当用户跟磁盘读写数据时开启异步io(aio)就非常有必要了
  *
  *
+ * 正真触发拷贝和从文件读取数据的是ngx_output_chain_copy_buf()方法
  *
  */
 
@@ -43,9 +44,14 @@
  * to an application memory from a device if parameters are aligned
  * to device sector boundary (512 bytes).  They fallback to usual read
  * operation if the parameters are not aligned.
+ *
  * Linux allows DIRECTIO only if the parameters are aligned to a filesystem
  * sector boundary, otherwise it returns EINVAL.  The sector size is
  * usually 512 bytes, however, on XFS it may be 4096 bytes.
+ *
+ * linux上开启DIRECTIO,那么必须以文件系统的块大小对齐,否则返回EINVAL
+ * 也就是说从磁盘读取的时候,开始偏移量需要是块的倍数
+ *
  */
 
 #define NGX_NONE            1
@@ -426,7 +432,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
  * linux中的aio需要开启directio
  *
  * 返回1表示可以把数据直接发送出去,不需要拷贝该buf数据:
- * 	  如果buf中的数据在内存中则使用ngx_writev()方法发送
+ * 	  如果buf中的数据在内存中则使用ngx_write()方法发送
  * 	  如果buf中的数据在文件中(buf->in_file==1)则使用ngx_linux_sendfile()方法发送出去
  *
  * 返回0则表示数据还在磁盘文件内,需要把磁盘中的数据读取到内存才能发出去:
@@ -487,7 +493,8 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
         	/*
         	 * 如果当前请求不支持sendfile系统调用,或者没有开启sendfile指令,
         	 * 并且当前buf缓存的数据不在内存中(那就是buf->in_file==1),并且也没有开启buf->file->directio
-        	 * 那么说明这个buf不能使用sendfile直接发送出去,也不能使用aio的方式将文件读到内存,需要用传统的方式读文件到内存,然后再发
+        	 * 那么说明这个buf不能使用sendfile直接发送出去,也不能使用aio的方式将文件读到内存,需要用传统的方式读文件到内存
+        	 * 然后再发
         	 */
             return 0;
         }
@@ -501,11 +508,25 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
     }
 #endif
 
+    /*
+     * 走到这里说明支持sendfile
+     */
+
     if (ctx->need_in_memory && !ngx_buf_in_memory(buf)) {
+    	/*
+    	 * 走到这里说明当前支持sendfile,并且数据也不在内存中,但是我们期望他在内存中,所以这里
+    	 * 返回0,表示需要把buf中的数据拷贝到内存中去
+    	 *
+    	 * TODO 具体使用这块逻辑的目的后续看
+    	 */
         return 0;
     }
 
     if (ctx->need_in_temp && (buf->memory || buf->mmap)) {
+
+    	/*
+    	 * 和ctx->need_in_memory的逻辑相似
+    	 */
         return 0;
     }
 
@@ -643,34 +664,76 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     ctx->directio = 1;
 
     /*
-     * 这一句是啥意思,等于零又是啥意思
+     * 下边的逻辑是处理directio方式和文件打交道的逻辑,一但打开directio,那么在读取文件的时候,文件的开始
+     * 偏移量必须是alignment的倍数,如果不是的话ngx后续就不会用directio方式读取文件
+     *
+     * 具体的处理方式是这样,先看file_pos是否是alignment的倍数,如果是则后续直接从file_pos位置开始读数据
+     * 就可以了,具体读多少个字节,会小于等于ctx->bufs.size指定的大小,所以最终读取的字节数不一样是alignment
+     * 的倍数。
+     *
+     * 如果第一次从文件中读取的字节数不是alignment的倍数,或者file_pos的开始位置不是alignment的倍数,那么
+     * 下次从文件中读取的字节个数加上file_pos的值一定要是alignment的倍数
+     *
+     */
+
+    /*
+     * 下边这一句是取余操作,和in->file_pos % ctx->alignment 结果一样
+     *
+     * ~(ctx->alignment - 1) 是alignment负数, 比如5负数是-5,-5的负数是5
+     *
      */
     size = (size_t) (in->file_pos - (in->file_pos & ~(ctx->alignment - 1)));
 
     if (size == 0) {
 
     	/*
-    	 * 如果要分配的内存大于等于设置的(ctx->bufs.size)内存,那就直接返回,后续的逻辑会尝试从ctx->free中
-    	 * 或者使用ngx_output_chain_get_buf()方法来创建这块缓存
+    	 * 余数等于零说明in->file_pos的值是ctx->alignment的倍数
     	 */
-
         if (bsize >= (off_t) ctx->bufs.size) {
+
+        	/*
+        	 * 只有当本次要读取的文件中的字节数大于等于指定的缓存的时候才会真正开启directio
+        	 * (这里不会ctx->unaligned标记为1,因为实际上是对齐的)
+        	 *
+        	 * 这里直接返回的话,后续的方法会按照ctx->bufs.size的大小来创建缓存
+        	 */
             return NGX_DECLINED;
         }
 
+        /*
+         * 如果本次读取的文件中的字节数小于我们设置的缓存大小(ctx->bufs.size),那么我们就用实际的大小
+         * 来创建缓存,因为这里创建的缓存大小不是我们规定的大小(ctx->bufs.size),所以它对应的buf->tag
+         * 不会被打标,因为我们不会循环利用他,不会把他释放到ctx->free链表中,并且ctx->unaligned也会标记
+         * 为1,明确告诉后续代码文件其实位置没有对齐,不要开启directio去读文件
+         */
         size = (size_t) bsize;
 
     } else {
+
+    	/*
+    	 * 余数不等于零说明in->file_pos的值不是ctx->alignment的倍数,也就是没有对齐文件地址
+    	 * 那就计算出还剩多少个字节就对齐了
+    	 */
         size = (size_t) ctx->alignment - size;
 
         if ((off_t) size > bsize) {
+
+        	/*
+        	 * 如果剩下的对齐个数要大于本次要从文件中读取的字节个数,那么就使用本次实际要读字节个数作为缓存大小
+        	 * (ngx真是一点都不想浪费内存啊)
+        	 */
             size = (size_t) bsize;
         }
     }
 
     /*
-     * 在这里创建的buf会突破ctx->bufs.num的限制
-     * 并且因为该buf没有设置对应的tag,所以也不会释放到ctx->free中,而是会被释放到ctx->pool
+     * 创建一个临时的buf并分配内存,这个buf中管理的内存一定小于我们设置的内存大小(ctx->bufs.size),所有我们
+     * 管他叫临时的,用完后会被释放到pool->chain链表中
+     *
+     * 在这里创建的buf会突破ctx->bufs.num的限制并且因为该buf没有设置对应的tag,所以也不会释放到ctx->free中,
+     * 而是会被释放到ctx->pool
+     *
+     * 所以得出一个结论,ctx->free中的buf的大小一定和我们设置的buf大小(ctx->bufs.size)一致
      */
     ctx->buf = ngx_create_temp_buf(ctx->pool, size);
     if (ctx->buf == NULL) {
@@ -683,6 +746,12 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
      */
 
 #if (NGX_HAVE_ALIGNED_DIRECTIO)
+    /*
+     * 用着标记来表示实际读取的时候是否需要正真开启directio标记
+     *  ngx_directio_on() 开启
+     *  ngx_directio_off() 关闭
+     * 每次读取完都会从新设置该标记
+     */
     ctx->unaligned = 1;
 #endif
 
@@ -795,7 +864,7 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
 
 /*
- * ctx->in->buf中的数据都拷贝到ctx->buf中
+ * ctx->in->buf中的数据都拷贝到ctx->buf中,正真设计到拷贝和读取的地方
  *
  * 如果ctx->in->buf中的数据在内存中则直接拷贝到ctx->buf中
  *
@@ -873,9 +942,12 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 
     } else {
 
-#if (NGX_HAVE_ALIGNED_DIRECTIO)
+#if (NGX_HAVE_ALIGNED_DIRECTIO) // Linux有这个标记,Mac没有
 
         if (ctx->unaligned) {
+        	/*
+        	 * 文件开始地址buf->file_pos没有对齐,所以关闭directio模式
+        	 */
             if (ngx_directio_off(src->file->fd) == NGX_FILE_ERROR) {
                 ngx_log_error(NGX_LOG_ALERT, ctx->pool->log, ngx_errno,
                               ngx_directio_off_n " \"%s\" failed",
@@ -887,6 +959,9 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 
 #if (NGX_HAVE_FILE_AIO)
         if (ctx->aio_handler) {
+        	/*
+        	 * aio逻辑
+        	 */
 
         	/*
         	 * 如果支持并开启aio会走该逻辑,但是如果没有打开redirectio,那么最终还是会用ngx_read_file()方法去读数据
@@ -902,6 +977,10 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 #endif
 #if (NGX_THREADS)
         if (src->file->thread_handler) {
+        	/*
+        	 * 非aio逻辑,但支持多线程读取
+        	 */
+
             n = ngx_thread_read(&ctx->thread_task, src->file, dst->pos,
                                 (size_t) size, src->file_pos, ctx->pool);
             if (n == NGX_AGAIN) {
@@ -913,6 +992,8 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 #endif
         {
         	/*
+        	 * 非aio逻辑,不支持多线程读取
+        	 *
         	 * 将源文件src中的数据拷贝到目标dst中
         	 *
         	 * 如果开启redirectio但没有开启aio,则使用这个方法读文件数据
@@ -925,9 +1006,13 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
                               src->file_pos);
         }
 
-#if (NGX_HAVE_ALIGNED_DIRECTIO)
+#if (NGX_HAVE_ALIGNED_DIRECTIO) // linux会有这个标志,Mac没有
 
         if (ctx->unaligned) {
+        	 /*
+        	  * 从文件读取完数据后重新开启directio模式,并且ctx->unaligned设置为对齐模式,后续逻辑会调用
+        	  * ngx_output_chain_align_file_buf()方法来确定是否重置ctx->unaligned标记
+			  */
             ngx_err_t  err;
 
             err = ngx_errno;
