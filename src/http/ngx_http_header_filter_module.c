@@ -298,7 +298,9 @@ ngx_http_header_filter(ngx_http_request_t *r)
     }
 
     /*
-     * TODO 是否打印Content-Length头的关键点,要细看 TODO
+     * gzip打开,关闭chunked编码(chunked_transfer_encoding=off),则不会输出Content-Length响应头,
+     * 那客户端是怎么知道服务端内容输出完毕的呢?好像就不知道了,ngx会自己控制,输出完毕后如果是短连接就直接关闭,
+     * 长连接就继续等待指定的时间? TODO
      */
     if (r->headers_out.content_length == NULL
         && r->headers_out.content_length_n >= 0)
@@ -504,11 +506,18 @@ ngx_http_header_filter(ngx_http_request_t *r)
     }
 
     /*
-     * TODO 是否打印 Content-Length 头的关键点, 要细看 TODO
+     * gzip打开,关闭chunked编码(chunked_transfer_encoding=off),则不会输出Content-Length响应头,
+     * 那客户端是怎么知道服务端内容输出完毕的呢?好像就不知道了,ngx会自己控制,输出完毕后如果是短连接就直接关闭,
+     * 长连接就继续等待指定的时间? TODO
      */
     if (r->headers_out.content_length == NULL
         && r->headers_out.content_length_n >= 0)
     {
+    	/*
+    	 * 这里怎么和下面值的长度对上的?
+    	 *   sizeof("Content-Length: ") - 1 + NGX_OFF_T_LEN + 2
+    	 * 不用完全对上,上面只是计算打印这些响应头需要的buf大小,多申请一点buf无所谓,只要能装下响应头就行
+    	 */
         b->last = ngx_sprintf(b->last, "Content-Length: %O" CRLF,
                               r->headers_out.content_length_n);
     }

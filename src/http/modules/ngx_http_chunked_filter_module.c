@@ -4,6 +4,12 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/*
+ * gzip打开,关闭chunked编码(chunked_transfer_encoding=off),则不会输出Content-Length响应头,
+ * 那客户端是怎么知道服务端内容输出完毕的呢?好像就不知道了,ngx会自己控制,输出完毕后如果是短连接就直接关闭,
+ * 长连接就继续等待指定的时间? TODO
+ *
+ */
 
 #include <ngx_config.h>
 #include <ngx_core.h>
