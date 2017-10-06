@@ -137,12 +137,20 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
          * 标记当前处理的数据是否需要在内存中,如果这个标记为1,那么即使支持sendfile,则当前数据也需要
          * 拷贝到内存中才能发送出去
          *
-         * TODO 用这块逻辑的目的是啥? 谁在用?
+         * 比如/http/modules/ngx_http_gzip_filter_module.c过滤器,需要需要对输出的内容做压缩,
+         * 所以需要把文件中的数据拷贝到内存中取处理(r->main_filter_need_in_memory)
+         *
+         * 比如/http/modules/ngx_http_gunzip_filter_module.c过滤器,因为要对输出的内容做解压,
+         * 所以需要把文件中的数据拷贝到内存中取处理(r->filter_need_in_memory)
+         *
+         * 所以开启gzip后sendfile就失效了
          */
         ctx->need_in_memory = r->main_filter_need_in_memory
                               || r->filter_need_in_memory;
         /*
          * 类似ctx->need_in_memory,决定数据能否直接发送出去,不能的话就需要拷贝到内存中
+         *
+         * 模块/http/modules/ngx_http_charset_filter_module.c会用到这个标记
          */
         ctx->need_in_temp = r->filter_need_temporary;
 

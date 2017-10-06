@@ -279,6 +279,9 @@ typedef struct {
 
     ngx_array_t                       cache_control;
 
+    /*
+     * 响应体大小
+     */
     off_t                             content_length_n;
     time_t                            date_time;
     time_t                            last_modified_time;

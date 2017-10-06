@@ -70,6 +70,12 @@ ngx_http_chunked_header_filter(ngx_http_request_t *r)
     }
 
     if (r->headers_out.content_length_n == -1) {
+    	/*
+    	 * 在该过滤器前面的逻辑把headers_out.content_length_n被设置成-1才有可能走chunked编码
+    	 *
+    	 * 比如gzip模块会调用ngx_http_clear_content_length(r)方法把content_length_n设置为-1
+    	 */
+
         if (r->http_version < NGX_HTTP_VERSION_11) {
             r->keepalive = 0;
 

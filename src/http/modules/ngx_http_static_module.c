@@ -114,11 +114,6 @@ ngx_http_static_handler(ngx_http_request_t *r)
     }
 
     /*
-     * 关闭sendfile
-     * 去掉NGX_HAVE_SENDFILE
-     * 		此时send_chain = ngx_writev_chain
-     *
-     *
      * of.size 执行完毕该方法后会有值
      */
     if (ngx_open_cached_file(clcf->open_file_cache, &path, &of, r->pool)
@@ -239,6 +234,12 @@ ngx_http_static_handler(ngx_http_request_t *r)
     log->action = "sending response to client";
 
     r->headers_out.status = NGX_HTTP_OK;
+    /*
+     * 文件的大小已经确认了,后续的模块会根据实际情况再次设置content_length_n的值,只有
+     * 在chunked过滤器之前的过滤器把content_length_n被设置成-1才有可能走chunked编码,
+     * 比如gzip模块会调用ngx_http_clear_content_length(r)方法把content_length_n
+     * 设置为-1
+     */
     r->headers_out.content_length_n = of.size;
     r->headers_out.last_modified_time = of.mtime;
 
@@ -268,7 +269,14 @@ ngx_http_static_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    // 发送响应头
+    /*
+     * 发送响应头
+     *
+     * 文件的大小已经确认了,后续的模块会根据实际情况再次设置content_length_n的值,只有
+     * 在chunked过滤器之前的过滤器把content_length_n被设置成-1才有可能走chunked编码
+     * 比如gzip模块会调用ngx_http_clear_content_length(r)方法把content_length_n
+     * 设置为-1
+     */
     rc = ngx_http_send_header(r);
 
     if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
