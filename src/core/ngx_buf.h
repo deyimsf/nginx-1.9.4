@@ -162,15 +162,19 @@ struct ngx_output_chain_ctx_s {
 	 * 比如/http/modules/ngx_http_gunzip_filter_module.c过滤器,因为要对输出的内容做解压,
 	 * 所以需要把文件中的数据拷贝到内存中取处理(r->filter_need_in_memory)
 	 *
+	 * 比如/http/modules/ngx_http_charset_filter_module.c过滤器,需要对输出的内容做编码
+     * 转换,所以需要把文件中的数据拷贝到内存中取处理(r->filter_need_in_memory)
+	 *
 	 * 所以开启gzip后sendfile就失效了
 	 */
     unsigned                     need_in_memory:1;
 
-    /*
-	 * 类似ctx->need_in_memory,决定数据能否直接发送出去,不能的话就需要拷贝到内存中
-	 *
-	 * 模块/http/modules/ngx_http_charset_filter_module.c会用到这个标记
-	 */
+   /*
+	* 类似ctx->need_in_memory,决定数据能否直接发送出去,不能的话就需要拷贝到内存中
+	*
+	* 模块/http/modules/ngx_http_charset_filter_module.c会用到这个标记,该过滤器用到了两个
+	* 标记r->filter_need_temporary和r->filter_need_in_memory
+	*/
     unsigned                     need_in_temp:1;
 #if (NGX_HAVE_FILE_AIO || NGX_THREADS)
     unsigned                     aio:1;

@@ -572,8 +572,17 @@ struct ngx_http_request_s {
 
     unsigned                          buffered:4;
 
+    /*
+     * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_memory
+     */
     unsigned                          main_filter_need_in_memory:1;
+    /*
+	 * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_memory
+	 */
     unsigned                          filter_need_in_memory:1;
+    /*
+	 * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_temp
+	 */
     unsigned                          filter_need_temporary:1;
     unsigned                          allow_ranges:1;
     unsigned                          single_range:1;
