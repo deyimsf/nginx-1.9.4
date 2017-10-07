@@ -340,6 +340,13 @@ struct ngx_http_cleanup_s {
 };
 
 
+/*
+ * 子请求结束时的回调方法
+ * r: 子请求
+ * data: ngx_http_post_subrequest_t结构体的data字段
+ * rc: 子请求的返回值
+ *
+ */
 typedef ngx_int_t (*ngx_http_post_subrequest_pt)(ngx_http_request_t *r,
     void *data, ngx_int_t rc);
 
@@ -367,7 +374,9 @@ struct ngx_http_posted_request_s {
 
 
 /*
- * http模块阶段中要执行的方法
+ * http模块阶段中要执行的方法,比如
+ * 		/src/http/ngx_http_core_module.h/ngx_http_phase_handler_s结构体中的handler字段
+ *		/src/http/ngx_http_request.h/ngx_http_request_s结构体中的content_handler字段
  *
  * 返回值代表的意思(基本如此,特殊情况看各自的checker方法,参考用):
  *		NGX_DECLINED: 代表本阶段还未执行完毕

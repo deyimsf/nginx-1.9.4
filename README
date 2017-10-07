@@ -69,13 +69,15 @@ Documentation is available at http://nginx.org
     
 	
 # filter实现和作用
-	* 过滤器
+	* 过滤器组装和执行
+	* ngx_http_copy_filter_module作用
 	* 编写一个过滤器
 
 
 # subreqeust实现
 	* 什么是子请求
 	* 实现原理
+	* ngx_http_addition_filter_module
 	* 编写一个subreqeust
 	
 
