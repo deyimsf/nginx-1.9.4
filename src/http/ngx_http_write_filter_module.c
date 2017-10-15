@@ -267,10 +267,11 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http write filter limit %O", limit);
 
-    // 发送数据 TODO 此时chain是不是和r->out相同了 ?
     /*
-     * ngx_linux_sendfile_chain()
-     * ngx_writev_chain()
+     * 将链表in中的数据发送出去,并且返回未发送的链
+     *
+     * /src/os/unix/ngx_linux_sendfile_chain.c/ngx_linux_sendfile_chain()
+     * /src/os/unix/ngx_write_chain.c/ngx_writev_chain()
      */
     chain = c->send_chain(c, r->out, limit);
 
@@ -322,9 +323,19 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
         ngx_free_chain(r->pool, ln);
     }
 
+    /*
+     * 对于上面使用
+     * 	  chain = c->send_chain(c, r->out, limit);
+     * 发送数据后,将没发完的数据重新放到r中
+     */
     r->out = chain;
 
     if (chain) {
+
+    	/*
+    	 * 当前连接存在没有发送完的数据,所以将c->buffered增加一个NGX_HTTP_WRITE_BUFFERED标记
+    	 * 表示有数据在缓存中
+    	 */
         c->buffered |= NGX_HTTP_WRITE_BUFFERED;
         return NGX_AGAIN;
     }

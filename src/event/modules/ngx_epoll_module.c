@@ -678,6 +678,7 @@ ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     	/*
 		 * 如果当前要删除的是读事件
 		 * 因为还不确定写事件是否已经在epoll中,所以先把写事件对象和对应的写事件类型(EPOLLOUT)放入到相应的变量中
+		 * 后续如果确定写事件在epoll中,那么就通过EPOLL_CTL_MOD来删除epoll中的读事件
 		 */
         e = c->write;
         prev = EPOLLOUT;
@@ -686,6 +687,7 @@ ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     	/*
 		 * 如果当前要删除的是写事件
 		 * 因为还不确定读事件是否已经在epoll中,所以先把读事件对象和对应的读事件类型(EPOLLIN|EPOLLRDHUP)放入到相应的变量中
+		 * 后续如果确定读事件在epoll中,那么就通过EPOLL_CTL_MOD来删除epoll中的写事件
 		 */
         e = c->read;
         prev = EPOLLIN|EPOLLRDHUP;
@@ -694,11 +696,13 @@ ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     /*
      * 如果当前要删除的是读事件,那么e就代表c(连接)的写事件
      * 如果当前要删除的是写事件,那么e就代表c(连接)的读事件
+     *
      * e和prev这两个变量是为了记录,连接c在epoll中的旧事件
      */
     if (e->active) {
     	// 修改操作,保留原来的旧事件
         op = EPOLL_CTL_MOD;
+        // 保留原来在epoll中的事件,并增加一个flags标记(有可能是水平触发或者边沿触发)
         ee.events = prev | (uint32_t) flags;
         ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 

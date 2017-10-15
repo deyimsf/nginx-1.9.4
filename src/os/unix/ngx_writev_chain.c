@@ -147,6 +147,8 @@ ngx_writev_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
  *
  * 对于链表in中内存相邻的buf会合并到同一个struct iovec中
  *
+ *
+ * 返回in中未映射的部分
  */
 ngx_chain_t *
 ngx_output_chain_to_iovec(ngx_iovec_t *vec, ngx_chain_t *in, size_t limit,

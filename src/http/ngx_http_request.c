@@ -209,6 +209,9 @@ ngx_http_header_t  ngx_http_headers_in[] = {
  * 当新连接建立完毕后调用该方法
  *
  * c: 代表客户端的一个连接
+ *
+ * 初始化完成后c->data是ngx_http_connection_t结构体
+ * 读方法设置为c->read->handler = ngx_http_wait_request_handler
  */
 void
 ngx_http_init_connection(ngx_connection_t *c)
@@ -412,6 +415,10 @@ ngx_http_init_connection(ngx_connection_t *c)
 }
 
 
+/*
+ * 主请求ngx_http_create_request()在这里发起
+ *
+ */
 static void
 ngx_http_wait_request_handler(ngx_event_t *rev)
 {
@@ -539,8 +546,10 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
 
     ngx_reusable_connection(c, 0);
 
-    // 创建请求(原始请求)
-    // 此时c->data存放的是ngx_http_request_t结构体
+    /*
+     * 创建一个主请求
+     * 此时c->data存放的是ngx_http_request_t结构体,也就是主请求的对象
+     */
     c->data = ngx_http_create_request(c);
     if (c->data == NULL) {
         ngx_http_close_connection(c);
@@ -553,6 +562,12 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
 }
 
 
+/*
+ * 创建一个主请求
+ * 创建子请求的方法是/src/http/ngx_http_core_module.c/ngx_http_subrequest.c
+ *
+ * 该方法执行的时候c->data里存放的是ngx_http_connection_t对象
+ */
 ngx_http_request_t *
 ngx_http_create_request(ngx_connection_t *c)
 {
@@ -630,6 +645,9 @@ ngx_http_create_request(ngx_connection_t *c)
     }
 #endif
 
+    /*
+     * 主请求(原始请求|根请求)
+     */
     r->main = r;
     r->count = 1;
 
@@ -2508,6 +2526,8 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
     /*
      * 如果已经到了发送数据阶段,并且有数据没有发送完毕,比如调用过滤器ngx_http_write_filter后返回NGX_AGAIN,
      * 表示需要继续发送数据,所以这里调用ngx_http_set_write_handler()方法来更改当前链路上的写事件方法
+     *
+     * 下面这四个标记可代表是否还有数据没有被发送出去
      */
     if (r->buffered || c->buffered || r->postponed || r->blocked) {
 
@@ -2832,10 +2852,19 @@ ngx_http_block_reading(ngx_http_request_t *r)
     if ((ngx_event_flags & NGX_USE_LEVEL_EVENT)
         && r->connection->read->active)
     {
+    	/*
+    	 * 如果是水平触发,并且当前请求对应的连接也在epoll中,那么为了避免不必要的资源消耗,先把该read事件从
+    	 * epoll中去掉
+    	 */
+
         if (ngx_del_event(r->connection->read, NGX_READ_EVENT, 0) != NGX_OK) {
             ngx_http_close_request(r, 0);
         }
     }
+
+    /*
+     * 如果epoll使用的是边沿触发,那就不用把读事件删除掉,因为只触发一次
+     */
 }
 
 
@@ -3469,6 +3498,11 @@ ngx_http_send_special(ngx_http_request_t *r, ngx_uint_t flags)
     out.buf = b;
     out.next = NULL;
 
+    /*
+     * 这里用了一个局部变量out来传递数据,但是并不需要担心当前方法结束后变量也跟着消失的情况,
+     * 因为在过滤器链中有一个ngx_http_copy_filter_module.c过滤器,它会重新创建一份chain
+     * 后继续向下传的
+     */
     return ngx_http_output_filter(r, &out);
 }
 

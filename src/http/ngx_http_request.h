@@ -493,6 +493,11 @@ struct ngx_http_request_s {
 
     ngx_http_cleanup_t               *cleanup;
 
+    /*
+     * 在调用ngx_http_create_request()方法创建主请求的时候被设置,目前大小是201
+     * 代表允许发起的子请求的个数,后续当前主请求试图发起一个子请求前会先别该值减去一,
+     * 如果减去一后的值等于零,那么就不会在允许创建子请求,所以ngx中子请求最多200个
+     */
     unsigned                          subrequests:8;
     unsigned                          count:8;
     unsigned                          blocked:8;
@@ -521,6 +526,12 @@ struct ngx_http_request_s {
 
     // 标记uri是否改变了
     unsigned                          uri_changed:1;
+    /*
+     * 在调用ngx_http_create_request()方法创建主请求和调用ngx_http_subrequest()方法
+     * 创建子请求的时候被设置,目前大小是11; 后续在每次更改uri或者匹配named类型的location的
+     * 时候会先将该值减去1,如果减去一后的值等于零,那么就不会在允许做后续操作,所以ngx中最多10次
+     * uri变更操作和匹配named类型的location操作
+     */
     unsigned                          uri_changes:4;
 
     unsigned                          request_body_in_single_buf:1;

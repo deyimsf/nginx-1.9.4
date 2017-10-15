@@ -2724,7 +2724,8 @@ ngx_http_gzip_quantity(u_char *p, u_char *last)
 
 
 /**
- * 发起子请求的方法
+ * 创建子请求的方法
+ * 创建主请求的方法是/src/http/ngx_http_request.c/ngx_http_create_request()
  *
  * r: 当前客户端发过来的请求(父请求)
  * uri: 子请求要访问的sub_uri
@@ -2782,6 +2783,9 @@ ngx_http_subrequest(ngx_http_request_t *r,
         return NGX_ERROR;
     }
 
+    /*
+     * 获取父请求对应的server{}块对象,然后将对应的main|srv|loc_conf赋值给子请求
+     */
     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
     sr->main_conf = cscf->ctx->main_conf;
     sr->srv_conf = cscf->ctx->srv_conf;
@@ -2789,36 +2793,52 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     sr->pool = r->pool;
 
+    // 父请求的请求头赋值给子请求
     sr->headers_in = r->headers_in;
 
+    /*
+     * 因为子请求还没有开始,这里只是创建了一个子请求对象,所以清除一些只有父请求才有的标志
+     * 清除content_length头
+     * 清除accept_ranges头
+     * 清除last_modified头
+     */
     ngx_http_clear_content_length(sr);
     ngx_http_clear_accept_ranges(sr);
     ngx_http_clear_last_modified(sr);
 
+    // 父请求的请求体赋值给子请求
     sr->request_body = r->request_body;
 
 #if (NGX_HTTP_SPDY)
     sr->spdy_stream = r->spdy_stream;
 #endif
 
+    // 子请求设置为get方法
     sr->method = NGX_HTTP_GET;
     sr->http_version = r->http_version;
 
-    // 父请求的请求行赋值给子请求?,但是uri且是子请求的
+    /*
+     * 子请求的请求行仍然使用父请求的
+     * 子请求的uri变成我们自己的
+     */
     sr->request_line = r->request_line;
     sr->uri = *uri;
 
-    // 子请求的qureystring
     if (args) {
+    	/*
+    	 * 子请求默认并没有继承父请求的查询参数,而是有子请求发起方给出
+    	 */
         sr->args = *args;
     }
 
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http subrequest \"%V?%V\"", uri, &sr->args);
 
+    // TODO 干啥的后续看
     sr->subrequest_in_memory = (flags & NGX_HTTP_SUBREQUEST_IN_MEMORY) != 0;
     sr->waited = (flags & NGX_HTTP_SUBREQUEST_WAITED) != 0;
 
+    // 未解析的rui
     sr->unparsed_uri = r->unparsed_uri;
     sr->method_name = ngx_http_core_get_method;
     sr->http_protocol = r->http_protocol;
@@ -2828,6 +2848,9 @@ ngx_http_subrequest(ngx_http_request_t *r,
     sr->main = r->main;			// 原始请求
     sr->parent = r;				// 父请求
     sr->post_subrequest = ps;	// ngx_http_post_subrequest_t结构体中放置着子请求结束后的回调方法
+    /*
+     * 因为是子请求,所有需要读取的请求数据都已经在父请求中完成了,所以这里把子请求的读事件hanlder设置为empty_handler
+     */
     sr->read_event_handler = ngx_http_request_empty_handler;
 
     /*
@@ -2837,7 +2860,19 @@ ngx_http_subrequest(ngx_http_request_t *r,
      */
     sr->write_event_handler = ngx_http_handler;
 
+    /*
+     * TODO 好好看
+     */
     if (c->data == r && r->postponed == NULL) {
+    	/*
+    	 * 走到这里说明父请求r是第一次发送子请求,或者是父请求下的所有子请求都发送完数据了
+    	 *
+    	 * 一个疑问: TODO
+    	 *    如果当前请求r也有数据要输出,并且也会发起一个子请求的,那么此时c->data肯定等于r
+    	 *    并且因为是第一次发送子请求,所以r->postponed肯定也是空的,那么后续ngx是如何决定
+    	 *    先把父请求的数据输出,然后再输出子请求数据的?
+    	 */
+
     	// 指定下次可以向客户端输出数据的子请求
         c->data = sr;
     }
@@ -2878,6 +2913,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     r->main->count++;
 
+    // 子请求的一个返回值(注意psr是一个值-结果参数)
     *psr = sr;
 
     // 将该子请求放入到原始请求的post_requests链表尾部

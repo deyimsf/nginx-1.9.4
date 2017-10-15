@@ -119,6 +119,10 @@ ngx_http_addition_header_filter(ngx_http_request_t *r)
 
     ngx_http_set_ctx(r, ctx, ngx_http_addition_filter_module);
 
+    /*
+     * 因为有子请求所有这里不确定内容长度了,后续就只能使用chunk编码告诉客户端响应体的长度,
+     * 如果关闭chunk编码,那ngx就只能用短连接的方式来告知客户端响应体发送完毕
+     */
     ngx_http_clear_content_length(r);
     ngx_http_clear_accept_ranges(r);
     ngx_http_weak_etag(r);
@@ -152,6 +156,9 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     if (!ctx->before_body_sent) {
         ctx->before_body_sent = 1;
 
+        /*
+         * 在向客户端发送主请求的响应之前先发送一个前置子请求,这样客户端会先接收到子请求的数据
+         */
         if (conf->before_body.len) {
             if (ngx_http_subrequest(r, &conf->before_body, NULL, &sr, NULL, 0)
                 != NGX_OK)
@@ -176,20 +183,40 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
         }
     }
 
+    /*
+     * 先调用ngx_http_next_body_filter()方法将主请求的数据发给客户端,然后再发起后置子请求,这样
+     * 就可以保证后置子请求的数据发生排在主请求内容之后
+     */
     rc = ngx_http_next_body_filter(r, in);
 
     if (rc == NGX_ERROR || !last || conf->after_body.len == 0) {
+
+    	/*
+    	 * 如果ngx_http_next_body_filter()方法都返回NGX_ERROR了那就不用发送after子请求了
+    	 *
+    	 * 如果不是后一个buf,那现在还是不发送after子请求,万一中间有一次过滤器返回NGX_ERROR那不就白发了吗
+    	 *
+    	 * 如果conf->after_body.len == 0也就不用发了,因为根本没有这个after指令.
+    	 * 	这里判断是不是有点多余啊,因为上面已经有这个判断了 TODO
+    	 *
+    	 */
         return rc;
     }
 
+    // 发起后置子请求
     if (ngx_http_subrequest(r, &conf->after_body, NULL, &sr, NULL, 0)
         != NGX_OK)
     {
         return NGX_ERROR;
     }
 
+    // 发送完子请求后把上下文置空就行了,这样这个请求后续就不会再走这个过滤器了
     ngx_http_set_ctx(r, NULL, ngx_http_addition_filter_module);
 
+    /*
+     * 这里不需要再像其他模块那样调用ngx_http_next_body_filter()方法来结束,因为如果当前是子请求,那么
+     * 子请求有自己的一套结束流程,如果当前是父请求,那么在上面已经调用完ngx_http_next_body_filter()方法了
+     */
     return ngx_http_send_special(r, NGX_HTTP_LAST);
 }
 

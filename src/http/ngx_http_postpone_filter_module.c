@@ -49,6 +49,9 @@ ngx_module_t  ngx_http_postpone_filter_module = {
 static ngx_http_output_body_filter_pt    ngx_http_next_body_filter;
 
 
+/*
+ * 处理子请求的过滤器?
+ */
 static ngx_int_t
 ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
@@ -61,6 +64,12 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
                    "http postpone filter \"%V?%V\" %p", &r->uri, &r->args, in);
 
     // 当前不应该r请求输出数据，只是把获取的数据暂存起来
+    /*
+     * TODO 关键点
+     *
+     * c->data是子请求的request对象?
+     * 在启动其请求的/src/http/ngx_http_core_module.c/ngx_http_subrequest()方法中会设置
+     */
     if (r != c->data) {
 
         if (in) {
@@ -78,6 +87,11 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     }
 
     // 走到这里说明该r请求输出数据了,并且r下面也没有其他子请求了
+    /*
+     * 如果是主请求,那么刚开始r->postponed一定为空,所以会直接走ngx_http_next_body_filter()方法
+     * 走正规流程,最后会走ngx_http_write_filter_module过滤器进行内容输出
+     *
+     */
     if (r->postponed == NULL) {
     	// 如果r请求的父请求pr下面还有要执行的子请求,那么c->data=pr->postponed->next
     	// 否则c->data = pr,也就是说当前可以输出数据的请求是pr

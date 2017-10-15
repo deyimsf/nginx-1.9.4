@@ -82,14 +82,14 @@ static ngx_int_t ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx);
  *
  * ctx->in: 要发送的数据,该方法会遍历该链表,把链表中的数据组装成一个可以直接发送的链表,用局部变量out表示,
  * 	  如果当前ctx->in->buf可以直接发送出去,那么就直接把当前链表项ctx->in追加到out链的尾部;
- *	  如果当前ctx->in->buf不可以直接发送出去,那么就需要为其创建buf和chain,将数据拷贝到buf中,并将其追加到ut链的尾部;
+ *
+ *	  如果当前ctx->in->buf不可以直接发送出去,那么就需要为其创建buf和chain,将数据拷贝到buf中,并将其追加到out链的尾部:
+ *      创建的buf大小和个数由output_buffers指令决定,超过这个大小就让出资源,让别的事件去执行.
  *
  *    每形成一个out链就会执行下一个过滤器试着去发送一次数据,不关有没有完全发送完毕都会把out链表项全部移动到ctx->busy链表
  *    下,然后out变量置空并继续装新的链表
  *
  *    ctx->busy链表中空闲的链表项会被释放到ctx->free或pool->chian中
- *
- *
  */
 ngx_int_t
 ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
@@ -335,6 +335,8 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
             }
 
             /*
+             * 真正发生数据拷贝的地方
+             *
              * 走到这里说明ctx->in->buf中的数据不能直接发送出去,需要先拷贝到ctx->buf中,然后在把ctx->buf追加到out链表中
              *
              * 如果ctx->in->buf中的数据在内存中则直接拷贝到ctx->buf中
@@ -343,6 +345,8 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
              *
              * 如果ctx->in->buf中的数据在文件中,并且支持sendfile,则不发生实际拷贝,只是把buf中的文件偏移量赋值给ctx->buf
              * 	(貌似这种情况会被上面的if (ngx_output_chain_as_is(ctx, ctx->in->buf))逻辑给截胡)
+             *
+             * 如果ctx->in中的数据大于ctx->buf的承受能力,那么ctx->in中的数据不会被一次拷贝完,需要后续继续拷贝
              *
              */
             rc = ngx_output_chain_copy_buf(ctx);
@@ -392,22 +396,56 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
         if (out == NULL && last != NGX_NONE) {
 
+        	/*
+        	 * 如果out不等于NULL的话就先调用后面的
+        	 * 		last = ctx->output_filter(ctx->filter_ctx, out);
+        	 * 把out发送出去
+        	 *
+        	 * 如果out等于NULL那么说明已经调用过下面的代码
+        	 * 		last = ctx->output_filter(ctx->filter_ctx, out);
+        	 * 将out中的数据发送到r->out中了,但是buf中的数据没有发送完毕,所以他对应的chain还没有被释放
+        	 * 而是放到了ctx->busy链中,并且这个时候创建的buf已经达到了ctx->bufs.num个,所以并没可用的
+        	 * buf来组装out链
+        	 * 于此同时当前请求的所有响应数据还没有发送完毕,因为调用完ctx->output_filter()方法后,返回
+        	 * 结果并不等于NGX_DONE(last == NGX_DONE)
+        	 *
+        	 * 此时如果ctx->in中还没有没读完的数据,比如ctx->in是一个2G的文件
+        	 * ctx->buf只有128M,也就是说我们要求每次读128M数据到缓存,那么在读的过程中整个ngx肯定是阻塞的,所以output_buffers的设置很关键
+        	 * 后续肯定还需要继续读,所以这里返回NGX_AGAIN
+        	 *
+        	 * 这里得出一个小结论,ngx使用我们指定的ctx->bufs缓存个数和大小来发送数据,也就是说不关要发送
+        	 * 给客户端的数据有多大,ngx最多一次发送ctx->bufs多个数据,当没有闲置的buf的时候就让给别的事件
+        	 *
+        	 * 只有ctx->bufs被完全耗尽的时候才会进来,所以对于小的响应数据,比如100个字节和小的bufs,比如1个buf,每个buf20个字节
+        	 * 除非网络拥堵的连20个字节都没有发送完毕,否则是不会进来这里的
+        	 */
             if (ctx->in) {
                 return NGX_AGAIN;
             }
 
+            /*
+             * 走到这里说明ctx->in中的数据已经发送完毕,本次已经没有数据可发了,所以out肯定等于NULL
+             */
             return last;
         }
 
         /*
          * 调用下一个过滤器,将out中的数据输出,如果out中的数据没有一次输出完毕会放到ctx->busy中继续输出,之后
-         * 只有不阻塞就会多次调用下一个过滤器进行输出
+         * 只要不阻塞就会多次调用下一个过滤器进行输出
          *
          * 注意这里的out不一定是全部的数据,比如不支持sendfile,那么文件中的数据不一定可以被完全读完
+         *
+         * ctx->filter_ctx里面放的是ngx_http_request_t对象
          */
         last = ctx->output_filter(ctx->filter_ctx, out);
 
         if (last == NGX_ERROR || last == NGX_DONE) {
+        	/*
+        	 * NGX_DONE代表?
+        	 *
+        	 * TODO 什么情况会进这里
+        	 */
+
             return last;
         }
 
@@ -774,6 +812,7 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
     in = ctx->in->buf;
     size = ctx->bufs.size;
+    // 打上可回收标记
     recycled = 1;
 
     if (in->last_in_chain) {
