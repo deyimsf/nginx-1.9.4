@@ -1479,7 +1479,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         clcf = lq->exact ? lq->exact : lq->inclusive;
 
         // 打印排好序的locations
-        // printf("-------location------->%s %d  %s\n",clcf->name.data,clcf->noname,clcf->root.data);
+        printf("-------location------->%s %d  %s\n",clcf->name.data,clcf->noname,clcf->root.data);
 
         if (ngx_http_init_locations(cf, NULL, clcf) != NGX_OK) {
             return NGX_ERROR;
@@ -1734,12 +1734,17 @@ ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
  * 每个server{}块和location{}块都会维护一个location队列
  * locations队列排完序后的顺序如下:
  *  1. = (精确匹配,终止匹配) | 无修饰符 | ^~ (和无修饰符相同,但终止匹配)
- *    按字符倒序排序
+ *    按字符升序排序,如果相同则精确匹配(=)的排在前面
+ *    无修饰符和^~修饰符的,不允许出现相同的location
  *  2. ~* | ~
  *    按照在配置文件中的位置排序,终止匹配
- *  3. @ (内部匹配)
+ *  3. @ (内部匹配,只匹配一次)
  *  4. if () {} 所有终止匹配都不会终止if
  *
+ * 所以基本上ngx把locaiton分成了四种,在这四种locaiton中又分成了三个匹配入口,其中:
+ *   1、2是一个入口,先匹配2中的location,如果没匹配到再匹配1中的location
+ *   3是一个入口,是一个内部匹配,外部用户看不到
+ *   4是一个入口,在rewrite模块中用脚本变量引擎触发的,和变量的运行方式一致
  */
 static ngx_int_t
 ngx_http_cmp_locations(const ngx_queue_t *one, const ngx_queue_t *two)
@@ -1768,6 +1773,7 @@ ngx_http_cmp_locations(const ngx_queue_t *one, const ngx_queue_t *two)
      * 如果第一个是有名字的(非if () {})
      * 第二个是没有名字的(if () {})
      * 则有名字的排在前面
+     * 则没有名字的排在后面
      */
     if (!first->noname && second->noname) {
         /* shift no named locations to the end */
@@ -1776,6 +1782,9 @@ ngx_http_cmp_locations(const ngx_queue_t *one, const ngx_queue_t *two)
 
     /*
      * 如果都没有名字,则不做排序
+     * 比如都是 if () {}就不排序了
+     *
+     * 从上面到这里的比较都是为了把没有名字的location放到最后
      */
     if (first->noname || second->noname) {
         /* do not sort no named locations */
@@ -1826,12 +1835,19 @@ ngx_http_cmp_locations(const ngx_queue_t *one, const ngx_queue_t *two)
 
 #endif
 
-    // 非正则、非named、非nonamed的location的比较,也就是除了 ~|~*|@|if () {} 这几个的比较
+    /**
+     * 非正则、非named、非nonamed的location的比较
+     * 也就是 无修饰 | ^~ | = 剩下这三种的比较
+     * 按字符升序排列,如果排序相同则精确匹配(=)排在前面
+     */
     rc = ngx_filename_cmp(first->name.data, second->name.data,
                           ngx_min(first->name.len, second->name.len) + 1);
 
     if (rc == 0 && !first->exact_match && second->exact_match) {
         /* an exact match must be before the same inclusive one */
+    	/*
+    	 * 这句保证对于相同名字的location,带等号的(精确匹配)排在其它两种前面
+    	 */
         return 1;
     }
 
