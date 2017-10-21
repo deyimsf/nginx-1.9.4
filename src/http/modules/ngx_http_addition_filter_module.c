@@ -165,11 +165,28 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
             {
                 return NGX_ERROR;
             }
+
+            /*
+             * 前置子请求发送完毕后r->postponed链表的结构可能是如下状态:
+             * 图1:  postponed   r_pp代表当前请求r对应的ngx_http_postponed_request_t对象
+             * 		----------
+             * 		|  r_pp  |
+             *      ----------
+             *          \
+             *          -----------
+             *          | before1 |
+             *          -----------
+             */
+
         }
     }
 
     if (conf->after_body.len == 0) {
         ngx_http_set_ctx(r, NULL, ngx_http_addition_filter_module);
+
+        /*
+         * 如果不需要发送后置子请求就直接调用下一个过滤器
+         */
         return ngx_http_next_body_filter(r, in);
     }
 
@@ -186,8 +203,30 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     /*
      * 先调用ngx_http_next_body_filter()方法将主请求的数据发给客户端,然后再发起后置子请求,这样
      * 就可以保证后置子请求的数据发生排在主请求内容之后
+     *
+     * 这里是使用last这个标志位来保证的,last等于一就表示当前链表in中包含了请求r的所有响应数据,他调用
+     * 后续过滤器后就会把in中的数据输出到r->postponed的后面
+     *
      */
     rc = ngx_http_next_body_filter(r, in);
+
+    /*
+     * 当执行完上面的方法后,r->postponed的状态图可能会像这样:
+     * 图2:  postponed   r_pp代表当前请求r对应的ngx_http_postponed_request_t对象
+	 *	    ----------
+	 * 		|  r_pp  |
+	 *      ----------
+	 *          \
+	 *          -----------       --------
+	 *          | before1 | --->  | data |
+	 *          -----------       --------
+	 * 可以看到图2比图1多了一个data节点,这个节点的数据就是当前请求r输出的数据,因为有子请求before1的存在
+	 * 所以他没有把数据直接输出到客户端,而是把数据暂存到了r->postpone链表的最后,只有before1的数据输出
+	 * 完毕后才会输出data节点的数据。
+	 *
+	 * 如果在一开始就没有发起图1中的子请求before1,那么就代表r->postponed链表是NUL,这样也就不会出现一个
+	 * data节点来暂存数据,而是和常规请求一样使用r->out来暂存没有发出去的数据。
+     */
 
     if (rc == NGX_ERROR || !last || conf->after_body.len == 0) {
 
@@ -197,18 +236,61 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     	 * 如果不是后一个buf,那现在还是不发送after子请求,万一中间有一次过滤器返回NGX_ERROR那不就白发了吗
     	 *
     	 * 如果conf->after_body.len == 0也就不用发了,因为根本没有这个after指令.
-    	 * 	这里判断是不是有点多余啊,因为上面已经有这个判断了 TODO
-    	 *
     	 */
         return rc;
     }
 
-    // 发起后置子请求
+    /*
+     * 如果前面存在before1这个子请求,那么当下面的方法执行完毕后,对于postponed可能会是如下的状态:
+     *  图3:  postponed   r_pp代表当前请求r对应的ngx_http_postponed_request_t对象
+     *		  --------
+     *		  | r_pp |
+     *		  --------
+     *			  \
+     *			-----------      --------      ----------
+     *			| before1 | ---> | data | ---> | after1 |
+     *			-----------      --------      ----------
+     * 其中data是一个数据节点,它里面存放了当前请求r中的所有响应数据
+     *
+     *
+     * 如果前面没有发起过前置子请求(before1),那么下面方法执行完毕后,postponed可能会是如下状态:
+     * 图4: postponed   r_pp代表当前请求r对应的ngx_http_postponed_request_t对象
+     *		  --------
+     *		  | r_pp |
+     *		  --------
+     *			  \
+     *		     ----------
+     *			 | after1 |
+     *			 ----------
+     * 可以看到没有数据节点data的存在,因为前请求r的数据都输出到客户端或存放到r->out中了
+     */
     if (ngx_http_subrequest(r, &conf->after_body, NULL, &sr, NULL, 0)
         != NGX_OK)
     {
         return NGX_ERROR;
     }
+
+    /*
+     * 如果当前请求既有前置请求,自己又有数据要输出,又有后置请求,那么在后续的执行过程中可能会有如下状态的postpoed链表:
+     * 图5:  postponed   r_pp代表当前请求r对应的ngx_http_postponed_request_t对象
+     *  	  --------
+     *		  | r_pp |
+     *		  --------
+     *			  \
+     *			+---------+      --------      ----------
+     *			| before1 | ---> | data | ---> | after1 |
+     *			+---------+      --------      ----------
+     *												\
+     *											   --------
+     *											   | data |
+     *											   --------
+     * 其中before1是当前可以向客户端输出数据的之请求,他的数据会直接输出到客户端,不会产生一个data节点
+     * before1后面的data是请求r_pp要输出的数据
+     * after1下面的data是after1要输出的数据
+     * 他们的最终输出过程如下:
+     * 	before1 --> data(before1后的) --> data(after1下的)
+     *
+     */
 
     // 发送完子请求后把上下文置空就行了,这样这个请求后续就不会再走这个过滤器了
     ngx_http_set_ctx(r, NULL, ngx_http_addition_filter_module);
@@ -216,6 +298,8 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     /*
      * 这里不需要再像其他模块那样调用ngx_http_next_body_filter()方法来结束,因为如果当前是子请求,那么
      * 子请求有自己的一套结束流程,如果当前是父请求,那么在上面已经调用完ngx_http_next_body_filter()方法了
+     *
+     * TODO 为什么不直接调用 ngx_http_output_filter(r, NULL);
      */
     return ngx_http_send_special(r, NGX_HTTP_LAST);
 }

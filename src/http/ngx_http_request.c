@@ -12,6 +12,15 @@
  * 上面这两个方法的地方
  *
  *
+ * 子请求通过ngx_http_run_posted_requests()方法真正执行,这个方法的作用是遍历r->main->posted_requests
+ * 链表中的子请求,然后依次调用对应子请求的写事件方法(write_event_handler)
+ *
+ * 在/src/http/ngx_http_core_module.c/ngx_http_subrequest()中会把子请求放入到r->main->posted_requests链表中
+ * 在/src/http/ngx_http_postponed_filter_module.c过滤器中会把为发送完数据的子请求再次放入到r->main->posted_requests链表中
+ *
+ *
+ *
+ *
  *
  */
 
@@ -1248,7 +1257,7 @@ ngx_http_process_request_uri(ngx_http_request_t *r)
 
 
 /**
- * 处理请求头
+ * 解析请求头
  */
 static void
 ngx_http_process_request_headers(ngx_event_t *rev)
@@ -2306,10 +2315,30 @@ ngx_http_request_handler(ngx_event_t *ev)
         r->read_event_handler(r);
     }
 
+    /*
+     * 每执行完一次事件都会执行这个链路下发起的子请求
+     */
     ngx_http_run_posted_requests(c);
 }
 
 
+/*
+ * 执行主请求posted_requests链表中的所有子请求
+ *
+ * 该方法会遍历r->main->posted_requests链表,然后调用其中的写事件方法
+ * 当遍历完毕后r->main->posted_requests就变成空了
+ *
+ * ngx使用ngx_http_post_request()方法向r->main->posted_requests链表中增加元素
+ * 比如在/src/http/ngx_http_postpone_filter_module.c过滤器中,会把当前请求中postponed链表
+ * 中的子请求全部通过ngx_http_post_request()方法放入到r->main->posted_requests链表中
+ *
+ *
+ * 对于一个普通请求来说有两个地方触发该方法
+ * 1. 当解析完主请求的请求后,通过调用ngx_http_process_request()方法来触发该方法
+ *
+ * 2. 主请求每执行一个事件都会通过ngx_http_request_handler()方法来触发该方法
+ *
+ */
 void
 ngx_http_run_posted_requests(ngx_connection_t *c)
 {
@@ -2450,9 +2479,14 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         return;
     }
 
+    /** 处理子请求的逻辑 **/
     if (r != r->main) {
+    	/*
+    	 * 能走到这里说明这是一个子请求
+    	 */
 
         if (r->buffered || r->postponed) {
+        	// TODO 什么情况走这里
 
             if (ngx_http_set_write_handler(r) != NGX_OK) {
                 ngx_http_terminate_request(r, 0);
@@ -2461,11 +2495,19 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             return;
         }
 
+      	/*
+		 * 能走到这里说明这是一个子请求,并且r->postponed肯定等于NULL
+		 */
+
         pr = r->parent;
 
         if (r == c->data) {
+        	/*
+        	 * 能走到这里说明该子请求就是当前向客户端输出数据的请求,并且它已经把数据输出完毕(完全输出到浏览器了)
+        	 */
 
             r->main->count--;
+            // 这个子请求已经结束了,所以把占用的请求数再加回去(创建子请求的时候该值减一了)
             r->main->subrequests++;
 
             if (!r->logged) {
@@ -2484,14 +2526,52 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
                               &r->uri, &r->args);
             }
 
+            // 标记这个请求已经完全执行完毕
             r->done = 1;
 
             // 当前子请求的数据已经输出完毕
             // 检查子请求的父请求下，是否还有子请求,如果有则说明，下一个可以输出数据的就是存在的这个子请求(pr->postponed->next)
+            /*
+             * 当前这个子请求输出完毕了,此时需要决定下次可以输出数据的请求
+             * 假设现在的情况是这样:
+             *  图1: pr->postponed
+             * 	    ----------
+             * 	    | parent |
+             * 	    ----------
+             * 	       \
+             * 	     --------       --------       --------
+             * 	     | sub1 | ----> | sub2 | ----> | sub3 |
+             * 	     --------       --------       --------
+             *
+             *  图2: pr->postponed
+             *  	----------
+             *  	| parent |
+             *  	----------
+             *  	    \
+             *  	   --------
+             *  	   | sub1 |
+             *  	   --------
+             */
             if (pr->postponed && pr->postponed->request == r) {
+
+            	/*
+            	 *  如果走这里,说明当前子请求r就是上图1中的sub1,既然sub1已经完全执行完毕了,那么就应该把sub1从链表中踢出去
+            	 *  图1: pr->postponed
+            	 * 	    ----------
+            	 * 	    | parent |
+            	 * 	    ----------
+            	 * 	       \
+            	 * 	      --------       --------
+            	 * 	      | sub2 | ----> | sub3 |
+            	 * 	      --------       --------
+            	 */
                 pr->postponed = pr->postponed->next;
             }
 
+            /*
+             * 不关是图1还是图2都会将c->data设置为pr,这就表示下次应该输出数据的是pr,后续ngx_http_postpone_filter过滤器
+             * 中的逻辑会根据pr->postponed的值来确定是否可以直接把pr中的数据输出出去。
+             */
             c->data = pr;
 
         } else {
@@ -2507,11 +2587,18 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             }
         }
 
-        // 将父请求pr添加到r->main->posted_requests中
-        // 下次事件到来的时候,注册在连接上的写事件,会调用ngx_http_run_posted_requests方法
-        // 这个方法会执行在r->main->posted_requests链中的所有请求的r->write_event_handler(r)方法
+        /*
+         * 把父请求pr放入到r->main->posted_requests链表中,这样等整个ngx_http_finalize_request()方法
+         * 返回后后续就会执行pr对应的写事件方法,这样才能把代码的执行权交给父请求pr
+         */
         if (ngx_http_post_request(pr, NULL) != NGX_OK) {
+        	/*
+        	 * 出错了为什么这个位置要加一
+        	 * TODO
+        	 */
             r->main->count++;
+
+            // 出错了, 结束这个子请求
             ngx_http_terminate_request(r, 0);
             return;
         }
@@ -2528,6 +2615,8 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
      * 表示需要继续发送数据,所以这里调用ngx_http_set_write_handler()方法来更改当前链路上的写事件方法
      *
      * 下面这四个标记可代表是否还有数据没有被发送出去
+     *
+     * r->buffered和c->buffered有啥区别  TODO
      */
     if (r->buffered || c->buffered || r->postponed || r->blocked) {
 
@@ -2703,6 +2792,7 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
     r->read_event_handler = r->discard_body ?
                                 ngx_http_discarded_request_body_handler:
                                 ngx_http_test_reading;
+    // 写事件
     r->write_event_handler = ngx_http_writer;
 
 #if (NGX_HTTP_SPDY)
@@ -2790,6 +2880,10 @@ ngx_http_writer(ngx_http_request_t *r)
         return;
     }
 
+    /*
+     * 调用body过滤器来处理响应体,唯一启动body过滤器的方法
+     * ngx_http_top_body_filter
+     */
     rc = ngx_http_output_filter(r, NULL);
 
     ngx_log_debug3(NGX_LOG_DEBUG_HTTP, c->log, 0,
@@ -2814,7 +2908,11 @@ ngx_http_writer(ngx_http_request_t *r)
             ngx_add_timer(wev, clcf->send_timeout);
         }
 
-        // 将该事件更新到epoll中
+        /*
+         * 将该事件更新到epoll中
+         *
+         * TODO 再次注册写事件的目的是什么,这个事件什么时候被删除的?
+         */
         if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
             ngx_http_close_request(r, 0);
         }

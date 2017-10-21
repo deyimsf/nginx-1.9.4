@@ -2916,9 +2916,12 @@ ngx_http_subrequest(ngx_http_request_t *r,
     // 子请求的一个返回值(注意psr是一个值-结果参数)
     *psr = sr;
 
-    // 将该子请求放入到原始请求的post_requests链表尾部
-    // 这是当前请求关联的连接的读写事件是ngx_http_request_handler方法，
-    // 这个方法在最后会执行ngx_http_run_posted_request方法来激活在r->main->posted_requests上的子请求
+    /*
+     * 将该子请求放入到原始请求的post_requests链表尾部
+     *
+     * 此时当前请求r关联的读写事件是ngx_http_request_handler()方法这个方法在最后会执行
+     * ngx_http_run_posted_request方法来激活在r->main->posted_requests上的子请求
+     */
     return ngx_http_post_request(sr, NULL);
 }
 

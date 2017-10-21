@@ -12,7 +12,6 @@
  * 如果操作系统不支持sendfile方法,那么ngx就使用/src/os/unix/ngx_writev_chain()方法发送数据
  *
  *
- *
  * http模块中,各个配置信息结构体的关联方式:
  * 	1.在http核心模块的ngx_http_core_main_conf_t里面有一个servers数组,用来关联http{}块下的所有server{}
  *
@@ -129,6 +128,22 @@
  *
  *
  *
+ * 一个主请求的开始:
+ *  1.当请求过来的时候先执行ngx_http_init_connection()方法获取tcp连接
+ *  2.然后设置c->read->handler = ngx_http_wait_request_handler
+ *
+ *  3.ngx_http_wait_request_handler等待正真的请求数据过来,然后调用ngx_http_create_request()
+ *  4.来创建主请求,至此一个请求真正开始,并且c->data为当前请求
+ *
+ *  5.然后更改rev->->handler = ngx_http_process_request_line
+ *    ngx_http_process_request_line()方法处理请求行
+ *
+ *  6.请求行处理完毕后个更改rev->handler = ngx_http_process_request_headers
+ *    ngx_http_process_request_headers()方法解析请求头
+ *
+ *  7.请求头解析完毕后调用ngx_http_process_request()方法,这个方法开始调用
+ *      ngx_http_handler()方法执行ngx_http_core_run_phases()方法
+ *      ngx_http_run_posted_requests()方法执行子请求
  *
  */
 
