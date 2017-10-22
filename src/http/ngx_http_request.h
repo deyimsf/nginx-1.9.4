@@ -341,7 +341,7 @@ struct ngx_http_cleanup_s {
 
 
 /*
- * 子请求结束时的回调方法
+ * 子请求结束时的回调方法? 应该不是结束时,是每次输出数据后吧  TODO
  * r: 子请求
  * data: ngx_http_post_subrequest_t结构体的data字段
  * rc: 子请求的返回值
@@ -356,18 +356,33 @@ typedef struct {
 } ngx_http_post_subrequest_t;
 
 
+/*
+ * 用来表示某个请求的子请求的结构体
+ */
 typedef struct ngx_http_postponed_request_s  ngx_http_postponed_request_t;
-
 struct ngx_http_postponed_request_s {
+	/*
+	 * 父请求产生的子请求,该字段有值表示这是一个子请求节点,和out字段互斥
+	 */
     ngx_http_request_t               *request;
+
+    /*
+     * 父请求产生的数据,该字段有值表示这是一个数据节点,和reqeust字段互斥
+     */
     ngx_chain_t                      *out;
+
     ngx_http_postponed_request_t     *next;
 };
 
 
+/*
+ * 用来表示某个主请求下的所有子请求的结构体
+ */
 typedef struct ngx_http_posted_request_s  ngx_http_posted_request_t;
-
 struct ngx_http_posted_request_s {
+	/*
+	 * 主请求(request->main)关联的子请求
+	 */
     ngx_http_request_t               *request;
     ngx_http_posted_request_t        *next;
 };

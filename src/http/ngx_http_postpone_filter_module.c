@@ -6,9 +6,10 @@
 
 /*
  * 两个链表:
+ *  postponed
  *	posted_requests
- *	postponed
- * 这两个链表存放的都是ngx_http_posted_request_t对象
+ * 第一个链表中存放的是ngx_http_postponed_request_t对象
+ * 第二个链表中个存放的是ngx_http_posted_request_t对象
  *
  * 第一链表posted_requests存放主请求下的所有子请求
  * 第二个链表postponed存放每个请求的直接子请求
@@ -32,19 +33,35 @@
  *															--------
  * 其中sub1表示该他输出数据了,也就是此时的c->data。
  * 如果在整个请求过程中不会再产生子请求了,那么上图数据的输出顺序如下:
- *  sub1 --> sub2下的data --> sub2后的data1 --> sub4下的data --> sub4后的data --> sub3后的data2
+ *   sub1 --> sub2下的data --> sub2后的data1 --> sub4下的data --> sub4后的data --> sub3后的data2
+ * c->data始终代当前事件要执行的请求,所以说当事件到来后,c->data中存放的是哪个请求,那就触发哪个请求的写事件方法
+ *
+ * 除了用c->data的方式触发请求执行,另一个方式是使用ngx_http_run_posted_requests()方法这个方法的作用是遍历
+ * r->main->posted_requests链表中的子请求,然后依次调用对应子请求的写事件方法(write_event_handler)
+ *
+ * 基本上用ngx_http_run_posted_requests()方法的作用是快速触发子请求,比如一个主请求的事件中一次发起5个人子请求
+ * 那么这5个子请求会都放到r->main->posted_requests链中,在本次事件的末尾调用一下该方法,然后这5个子请求就都触发了
+ * 如果这5个子请求都是需要从upstream中获取数据的,那么我们就可以并行的接收子请求的数据
+ *
+ * 当然如果不用他就只能用c->data的方法一个一个的触发了,那么用c->data的效率就比较低了,因为它是有序发起子请求的,也就
+ * 是一个子请求返回所有数据后再发起另一个.
+ *
  *
  * ngx_http_finalize_request()方法中的有处理子请求的逻辑,它会向上移动c->data值,比如当sub1数据输出完毕
  * 后把c->data设置为main,后续该过滤器会通过main->postponed的判断来执行并设置c->data为sub2
  *
- * 子请求通过ngx_http_run_posted_requests()方法真正执行,这个方法的作用是遍历r->main->posted_requests
- * 链表中的子请求,然后依次调用对应子请求的写事件方法(write_event_handler)
  *
  * 方法/src/http/ngx_http_request.c/ngx_http_post_request()负责把子请求放入到r->main->posted_requests链表中
  * 用到ngx_http_post_request()方法的地方有:
  * 	  /src/http/ngx_http_core_module.c/ngx_http_subrequest()
  * 	  /src/http/ngx_http_postponed_filter_module.c
  * 等。
+ *
+ *
+ * 在http的整个请求过程中c->data在调用ngx_http_wait_request_handler()方法后,就一直表示可以向客户端输出
+ * 数据的请求对象。
+ * _request_handler()方法会调用ngx_http_create_request()创建主请求,并设置c->data为主请求。
+ *
  *
  */
 
@@ -94,7 +111,7 @@ static ngx_http_output_body_filter_pt    ngx_http_next_body_filter;
 
 
 /*
- * 处理子请求的过滤器?
+ * 处理子请求的过滤器
  */
 static ngx_int_t
 ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
@@ -107,17 +124,43 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug3(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http postpone filter \"%V?%V\" %p", &r->uri, &r->args, in);
 
-    // 当前不应该r请求输出数据，只是把获取的数据暂存起来
     /*
-     * TODO 关键点
-     *
-     * c->data是子请求的request对象?
+     * c->data中存放的是可以向客户端输出数据的请求
      * 在启动其请求的/src/http/ngx_http_core_module.c/ngx_http_subrequest()方法中会设置
      */
+
     if (r != c->data) {
 
+    	/*
+    	 * 走到这里说明还没有轮到请求r来向客户端发数据,此时r->postponed的状态图可能如下:
+    	 * 图1:
+    	 * 			   ----------
+    	 * 			   |  r_pp  |
+    	 * 			   ----------
+    	 * 			      \postponed
+    	 * 			      +------+      --------	 --------     --------
+    	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+    	 * 			      +------+		--------	 --------     --------
+    	 * 			      					\			 \
+    	 * 			      				   --------    --------
+    	 * 			      				   | data |    | data |
+    	 * 			      				   --------    --------
+    	 * 此时当前请求可能是除了sub1的任何一个子请求节点,比如r==sub2
+    	 */
+
         if (in) {
+
+        	/*
+        	 * 如果r是图1中的r_pp,下面的方法会把in中的buf数据移动到sub3后面的data节点中
+        	 *
+        	 * 如果r是图1中的sub2,会把in中的buf数据移动到sub2的下面
+        	 *
+        	 * 如果r是图1中的sub3,会把in中的buf数据移动到sub3的下面
+        	 */
             ngx_http_postpone_filter_add(r, in);
+
+            // 将数据暂存起来后就直接返回
+
             return NGX_OK;
         }
 
@@ -131,19 +174,79 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     }
 
     /*
-     * 如果是主请求,那么刚开始r->postponed一定为空,所以会直接走ngx_http_next_body_filter()方法
-     * 走正规流程,最后会走ngx_http_write_filter_module过滤器进行内容输出
-     *
-     * 能走到这里说明 r == c->data,代表该当前请求向浏览器输出数据了,那么具体该请求能不能向外输出数据
+     * *************** 能走到这里说明r == c->data ***********************
+     * 代表该当前请求向浏览器输出数据了,那么具体该请求能不能向外输出数据
      * 还需要看当前请求中有没有子请求,如果没有就直接输出,有的话就需要先把数据暂存起来
+     *
+     * 走到这里后可能的图形如下:
+     *
+     * 图2:
+     * 			   ----------
+     * 			   |  r_pp  |
+     * 			   ----------
+     * 			       \postponed
+     * 			      +------+      --------	 --------     --------
+     * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+     * 			      +------+		--------	 --------     --------
+     * 			      					\			 \
+     * 			      				   --------    --------
+     * 			      				   | data |    | data |
+     * 			      				   --------    --------
+     * 此时c->data == sub1->request, r == sub1->request
+     *
+     *
+     * 图:3
+	 * 			   				+--------+
+	 * 			   				|  r_pp  |
+	 * 			   				+--------+
+	 * 			     				 \postponed
+	 * 			      --------      --------	 --------     --------
+	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+	 * 			      --------		--------	 --------     --------
+	 * 			      					\			 \
+	 * 			      				   --------    --------
+	 * 			      				   | data |    | data |
+	 * 			      				   --------    --------
+	 * 此时c->data == r_pp->request, r == r_pp->request
+	 *
+	 *
+	 * 图:4
+	 * 			   			   					----------
+	 * 			   			   					|  r_pp  |
+	 * 			   			   					----------
+	 * 			     				 				\postponed
+	 * 			      --------      +------+	 --------     --------
+	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+	 * 			      --------		+------+	 --------     --------
+	 * 			      					\			 \
+	 * 			      				 --------    	--------
+	 * 			      				 | data |    	| data |
+	 * 			      				 --------    	--------
+	 * 此时c->data == sub2->request, r == sub2->request
+	 *
      */
 
     if (r->postponed == NULL) {
     	/*
+    	 * 如果r->postponed等于NULL则,r->parent->postponed的图形可能如图2
+    	 *
     	 * r->postponed为空代表,当前请求中已经不存在子请求了,所以可以把数据直接输出到客户端浏览器了
     	 * 也就是说可以直接向主请求(r->main)输出响应数据了
     	 */
         if (in || c->buffered) {
+        	/*
+        	 * 如果还有数据没有输出,则再次调用后续的过滤器,将本子请求产生的数据输出到主请求的客户端中
+             *
+        	 * 就像图2中展示的那样,如果有数据就直接输出到r->main中就行了
+        	 *
+        	 * copy过滤器会不停的触发当前的过滤器,除非无法把数据一次性的输出出去,这时候会返回NGX_AGIAN,否则copy是不
+        	 * 会返回的,会一直循环ctx->in中的数据进行输出
+        	 *
+        	 * 当copy返回后才会调用ngx_http_finalize_request()方法中的逻辑
+        	 *
+        	 * 因为此时c->data == sub1->request,所以只要sub1的数据没有输出完毕,每次事件过来后执行的都是sub->reqeust
+        	 * 中的写事件方法
+        	 */
             return ngx_http_next_body_filter(r->main, in);
         }
 
@@ -153,8 +256,8 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     }
 
     /*
-     * 走到这里说明该当前请求r输出数据了,但是r下面还存在子请求,所以先将该请求的数据暂存起来,放到r->postponed
-     * 链表的最后,并把ps->reqeust标志位NULL,代表这是一个数据对象
+     * 走到这里说明r->postponed != NULL,也就是说虽然该当前请求r输出数据了,但是r下面还存在子请求,比如图3或图4
+     * 所以应该先将该请求的数据暂存起来,然后再找出事实上可以输出数据的子请求,当然如果in为空则继续向下走
      */
     if (in) {
         ngx_http_postpone_filter_add(r, in);
@@ -165,8 +268,36 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
      *  1.把当前请求的r->postponed链表中第一个非数据节点,放入到r->main->posted_requests链表中
      *    后续会执行这个非数据节点
      *  2.把当前请求的r->postponed链表中连续的数据节点(遇到非数据节点则执行第一步)输出到客户端
-     * 每遍历一个链表项都会更新r->postponed链表,所以该循环也相当于弹出操作
      *
+     * 此时r->postponed的状态图可能如上面的图3,也可能是上面的图4,即
+     * 图:3
+	 * 			   				+--------+
+	 * 			   				|  r_pp  |
+	 * 			   				+--------+
+	 * 			     				 \postponed
+	 * 			      --------      --------	 --------     --------
+	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+	 * 			      --------		--------	 --------     --------
+	 * 			      					\			 \
+	 * 			      				   --------    --------
+	 * 			      				   | data |    | data |
+	 * 			      				   --------    --------
+     * 此时c->data == r_pp->request, r == r_pp->request, 并且 r->postponed != NULL
+     *
+     *
+     * 图:4
+	 * 			   			   					----------
+	 * 			   			   					|  r_pp  |
+	 * 			   			   					----------
+	 * 			     				 				\postponed
+	 * 			      --------      +------+	 --------     --------
+	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+	 * 			      --------		+------+	 --------     --------
+	 * 			      					\			 \
+	 * 			      				 --------    	--------
+	 * 			      				 | data |    	| data |
+	 * 			      				 --------    	--------
+	 * 此时c->data == sub2->request, r == sub2->request, 并且 r->postponed != NULL
      */
     do {
         pr = r->postponed;
@@ -177,6 +308,23 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
                            "http postpone filter wake \"%V?%V\"",
                            &pr->request->uri, &pr->request->args);
 
+            /*
+             * 因为pr->request是有值的,说明pr是一个请求节点,所以这里postponed图形只能是上面的图3
+			 * 图:3
+			 * 			   				+--------+
+			 * 			   				|  r_pp  |
+			 * 			   				+--------+
+			 * 			     				 \postponed
+			 * 			      --------      --------	 --------     --------
+			 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+			 * 			      --------		--------	 --------     --------
+			 * 			      					\			 \
+			 * 			      				   --------    --------
+			 * 			      				   | data |    | data |
+			 * 			      				   --------    --------
+			 * 此时c->data == r_pp->request, r == r_pp->request, 并且 r->postponed != NULL
+             */
+
             r->postponed = pr->next;
 
             /*
@@ -186,14 +334,52 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
             c->data = pr->request;
 
             /*
+             * 此时当上面的两句代码执行完毕后,图3就变成了如下图:
+			 * 图5:
+			 * 			   							----------
+			 * 			   							|  r_pp  |
+			 * 			   							----------
+			 * 			     				 			  \postponed
+			 * 			      --------      +------+	 --------     --------
+			 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+			 * 			      --------		+------+	 --------     --------
+			 * 			      					\			 \
+			 * 			      				   --------    --------
+			 * 			      				   | data |    | data |
+			 * 			      				   --------    --------
+			 * 此时c->data == sub2->request, r == r_pp->request
+			 *
+             * 后续需要做的是把sub2中的数据节点输出到r->main中,所以调用了ngx_http_post_request()方法
+             * 来触发sub2这个子请求的写事件执行
+             */
+
+            /*
              * 把子请求(pr->request)放入到r->main->posted_request链表中
+             *
+             * 当下面这个方法返回后会执行ngx_http_finalize_request()方法,该方法会调用
+             * ngx_http_set_write_handler(r)将sub2的写事件注册为ngx_http_writer
+             *
+             * 当前写事件执行完毕后会立即执行ngx_http_run_posted_requests()方法,从而触发sub2->request
+             * 写事件的执行,sub2->request的写事件方法ngx_http_writer
              */
             return ngx_http_post_request(pr->request, NULL);
         }
 
         /*
-         * 走到这里说明pr->request == NULL, ngx用pr->request == NULL来代表这是一个数据节点
-         * 既然是数据节点那就可以把数据直接输出到客户端了
+         * 走到这里说明pr->request == NULL,那此时r->postponed的图形就只能是图4:
+		 * 图:4
+		 * 			   			   					----------
+		 * 			   			   					|  r_pp  |
+		 * 			   			   					----------
+		 * 			     				 				\postponed
+		 * 			      --------      +------+	 --------     --------
+		 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+		 * 			      --------		+------+	 --------     --------
+		 * 			      					\postponed	 \
+		 * 			      				 --------    	--------
+		 * 			      				 | data |    	| data |
+		 * 			      				 --------    	--------
+		 * 此时c->data == sub2->request, r == sub2->request
          */
 
         if (pr->out == NULL) {
@@ -206,7 +392,7 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
                            &r->uri, &r->args);
 
             /*
-             * 把该数据节点的数据输出到客户端
+             * 把该数据节点的数据输出到客户端(主请求代表的客户端)
              */
             if (ngx_http_next_body_filter(r->main, pr->out) == NGX_ERROR) {
                 return NGX_ERROR;
@@ -218,34 +404,70 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
          */
         r->postponed = pr->next;
 
+        /*
+         * 上面代码执行完毕后,图4会变成如下形式:
+         *
+		 * 图:6
+		 * 			   			   					----------
+		 * 			   			   					|  r_pp  |
+		 * 			   			   					----------
+		 * 			     				 				\postponed
+		 * 			      --------      +------+	 --------     --------
+		 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+		 * 			      --------		+------+	 --------     --------
+		 * 			      				   \postponed	 \
+		 * 			      				     		    --------
+		 * 			      				 			   	| data |
+		 * 			      				 			   	--------
+		 * 此时c->data == sub2->request, r == sub2->request
+		 * 可以看到sub2下面的data数据消失了,也就是说sub2->postponed==NULL
+		 * 然后就会跳出循环,后续会保持这种图形进入到ngx_http_finalize_request()方法
+         */
     } while (r->postponed);
+
+    // 不再调用后续过滤器,直接返回
 
     return NGX_OK;
 }
 
 
+/*
+ * 该方法的作用是把链表in中的数据(buf),移动到链表r->postponed的尾部的数据节点中
+ * 如果存在数据节点则创建一个在移动数据
+ */
 static ngx_int_t
 ngx_http_postpone_filter_add(ngx_http_request_t *r, ngx_chain_t *in)
 {
     ngx_http_postponed_request_t  *pr, **ppr;
 
+    /*
+	 * 如果当前请求存在postponed链表,则找出链表的尾部,如果尾部pr->request == NULL
+	 * 那么说明该pr就是数据节点,直接将链表in中的数据buf追加到pr->out链表中即可
+	 *
+	 * 如果当前请求不存在postponed链表,则创建一个pr,然后将pr->request设置为NULL,也
+	 * 是说把新创建的pr当做是一个数据节点,然后再把in中的数据buf追加到pr->out中即可
+	 */
+
     if (r->postponed) {
+
         for (pr = r->postponed; pr->next; pr = pr->next) { /* void */ }
 
-        /*
-         *
-         */
-
         if (pr->request == NULL) {
+        	// 发现数据节点
             goto found;
         }
 
+        // 最后一个不是数据节点
         ppr = &pr->next;
 
     } else {
+    	// 不存在数据节点
         ppr = &r->postponed;
     }
 
+    /*
+     * 不存在数据节点,所以这里需要自己创建一个数据节点
+     */
     pr = ngx_palloc(r->pool, sizeof(ngx_http_postponed_request_t));
     if (pr == NULL) {
         return NGX_ERROR;
@@ -259,6 +481,9 @@ ngx_http_postpone_filter_add(ngx_http_request_t *r, ngx_chain_t *in)
 
 found:
 
+	/*
+	 * 将链表in中的buf数据移动到pr->out链表中
+	 */
     if (ngx_chain_add_copy(r->pool, &pr->out, in) == NGX_OK) {
         return NGX_OK;
     }

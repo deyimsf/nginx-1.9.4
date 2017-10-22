@@ -2486,8 +2486,27 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
     	 */
 
         if (r->buffered || r->postponed) {
-        	// TODO 什么情况走这里
-
+        	/*
+        	 * 在copy过滤器中会设置这个值:
+        	 *		r->buffered |= NGX_HTTP_COPY_BUFFERED;
+        	 *
+        	 * r->bufferd有值代表子请求的数据还没有输出完毕,比如子请求是一个很大的文件,所以一次只能读部分数据到内存
+        	 * 当数据没有被完全读出并输出时r->buffered是一直有值的,比如下面的图像
+			 * 			   ----------
+			 * 			   |  r_pp  |
+			 * 			   ----------
+			 * 			       \postponed
+			 * 			      +------+      --------	 --------     --------
+			 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+			 * 			      +------+		--------	 --------     --------
+			 * 			      					\			 \
+			 * 			      				   --------    --------
+			 * 			      				   | data |    | data |
+			 * 			      				   --------    --------
+			 * 比如sub1->request就是当前请求r,他关联了一个很大的文件,所以就需要一点一点输出数据
+			 * 因为此时c->data == sub1->request,所以每次写事件发生时都会触发sub1->request
+			 * 的写事件
+        	 */
             if (ngx_http_set_write_handler(r) != NGX_OK) {
                 ngx_http_terminate_request(r, 0);
             }
@@ -2496,14 +2515,47 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         }
 
       	/*
-		 * 能走到这里说明这是一个子请求,并且r->postponed肯定等于NULL
+		 * 能走到这里说明这是一个子请求,并且r->postponed肯定等于NULL,并且r->out中也没有数据了
+		 *
+		 * 所以他的postponed图形可能是这样:
+		 * 图1:
+		 * 			   ----------
+		 * 			   |  r_pp  |
+		 * 			   ----------
+		 * 			      \postponed
+		 * 			      +------+      --------	 --------     --------
+		 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+		 * 			      +------+		--------	 --------     --------
+		 * 			      					\			 \
+		 * 			      				   --------    --------
+		 * 			      				   | data |    | data |
+		 * 			      				   --------    --------
+		 *
+		 *
+		 * 图2:
+		 *
+		 * 			   			   				----------
+		 * 			   			   				|  r_pp  |
+		 * 			   			   				----------
+		 * 			     				 		  \postponed
+		 * 			  --------      +------+	 --------     --------
+		 * 			  | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+		 * 			  --------		+------+	 --------     --------
+		 * 			      			   \postponed	 \
+		 * 			      				     		--------
+		 * 			      				 			| data |
+		 * 			      				 			--------
 		 */
-
         pr = r->parent;
 
         if (r == c->data) {
         	/*
         	 * 能走到这里说明该子请求就是当前向客户端输出数据的请求,并且它已经把数据输出完毕(完全输出到浏览器了)
+        	 * 就想图1和图2展示的那样
+        	 *
+        	 * 此时如果是图1,则r == sub1->request, c->data == sub1->request
+        	 *
+        	 * 此时如果是图2,则r == sub2->request, c->data == sub2->request
         	 */
 
             r->main->count--;
@@ -2529,48 +2581,70 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             // 标记这个请求已经完全执行完毕
             r->done = 1;
 
-            // 当前子请求的数据已经输出完毕
-            // 检查子请求的父请求下，是否还有子请求,如果有则说明，下一个可以输出数据的就是存在的这个子请求(pr->postponed->next)
             /*
              * 当前这个子请求输出完毕了,此时需要决定下次可以输出数据的请求
-             * 假设现在的情况是这样:
-             *  图1: pr->postponed
-             * 	    ----------
-             * 	    | parent |
-             * 	    ----------
-             * 	       \
-             * 	     --------       --------       --------
-             * 	     | sub1 | ----> | sub2 | ----> | sub3 |
-             * 	     --------       --------       --------
-             *
-             *  图2: pr->postponed
-             *  	----------
-             *  	| parent |
-             *  	----------
-             *  	    \
-             *  	   --------
-             *  	   | sub1 |
-             *  	   --------
              */
             if (pr->postponed && pr->postponed->request == r) {
 
             	/*
-            	 *  如果走这里,说明当前子请求r就是上图1中的sub1,既然sub1已经完全执行完毕了,那么就应该把sub1从链表中踢出去
-            	 *  图1: pr->postponed
-            	 * 	    ----------
-            	 * 	    | parent |
-            	 * 	    ----------
-            	 * 	       \
-            	 * 	      --------       --------
-            	 * 	      | sub2 | ----> | sub3 |
-            	 * 	      --------       --------
+            	 * 如果走这里,说明当前子请求r是上图1中的sub1,既然sub1已经完全执行完毕了,那么就应该把sub1从链表中踢出去
+            	 * 执行完pr->postponed = pr->postponed->next;语句后,变成如下图形
+            	 * 图3:
+				 * 			   				----------
+				 * 			   				|  r_pp  |
+				 * 			   				----------
+				 * 			     				 \postponed
+				 * 			      +------+      --------	 --------     --------
+				 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+				 * 			      +------+		--------	 --------     --------
+				 * 			      					\			 \
+				 * 			      				   --------    --------
+				 * 			      				   | data |    | data |
+				 * 			      				   --------    --------
+				 * r == sub1->request, c->data == sub1->request
             	 */
                 pr->postponed = pr->postponed->next;
             }
 
             /*
-             * 不关是图1还是图2都会将c->data设置为pr,这就表示下次应该输出数据的是pr,后续ngx_http_postpone_filter过滤器
+             * 走到这里就只能是图2或图3了
+             *
+             * 不关是图3还是图3都会将c->data设置为pr,这就表示下次应该输出数据的是pr,后续ngx_http_postpone_filter过滤器
              * 中的逻辑会根据pr->postponed的值来确定是否可以直接把pr中的数据输出出去。
+             *
+             * 如果此时是图2,那么执行完c->data = pr;这一句后,图2会变成如下
+			 * 图4:
+			 *
+			 * 			   			   				+--------+
+			 * 			   			   				|  r_pp  |
+			 * 			   			   				+--------+
+			 * 			     				 		  \postponed
+			 * 			  --------      --------	 --------     --------
+			 * 			  | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+			 * 			  --------		--------	 --------     --------
+			 * 			      			   \postponed	 \
+			 * 			      				     		--------
+			 * 			      				 			| data |
+			 * 			      				 			--------
+			 * 此时c->data变成了r_pp->request,r不变(也没法变)还是sub2->request
+			 *
+			 *
+			 * 如果此时是图3,那么执行完c->data = pr;这一句后,图3会变成如下
+			 * 图:5
+			 * 			   				+--------+
+			 * 			   				|  r_pp  |
+			 * 			   				+--------+
+			 * 			     				 \postponed
+			 * 			      --------      --------	 --------     --------
+			 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
+			 * 			      --------		--------	 --------     --------
+			 * 			      					\			 \
+			 * 			      				   --------    --------
+			 * 			      				   | data |    | data |
+			 * 			      				   --------    --------
+			 * 此时c->data变成了r_pp->request,r不变(也没法变)还是sub1->request
+			 *
+			 * 可以看到不管怎么样,c->data都变成了r_pp->request
              */
             c->data = pr;
 
@@ -2590,6 +2664,9 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         /*
          * 把父请求pr放入到r->main->posted_requests链表中,这样等整个ngx_http_finalize_request()方法
          * 返回后后续就会执行pr对应的写事件方法,这样才能把代码的执行权交给父请求pr
+         *
+         * 此时pr是当前请求的父请求(r->request),把控制权又叫给了父请求,当如请求触发后会在postponed_filter过滤
+         * 器中将可以输出数据的请求设置为他postponed链中第一个非数据节点
          */
         if (ngx_http_post_request(pr, NULL) != NGX_OK) {
         	/*
@@ -2812,10 +2889,10 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
         ngx_add_timer(wev, clcf->send_timeout);
     }
 
-    // ??为什么要把这个写事件重新加入到事件框架中
-    // ??现在这个事件不是已经在事件框架中了吗
-    // ??难道每次事件发生后,在该连接上的该事件就被移除了？(不会移除) 所以要再加？
-    // ??还是说因为epoll的边沿触发的原因
+
+    /*
+     *
+     */
     if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
         ngx_http_close_request(r, 0);
         return NGX_ERROR;

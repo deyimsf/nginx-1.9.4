@@ -130,10 +130,11 @@
  *
  * 一个主请求的开始:
  *  1.当请求过来的时候先执行ngx_http_init_connection()方法获取tcp连接
+ *
  *  2.然后设置c->read->handler = ngx_http_wait_request_handler
  *
  *  3.ngx_http_wait_request_handler等待正真的请求数据过来,然后调用ngx_http_create_request()
- *  4.来创建主请求,至此一个请求真正开始,并且c->data为当前请求
+ *    来创建主请求,至此一个请求真正开始,并且c->data为当前请求,此后c->data就一直表示可以向客户端输出数据的请求
  *
  *  5.然后更改rev->->handler = ngx_http_process_request_line
  *    ngx_http_process_request_line()方法处理请求行
@@ -144,6 +145,22 @@
  *  7.请求头解析完毕后调用ngx_http_process_request()方法,这个方法开始调用
  *      ngx_http_handler()方法执行ngx_http_core_run_phases()方法
  *      ngx_http_run_posted_requests()方法执行子请求
+ *
+ *  8.ngx_http_core_run_phases()方法用来执行阶段引擎,它会一次调用各个阶段的checker,最终会调用到
+ *    内容checker(ngx_http_core_content_phase)
+ *
+ *    内容checker调用内容hanlder方法(r->content_handler),然后将返回值传递给(ngx_http_finalize_request)方法:
+ *    一般的内容handler方法(r->content_handler)都会通过调用ngx_http_output_filter()来执行过滤器,然后返回
+ *			ngx_http_finalize_request(r, r->content_handler(r));
+ *			return NGX_OK;
+ *	  至此,阶段引擎执行完毕,控制权交给ngx,ngx则继续执行下一个事件
+ *
+ *	9.如果数据没有别一次输出完毕,则在ngx_http_finalize_request()方法中调用ngx_http_set_write_handler()
+ *	  把当前请求的写事件方法设置为ngx_http_writer或者ngx_http_core_run_phases
+ *	  		r->write_event_handler = ngx_http_writer;
+ *	  		r->write_event_handler = ngx_http_core_run_phases;
+ *	  ngx_http_writer()方法会重新调用ngx_http_output_filter()重走过滤器
+ *	  ngx_http_core_run_phases()方法则重走阶段引擎,具体执行那个阶段看r->phase_handler的值
  *
  */
 
