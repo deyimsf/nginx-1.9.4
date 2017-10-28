@@ -15,25 +15,55 @@
  * 第二个链表postponed存放每个请求的直接子请求
  *
  * postponed链表某一时刻的状态图:
- *	    postponed
- *		--------
- *		| main |
- *		--------
- *		   \
- *		   +------+		  --------	    ---------     --------      ---------
- *		   | sub1 | ----> | sub2 | ---> | data1 | --->| sub3 | ---> | data2 |
- *		   +------+		  --------      ---------     --------      ---------
- *							  \							  \
- *							--------    		 		--------      --------
- *							| data | 					| sub4 | ---> | data |
- *							--------    				--------      --------
- *															\
- *															--------
- *															| data |
- *															--------
+ * (_req代表请求对象  _postpone代表postponed链表中的链表项  sub1_postpone代表sub1对应的postponed链表项)
+ *		   ==============
+ *		   | parent_req |
+ *		   ==============
+ *			   \*postponed
+ *		 	 -----------------      -----------------       -----------------
+ *		 	 | sub1_postpone | ---> | sub2_postpone | --->  | data_postpone |
+ *		 	 -----------------      -----------------       -----------------
+ *		 	   \*request			   \*request                 \*out
+ *			  +==========+	          ============
+ *			  | sub1_req |	          | sub2_req |
+ *			  +==========+	          ============
+ *					     				 \*postponed
+ *					                  -----------------       -----------------
+ *					                  | sub3_postpone | --->  | data_postpone |
+ *					                  -----------------       -----------------
+ *					                      \*request                  \*out
+ *					                    ============
+ *					                    | sub3_req |
+ *								        ============
+ *										   \*postponed
+ *									    -----------------
+ *									    | data_postpone |
+ *									    -----------------
+ *											  \*out
+ *
+ * 上面这个图看起来比较费劲,为了方便画图,我们把request和postpone合并一下看做是一个对象,就用subx表示,数据节点单独用data表示
+ * 那么上图可以简化成如下:
+ * (下图中subx即表示postpone链表项,又表示request对象; data仅表示postpone的数据链表项; parent仅表示reqeust对象)
+ *       ----------
+ *       | parent |
+ *       ----------
+ *           \*postpone
+ *           +------+      --------      --------
+ *           | sub1 | ---> | sub2 | ---> | data |
+ *           +------+      --------      --------
+ *                           \*postpone
+ *                           --------      --------
+ *                           | sub3 | ---> | data |
+ *  						 --------      --------
+ *  						    \
+ *  						   --------
+ *  						   | data |
+ *   						   --------
+ * 如此一来这个图形就简单了许多
+ *
  * 其中sub1表示该他输出数据了,也就是此时的c->data。
  * 如果在整个请求过程中不会再产生子请求了,那么上图数据的输出顺序如下:
- *   sub1 --> sub2下的data --> sub2后的data1 --> sub4下的data --> sub4后的data --> sub3后的data2
+ *   sub1产生的数据 --> sub3下的data --> sub3后的data --> sub2后的data
  * c->data始终代当前事件要执行的请求,所以说当事件到来后,c->data中存放的是哪个请求,那就触发哪个请求的写事件方法
  *
  * 除了用c->data的方式触发请求执行,另一个方式是使用ngx_http_run_posted_requests()方法这个方法的作用是遍历
@@ -48,7 +78,7 @@
  *
  *
  * ngx_http_finalize_request()方法中的有处理子请求的逻辑,它会向上移动c->data值,比如当sub1数据输出完毕
- * 后把c->data设置为main,后续该过滤器会通过main->postponed的判断来执行并设置c->data为sub2
+ * 后把c->data设置为parent,后续该过滤器会通过parent->postponed的判断来执行并设置c->data为sub2
  *
  *
  * 方法/src/http/ngx_http_request.c/ngx_http_post_request()负责把子请求放入到r->main->posted_requests链表中
@@ -61,7 +91,6 @@
  * 在http的整个请求过程中c->data在调用ngx_http_wait_request_handler()方法后,就一直表示可以向客户端输出
  * 数据的请求对象。
  * _request_handler()方法会调用ngx_http_create_request()创建主请求,并设置c->data为主请求。
- *
  *
  */
 
@@ -135,9 +164,9 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     	 * 走到这里说明还没有轮到请求r来向客户端发数据,此时r->postponed的状态图可能如下:
     	 * 图1:
     	 * 			   ----------
-    	 * 			   |  r_pp  |
+    	 * 			   | parent |
     	 * 			   ----------
-    	 * 			      \postponed
+    	 * 			      \*postponed
     	 * 			      +------+      --------	 --------     --------
     	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
     	 * 			      +------+		--------	 --------     --------
@@ -151,7 +180,7 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
         if (in) {
 
         	/*
-        	 * 如果r是图1中的r_pp,下面的方法会把in中的buf数据移动到sub3后面的data节点中
+        	 * 如果r是图1中的parent,下面的方法会把in中的buf数据移动到sub3后面的data节点中
         	 *
         	 * 如果r是图1中的sub2,会把in中的buf数据移动到sub2的下面
         	 *
@@ -182,9 +211,9 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
      *
      * 图2:
      * 			   ----------
-     * 			   |  r_pp  |
+     * 			   | parent |
      * 			   ----------
-     * 			       \postponed
+     * 			      \*postponed
      * 			      +------+      --------	 --------     --------
      * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
      * 			      +------+		--------	 --------     --------
@@ -197,9 +226,9 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
      *
      * 图:3
 	 * 			   				+--------+
-	 * 			   				|  r_pp  |
+	 * 			   				| parent |
 	 * 			   				+--------+
-	 * 			     				 \postponed
+	 * 			     				\*postponed
 	 * 			      --------      --------	 --------     --------
 	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 	 * 			      --------		--------	 --------     --------
@@ -207,14 +236,14 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
 	 * 			      				   --------    --------
 	 * 			      				   | data |    | data |
 	 * 			      				   --------    --------
-	 * 此时c->data == r_pp->request, r == r_pp->request
+	 * 此时c->data == parent, r == parent
 	 *
 	 *
 	 * 图:4
 	 * 			   			   					----------
-	 * 			   			   					|  r_pp  |
+	 * 			   			   					| parent |
 	 * 			   			   					----------
-	 * 			     				 				\postponed
+	 * 			     				 			  \*postponed
 	 * 			      --------      +------+	 --------     --------
 	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 	 * 			      --------		+------+	 --------     --------
@@ -272,9 +301,9 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
      * 此时r->postponed的状态图可能如上面的图3,也可能是上面的图4,即
      * 图:3
 	 * 			   				+--------+
-	 * 			   				|  r_pp  |
+	 * 			   				| parent |
 	 * 			   				+--------+
-	 * 			     				 \postponed
+	 * 			     				\*postponed
 	 * 			      --------      --------	 --------     --------
 	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 	 * 			      --------		--------	 --------     --------
@@ -282,14 +311,14 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
 	 * 			      				   --------    --------
 	 * 			      				   | data |    | data |
 	 * 			      				   --------    --------
-     * 此时c->data == r_pp->request, r == r_pp->request, 并且 r->postponed != NULL
+     * 此时c->data == parent  r == parent, 并且 r->postponed != NULL
      *
      *
      * 图:4
 	 * 			   			   					----------
-	 * 			   			   					|  r_pp  |
+	 * 			   			   					| parent |
 	 * 			   			   					----------
-	 * 			     				 				\postponed
+	 * 			     				 			  \*postponed
 	 * 			      --------      +------+	 --------     --------
 	 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 	 * 			      --------		+------+	 --------     --------
@@ -312,9 +341,9 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
              * 因为pr->request是有值的,说明pr是一个请求节点,所以这里postponed图形只能是上面的图3
 			 * 图:3
 			 * 			   				+--------+
-			 * 			   				|  r_pp  |
+			 * 			   				| parent |
 			 * 			   				+--------+
-			 * 			     				 \postponed
+			 * 			     				 \*postponed
 			 * 			      --------      --------	 --------     --------
 			 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 			 * 			      --------		--------	 --------     --------
@@ -322,7 +351,7 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
 			 * 			      				   --------    --------
 			 * 			      				   | data |    | data |
 			 * 			      				   --------    --------
-			 * 此时c->data == r_pp->request, r == r_pp->request, 并且 r->postponed != NULL
+			 * 此时c->data == parent, r == parent, 并且 r->postponed != NULL
              */
 
             r->postponed = pr->next;
@@ -337,9 +366,9 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
              * 此时当上面的两句代码执行完毕后,图3就变成了如下图:
 			 * 图5:
 			 * 			   							----------
-			 * 			   							|  r_pp  |
+			 * 			   							| parent |
 			 * 			   							----------
-			 * 			     				 			  \postponed
+			 * 			     				 			  \*postponed
 			 * 			      --------      +------+	 --------     --------
 			 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 			 * 			      --------		+------+	 --------     --------
@@ -347,7 +376,7 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
 			 * 			      				   --------    --------
 			 * 			      				   | data |    | data |
 			 * 			      				   --------    --------
-			 * 此时c->data == sub2->request, r == r_pp->request
+			 * 此时c->data == sub2->request, r == parent
 			 *
              * 后续需要做的是把sub2中的数据节点输出到r->main中,所以调用了ngx_http_post_request()方法
              * 来触发sub2这个子请求的写事件执行
@@ -369,13 +398,13 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
          * 走到这里说明pr->request == NULL,那此时r->postponed的图形就只能是图4:
 		 * 图:4
 		 * 			   			   					----------
-		 * 			   			   					|  r_pp  |
+		 * 			   			   					| parent |
 		 * 			   			   					----------
-		 * 			     				 				\postponed
+		 * 			     				 			  \*postponed
 		 * 			      --------      +------+	 --------     --------
 		 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 		 * 			      --------		+------+	 --------     --------
-		 * 			      					\postponed	 \
+		 * 			      				  \*postponed	 \
 		 * 			      				 --------    	--------
 		 * 			      				 | data |    	| data |
 		 * 			      				 --------    	--------
@@ -409,13 +438,13 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
          *
 		 * 图:6
 		 * 			   			   					----------
-		 * 			   			   					|  r_pp  |
+		 * 			   			   					| parent |
 		 * 			   			   					----------
-		 * 			     				 				\postponed
+		 * 			     				 			  \*postponed
 		 * 			      --------      +------+	 --------     --------
 		 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 		 * 			      --------		+------+	 --------     --------
-		 * 			      				   \postponed	 \
+		 * 			      				  \*postponed	 \
 		 * 			      				     		    --------
 		 * 			      				 			   	| data |
 		 * 			      				 			   	--------

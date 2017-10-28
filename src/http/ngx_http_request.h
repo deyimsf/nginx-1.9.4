@@ -409,8 +409,17 @@ struct ngx_http_request_s {
 
     ngx_connection_t                 *connection;
 
+    // 当前请求的一个上下文,用来存放各个模块在当前请求的上下文
     void                            **ctx;
+
+    /*
+     * 用来存放所有http模块在http{}内的配置结构体信息
+     */
     void                            **main_conf;
+
+    /*
+     * 用来存放所有http模块在server{}内的配置结构体信息
+     */
     void                            **srv_conf;
 
     /*
@@ -557,6 +566,7 @@ struct ngx_http_request_s {
     unsigned                          request_body_file_log_level:3;
     unsigned                          request_body_no_buffering:1;
 
+    // 子请求产生的数据需要在内存中
     unsigned                          subrequest_in_memory:1;
     unsigned                          waited:1;
 

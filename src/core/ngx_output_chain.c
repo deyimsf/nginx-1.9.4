@@ -695,8 +695,7 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
      * 的内存分配的对齐方式是不一样的
      * 	  一个使用ngx_create_temp_buf(pool, size)方法分配
      * 	  一个使用ngx_pmemalign(pool,size,ctx->alignment)方法分配
-     * 为啥要不一样? TODO 这算什么形式的优化?
-     *
+     * 第二种用的是directio方式,linux对这种方式要求对数据时,用于存放磁盘中数据的内存地址要按照pagesize倍数对齐
      */
 
     ctx->directio = 1;
@@ -706,7 +705,7 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
      * 偏移量必须是alignment的倍数,如果不是的话ngx后续就不会用directio方式读取文件
      *
      * 具体的处理方式是这样,先看file_pos是否是alignment的倍数,如果是则后续直接从file_pos位置开始读数据
-     * 就可以了,具体读多少个字节,会小于等于ctx->bufs.size指定的大小,所以最终读取的字节数不一样是alignment
+     * 就可以了,具体读多少个字节,会小于等于ctx->bufs.size指定的大小,所以最终读取的字节数不一定是alignment
      * 的倍数。
      *
      * 如果第一次从文件中读取的字节数不是alignment的倍数,或者file_pos的开始位置不是alignment的倍数,那么
@@ -727,13 +726,15 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     	/*
     	 * 余数等于零说明in->file_pos的值是ctx->alignment的倍数
     	 */
+
         if (bsize >= (off_t) ctx->bufs.size) {
 
         	/*
-        	 * 只有当本次要读取的文件中的字节数大于等于指定的缓存的时候才会真正开启directio
-        	 * (这里不会ctx->unaligned标记为1,因为实际上是对齐的)
+        	 * 只有当本次要读取的文件中的字节数大于等于指定的缓存的时候才会真正开启directio,这时才有可能读取到pagesize
+        	 * 倍数的数据(ctx->bufs.size需要设置为pagesize的倍数,而该值的单位一般是4096字节)
+        	 * (这里不会ctx->unaligned标记为1,因为实际上是对齐的,用指定的buf读取文件数据就可以)
         	 *
-        	 * 这里直接返回的话,后续的方法会按照ctx->bufs.size的大小来创建缓存
+        	 * 这里直接返回的话,后续的方法会按照ctx->bufs.size的大小来创建缓存或者从ctx->free中获取闲置的buf
         	 */
             return NGX_DECLINED;
         }

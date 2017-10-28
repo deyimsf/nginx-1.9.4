@@ -162,6 +162,25 @@
  *	  ngx_http_writer()方法会重新调用ngx_http_output_filter()重走过滤器
  *	  ngx_http_core_run_phases()方法则重走阶段引擎,具体执行那个阶段看r->phase_handler的值
  *
+ *
+ *
+ * 对于一个http请求,在其整个生命周中一般回调用两次ngx_http_finalize_request()方法
+ *   第一次:当请求的写事件方法还是ngx_http_core_run_phases()方法的时候,在最后一个阶段checker(ngx_http_core_content_phase)中会调用
+ *   			ngx_http_finalize_request(r, r->content_handler(r))方法或者
+ *   			ngx_http_finalize_request(r, rc)方法来结束请求
+ *   	   如果这一调用就可以把数据都输出完毕,那么只调用一次ngx_http_finalize_request()方法就可以了
+ *
+ *   第二次:当请求的响应数据没办法一次输出完毕的时候,在ngx_http_finalize_request()方法中会调用ngx_http_set_write_handler(r)方法,
+ *   	   将当前请求的写事件设置为ngx_http_writer()方法,而ngx_http_writer()方法会重新调用ngx_http_output_filter()方法来重启过滤器
+ *   	   来输出数据:
+ *   	   如果数据还是没有输出完毕,则直接返回等待一次事件到来后继续启动过滤器输出数据;
+ *   	   如果数据输出完毕了则第二次调用ngx_http_finalize_request()方法来结束这个请求;
+ *
+ *
+ *
+ *
+ *
+ *
  */
 
 
@@ -406,7 +425,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      *  -----
      *  | * |
      *  -----
-     *  \
+     *   \
      *   -----------------------
      *   | ngx_http_conf_ctx_t |
      *   -----------------------
@@ -425,7 +444,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	 *   -----              -----
 	 *	 | * |              | * |
 	 *	 -----              -----
-	 *	 \                 /      				   ctx
+	 *	  \                 /      				   ctx
 	 *	  -----------------       				  -----
 	 *	  | * |  ...  | * |       				  | * |
 	 *    -----------------       				  -----

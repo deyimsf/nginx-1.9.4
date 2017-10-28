@@ -780,6 +780,14 @@ ngx_module_t  ngx_http_core_module = {
 ngx_str_t  ngx_http_core_get_method = { 3, (u_char *) "GET " };
 
 
+/*
+ * 开始执行请求的方法
+ *
+ * 主请求在解析完请求头后会间接调用这个方法
+ * 子请求刚创建完毕后会把对应的写事件方法设置为这个方法
+ *
+ * 这个方法最终把请求对应的写事件方法设置为ngx_http_core_run_phases()方法,然后开始执行
+ */
 void
 ngx_http_handler(ngx_http_request_t *r)
 {
@@ -2048,6 +2056,12 @@ ngx_http_set_content_type(ngx_http_request_t *r)
 }
 
 
+/*
+ * 提取并设置请求uri的扩展名,比如
+ * 	 uri = /index.html
+ * 该方法执行完毕后,r->exten中存的字符串就变成了
+ * 	 html
+ */
 void
 ngx_http_set_exten(ngx_http_request_t *r)
 {
@@ -2735,8 +2749,6 @@ ngx_http_gzip_quantity(u_char *p, u_char *last)
  * ps: 一个结构体,子请求处理完毕后需要回到的方法和一些携带的信息会放在这个结构体中
  * flags: TODO 一些标记
  *
- * TODO 下个阶段任务
- *
  */
 ngx_int_t
 ngx_http_subrequest(ngx_http_request_t *r,
@@ -2751,7 +2763,9 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     r->main->subrequests--;
 
-    // 与原始请求关联的子请求数超过200个，则直接返回错误
+    /*
+     * ngx规定每个请求最多可以同时存在200个子请求,超过这个限制则直接返回错误
+     */
     if (r->main->subrequests == 0) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "subrequests cycle while processing \"%V\"", uri);
@@ -2767,7 +2781,9 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     sr->signature = NGX_HTTP_MODULE;
 
-    // 子请求与下游(客户端)的connection和父请求一样
+    /*
+     * 子请求的connection对象和父请求一样
+     */
     c = r->connection;
     sr->connection = c;
 
@@ -2784,7 +2800,9 @@ ngx_http_subrequest(ngx_http_request_t *r,
     }
 
     /*
-     * 获取父请求对应的server{}块对象,然后将对应的main|srv|loc_conf赋值给子请求
+     * 获取父请求对应的server{}块配置结构体对象,然后将对应的main|srv|loc_conf赋值给子请求
+     * 同时把父请求的loc_conf也赋值给子请求,如果后续子请求对应的locaiton()中没有没有任何的指令,
+     * 那么就会沿用父请求级别的loc_conf配置信息
      */
     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
     sr->main_conf = cscf->ctx->main_conf;
@@ -2826,7 +2844,8 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     if (args) {
     	/*
-    	 * 子请求默认并没有继承父请求的查询参数,而是有子请求发起方给出
+    	 * 子请求默认并没有继承父请求的查询参数,而是由子请求发起方给出
+    	 * 如果发起方不主动设置查询参数,那么子请求会过滤掉父请求的查询参数
     	 */
         sr->args = *args;
     }
@@ -2834,18 +2853,21 @@ ngx_http_subrequest(ngx_http_request_t *r,
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http subrequest \"%V?%V\"", uri, &sr->args);
 
-    // TODO 干啥的后续看
+    // 子请求产生的数据需要在内存中   TODO 干啥的后续看
     sr->subrequest_in_memory = (flags & NGX_HTTP_SUBREQUEST_IN_MEMORY) != 0;
+    // TODO
     sr->waited = (flags & NGX_HTTP_SUBREQUEST_WAITED) != 0;
 
     // 未解析的rui
     sr->unparsed_uri = r->unparsed_uri;
+    // 子请求统一使用get方法
     sr->method_name = ngx_http_core_get_method;
     sr->http_protocol = r->http_protocol;
 
+    // 设置子请求扩展名
     ngx_http_set_exten(sr);
 
-    sr->main = r->main;			// 原始请求
+    sr->main = r->main;			// 原始请求(主请求)
     sr->parent = r;				// 父请求
     sr->post_subrequest = ps;	// ngx_http_post_subrequest_t结构体中放置着子请求结束后的回调方法
     /*
@@ -2861,16 +2883,57 @@ ngx_http_subrequest(ngx_http_request_t *r,
     sr->write_event_handler = ngx_http_handler;
 
     /*
-     * TODO 好好看
+     * 这一步用来确定子请求sr是否可以成为向客户端输出数据的请求
      */
     if (c->data == r && r->postponed == NULL) {
+
     	/*
-    	 * 走到这里说明父请求r是第一次发送子请求,或者是父请求下的所有子请求都发送完数据了
+    	 * 我们假设一个父请求的作用就是直接发起三个子请求,发起的顺序是sub1、sub2、sub3,那么在向外界输出输出的时候肯定必须是先输出sub1
+    	 * 的数据在输出sub2的,最后输出sub3的.
     	 *
-    	 * 一个疑问: TODO
+    	 * ngx中为了确保子请求的数据可以有序(有子请求的创建时机决定)向外输出,采用了一个数状结构,其中每个请求都会包含一个
+    	 * postponed字段,该字段是一个链表,用来存放这个父请求下的直接子请求,像这样:(链表中存放的是ngx_http_postponed_request_t对象)
+    	 *		      parent_req
+    	 *		  --------------------
+    	 *		  | *postponed | ... |
+    	 *		  --------------------
+	     *			 		  \ sub1_postpone	    		 sub2_postpone                  sub3_postpone
+		 *		 			  -------------------------      -------------------------      -------------------------
+		 *		 			  | *request |*out| *next | ---> | *request |*out| *next | ---> | *request |*out| *next |
+		 *		 			  -------------------------      -------------------------      -------------------------
+		 *		 			    \sub1_req						\sub2_req
+		 *					   +------------+					+------------+
+    	 *					   | *postponed |					| *postponed |
+    	 *					   +------------+					+------------+
+    	 * 从上图可以看到sub1_postpone对应的子请求是先发起的,所以他里面的数据应该先输出到客户端,所以此时c->data是sub1
+    	 * 如果此时sub1又发起了一个子请求sub4,根据上图可知sub4就应该是先输出数据的子请求,结构应该如下图:
+    	 *    	        parent_req
+    	 *		   --------------------
+    	 *		   | *postponed | ... |
+    	 *		   --------------------
+	     *			 		  \ sub1_postpone	    		 sub2_postpone                  sub3_postpone
+		 *		 			  -------------------------      -------------------------      -------------------------
+		 *		 			  | *request |*out| *next | ---> | *request |*out| *next | ---> | *request |*out| *next |
+		 *		 			  -------------------------      -------------------------      -------------------------
+		 *		 			    \sub1_req						 \sub2_req
+		 *					   --------------------				 --------------------
+    	 *					   | *postponed | ... |				 | *postponed | ... |
+    	 *					   --------------------				 --------------------
+    	 *					       \
+		 *					   ---------------------------
+		 *					   | *request | *out | *next |
+    	 *					   ---------------------------
+    	 *					   		\sub4_req
+    	 *						   +------------------+
+    	 *						   | *postponed | ... |
+    	 *						   +------------------+
+    	 *
+    	 * 一个疑问:
     	 *    如果当前请求r也有数据要输出,并且也会发起一个子请求的,那么此时c->data肯定等于r
     	 *    并且因为是第一次发送子请求,所以r->postponed肯定也是空的,那么后续ngx是如何决定
     	 *    先把父请求的数据输出,然后再输出子请求数据的?
+    	 * 这种情况是不允许出现的,如果当前请求r有数据输出,那么必须等这些数据完全输出完毕或者已经完全存放到了r->out中
+    	 * 后才能再次发起子请求,不然的话数据的输出顺序是不可控的
     	 */
 
     	// 指定下次可以向客户端输出数据的子请求

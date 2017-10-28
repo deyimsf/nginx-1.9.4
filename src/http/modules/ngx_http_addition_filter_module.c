@@ -299,7 +299,18 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
      * 这里不需要再像其他模块那样调用ngx_http_next_body_filter()方法来结束,因为如果当前是子请求,那么
      * 子请求有自己的一套结束流程,如果当前是父请求,那么在上面已经调用完ngx_http_next_body_filter()方法了
      *
-     * TODO 为什么不直接调用 ngx_http_output_filter(r, NULL);
+     * 为什么要把父请求的最后一个buf->last_buf设置为0,如果不设置为0这里直接调用ngx_http_output_filter(r, NULL)不行吗?
+     * 或者说不设置最后一个buf->last_buf设置为0,而是这里直接使用上面的rc作为返回值?
+     *
+     * 答案是不行:
+     * 因为如果不把buf->last_buf设置为0,那么很有可能当这个父请求执行完毕后就直接关闭了(因为没有其它子请求了),如果父请求
+     * 都关闭了也就不可能在产生子请求了,所以才有了下面调用ngx_http_send_special()方法的动作.
+     *
+     * 前面为了发送after子请求需要先把主请求的数据发送完毕,但是又不能让后续的过滤器看到buf->last_buf标记(看到后请求就可能被关闭),
+     * 所以在发送之前把父请求的最后一个cl->buf->last_buf设置成了0,这样父请求即使把数据输出完毕了也不会去结束父请求.
+     * 当after子请求发送完毕后,通过调用ngx_http_send_special()方法来解除父请求的调用,ngx_http_send_special()
+     * 方法中会创建一个b->last_buf = 1的buf,然后调用ngx_http_output_filter()方法把这个buf传过去,此时父请求在将其所有的子
+     * 请求输出完毕后才可以正常结束.
      */
     return ngx_http_send_special(r, NGX_HTTP_LAST);
 }

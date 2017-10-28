@@ -2432,6 +2432,24 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
     }
 
     if (r != r->main && r->post_subrequest) {
+    	/*
+    	 * 子请求的回调方法,如果子请求没办法一次性将数据输出完毕,则该方法会被调用两次
+		 *  第一次: 当请求的写事件方法还是ngx_http_core_run_phases()方法的时候,在最后一个阶段checker(ngx_http_core_content_phase)中会调用
+		 *  第二次: 当请求的响应数据没办法一次输出完毕的时候,写事件方法会变成ngx_http_writer()方法,当所有数据输出完毕后会调用ngx_http_finalize_request()方法
+         *
+		 * r: 子请求
+		 * data: ngx_http_post_subrequest_t结构体的data字段
+		 * rc: 子请求的返回值
+		 *
+		 * typedef ngx_int_t (*ngx_http_post_subrequest_pt)(ngx_http_request_t *r,
+		 *	void *data, ngx_int_t rc);
+	     *
+		 * typedef struct {
+		 *	 ngx_http_post_subrequest_pt       handler;
+		 *	 void                             *data;
+		 * } ngx_http_post_subrequest_t;
+    	 *
+    	 */
         rc = r->post_subrequest->handler(r, r->post_subrequest->data, rc);
     }
 
@@ -2493,9 +2511,9 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         	 * r->bufferd有值代表子请求的数据还没有输出完毕,比如子请求是一个很大的文件,所以一次只能读部分数据到内存
         	 * 当数据没有被完全读出并输出时r->buffered是一直有值的,比如下面的图像
 			 * 			   ----------
-			 * 			   |  r_pp  |
+			 * 			   | parent |
 			 * 			   ----------
-			 * 			       \postponed
+			 * 			       \*postponed
 			 * 			      +------+      --------	 --------     --------
 			 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 			 * 			      +------+		--------	 --------     --------
@@ -2520,9 +2538,9 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 		 * 所以他的postponed图形可能是这样:
 		 * 图1:
 		 * 			   ----------
-		 * 			   |  r_pp  |
+		 * 			   | parent |
 		 * 			   ----------
-		 * 			      \postponed
+		 * 			      \*postponed
 		 * 			      +------+      --------	 --------     --------
 		 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 		 * 			      +------+		--------	 --------     --------
@@ -2535,13 +2553,13 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 		 * 图2:
 		 *
 		 * 			   			   				----------
-		 * 			   			   				|  r_pp  |
+		 * 			   			   				| parent |
 		 * 			   			   				----------
-		 * 			     				 		  \postponed
+		 * 			     				 		  \*postponed
 		 * 			  --------      +------+	 --------     --------
 		 * 			  | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 		 * 			  --------		+------+	 --------     --------
-		 * 			      			   \postponed	 \
+		 * 			      			   \*postponed	 \
 		 * 			      				     		--------
 		 * 			      				 			| data |
 		 * 			      				 			--------
@@ -2591,9 +2609,9 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             	 * 执行完pr->postponed = pr->postponed->next;语句后,变成如下图形
             	 * 图3:
 				 * 			   				----------
-				 * 			   				|  r_pp  |
+				 * 			   				| parent |
 				 * 			   				----------
-				 * 			     				 \postponed
+				 * 			     				 \*postponed
 				 * 			      +------+      --------	 --------     --------
 				 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 				 * 			      +------+		--------	 --------     --------
@@ -2616,13 +2634,13 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 			 * 图4:
 			 *
 			 * 			   			   				+--------+
-			 * 			   			   				|  r_pp  |
+			 * 			   			   				| parent |
 			 * 			   			   				+--------+
-			 * 			     				 		  \postponed
+			 * 			     				 		  \*postponed
 			 * 			  --------      --------	 --------     --------
 			 * 			  | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 			 * 			  --------		--------	 --------     --------
-			 * 			      			   \postponed	 \
+			 * 			      			   \*postponed	 \
 			 * 			      				     		--------
 			 * 			      				 			| data |
 			 * 			      				 			--------
@@ -2632,9 +2650,9 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 			 * 如果此时是图3,那么执行完c->data = pr;这一句后,图3会变成如下
 			 * 图:5
 			 * 			   				+--------+
-			 * 			   				|  r_pp  |
+			 * 			   				| parent |
 			 * 			   				+--------+
-			 * 			     				 \postponed
+			 * 			     				 \*postponed
 			 * 			      --------      --------	 --------     --------
 			 * 			      | sub1 | ---> | sub2 | --> | sub3 | --> | data |
 			 * 			      --------		--------	 --------     --------
@@ -2891,7 +2909,7 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
 
 
     /*
-     *
+     * TODO 这里调用这个方法的目的是啥?
      */
     if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
         ngx_http_close_request(r, 0);
@@ -2993,6 +3011,8 @@ ngx_http_writer(ngx_http_request_t *r)
         if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
             ngx_http_close_request(r, 0);
         }
+
+        // 直接返回,等待下一次事件到来再输出
 
         return;
     }
