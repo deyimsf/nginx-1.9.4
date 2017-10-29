@@ -33,6 +33,35 @@ typedef void (*ngx_event_handler_pt)(ngx_event_t *ev);
 typedef void (*ngx_connection_handler_pt)(ngx_connection_t *c);
 
 
+/*
+ * 以下返回码在不同的功能中有不同的意义,对于大部分功能其意义如下
+ *  NGX_OK: Operation succeeded.(操作成功)
+ *  NGX_ERROR: Operation failed.(操作失败)
+ *  NGX_AGAIN: Operation incomplete; call the function again.(操作未完成,会被再次调用)
+ *  NGX_DECLINED: Operation rejected, for example, because it is disabled in the configuration.
+ * 		This is never an error.(操作被拒绝. 比如它在配置中是被禁用的,但它绝对不是一个错误.)
+ *  NGX_BUSY: Resource is not available.(没有可用的资源.)
+ *  NGX_DONE: Operation complete or continued elsewhere. Also used as an alternative success code.
+ *  NGX_ABORT: Function was aborted. Also used as an alternative error code.
+ *
+ *
+ * 在阶段handler中这个返回值具体的意义如下:
+ *  NGX_OK: 注册的handler方法返回这个表示本阶段已经处理完毕,跳到下一个阶段.
+ *  NGX_DECLINED: 去执行这个阶段的下一个方法,如果当前handler方法已经是当前阶段的最后一个,那就去执行下一个阶段.
+ *  NGX_AGAIN, NGX_DONE: 暂定本handler执行,暂定的原因可以是一个异步I/O操作或者仅仅一个delay等
+ *  除了以上几个返回码,handler返回的其它任何码都被认为是这个请求的终结码,特别是http响应码(304、302等)
+ *
+ * 有些阶段的返回码和上面的稍有不同:
+ *  内容阶段(content phase)里面的handler(处理内容的handler)返回码,除了NGX_DECLINED都被视为请求终结码
+ *
+ *  访问阶段(access phase),in satisfy any mode, any return code other than NGX_OK, NGX_DECLINED,
+ *  NGX_AGAIN, NGX_DONE is considered a denial. If no subsequent access handlers allow or deny
+ *  access with a different code, the denial code will become the finalization code.
+ *
+ *
+ * 其它方法
+ *
+ */
 #define  NGX_OK          0
 #define  NGX_ERROR      -1
 #define  NGX_AGAIN      -2

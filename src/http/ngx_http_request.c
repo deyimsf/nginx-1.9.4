@@ -2316,7 +2316,7 @@ ngx_http_request_handler(ngx_event_t *ev)
     }
 
     /*
-     * 每执行完一次事件都会执行这个链路下发起的子请求
+     * 每执行完一次读写事件都会执行这个链路下发起的子请求
      */
     ngx_http_run_posted_requests(c);
 }
@@ -2596,7 +2596,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
                               &r->uri, &r->args);
             }
 
-            // 标记这个请求已经完全执行完毕
+            // 标记这个子请求已经完全执行完毕
             r->done = 1;
 
             /*
@@ -2688,7 +2688,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
          */
         if (ngx_http_post_request(pr, NULL) != NGX_OK) {
         	/*
-        	 * 出错了为什么这个位置要加一
+        	 * 出错了为什么这个位置要加一? 这里会发起一个并行操作?
         	 * TODO
         	 */
             r->main->count++;
@@ -3756,6 +3756,9 @@ ngx_http_close_request(ngx_http_request_t *r, ngx_int_t rc)
 
     r->count--;
 
+    /*
+     * count大于零是没办法结束主请求的,大于零说明主请求发起其它并并行操作还没有全部结束
+     */
     if (r->count || r->blocked) {
         return;
     }

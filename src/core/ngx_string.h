@@ -26,20 +26,30 @@ typedef struct {
 
 
 /*
- * 变量值
+ * 表示变量值
  */
 typedef struct {
+	// 变量值长度
     unsigned    len:28;
 
     unsigned    valid:1;
+    // 不要cache变量值(Do not cache result)
     unsigned    no_cacheable:1;
 
     /*
-     * 1:表示没有发现这个变量,也就是说该变量没有被定义过(即不存在于cmcf->variables中,也不存在于cmcv->variable-keys中)
+     * 表示没有发现这个变量
+     *  比如该变量没有被定义过(即不存在于cmcf->variables中,也不存在于cmcv->variable-keys中)
+     *  比如需要$arg_name这个变量,但是请求是并没有传递name这个入参
      */
     unsigned    not_found:1;
+
+    /*
+     * Used internally by the logging module to mark values that require escaping on output.
+     * 由日志模块在内部使用,标记这个值需要转义输出
+     */
     unsigned    escape:1;
 
+    // 变量值
     u_char     *data;
 } ngx_variable_value_t;
 

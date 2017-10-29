@@ -472,10 +472,56 @@ struct ngx_http_request_s {
     ngx_str_t                         http_protocol;
 
     ngx_chain_t                      *out;
+
+    /*
+     * Pointer to a main request object.
+     * This object is created to process a client HTTP request, as opposed to subrequests,
+     * which are created to perform a specific subtask within the main request.
+     *
+     * 指向一个http主请求对象,而不是用来完成子任务的子请求对象
+     */
     ngx_http_request_t               *main;
+
+    /*
+     * Pointer to the parent request of a subrequest.
+     *
+     * 指向当前子请求的父级对象
+     */
     ngx_http_request_t               *parent;
+
+    /*
+     * 一个当前请求要输出的数据和当前请求的子请求的列表,别表内部按照数据的发送和子请求的创建顺序排序.
+     * 这里列表由postpone过滤器来保证请求的输出顺序
+     * 例如:
+     * 		----------
+     * 		| parent |
+     * 		----------
+     * 			\
+     * 		   --------      --------      --------
+     * 		   | sub1 | ---> | data | ---> | sub2 |
+     * 		   --------      --------      --------
+     *
+     */
     ngx_http_postponed_request_t     *postponed;
+
+    /*
+     * 指向一个处理程序,当子请求结束的时候调用该处理程序.
+     *
+     * 实际上至少有两次被调用,第一次是当执行完content_phase阶段checker后通过调用finalize_request方法来触发
+     * 这个处理程序;第二次是子请求真正执行完毕后通过调用finalize_request方法来触发
+     */
     ngx_http_post_subrequest_t       *post_subrequest;
+
+    /*
+     * 一个请求列表,ngx通过调用列表中存放的请求对象的write_event_handler()方法来启动或者恢复这个请求
+     *
+     * 通常通过ngx_http_post_request(r, NULL)方法把请求放入主请求的这个列表中.
+     * 提交到该列表的请求通过ngx_http_run_posted_requests(c)方法触发,通常调用完一个请求的读写事件方法
+     * 后就会调用ngx_http_run_posted_requests()方法
+     *
+     * 对于http请求来说,这个链接上的读写事件方法都是ngx_http_request_handler(),该方法会调用请求的读写
+     * 方法read|write_event_handler(),最后再调用ngx_http_run_posted_requests()
+     */
     ngx_http_posted_request_t        *posted_requests;
 
     /*
@@ -523,6 +569,31 @@ struct ngx_http_request_s {
      * 如果减去一后的值等于零,那么就不会在允许创建子请求,所以ngx中子请求最多200个
      */
     unsigned                          subrequests:8;
+
+    /*
+     * 一个请求引用计数器,这个字段仅对主请求有效
+     *
+     * 通过 r->main->count++ 这种方式来增加这个计数器
+     * 通过调用ngx_http_finalize_request(r, rc)方法来减小计数器
+     *
+     * 创建一个子请求和读取请求体都需要增加了这个计数器
+     *
+     * 只有这个计数器为0的时候才能结束这个主请求
+     *
+     * ngx设计这个字段的目的是为了能够正确关闭主请求,因为ngx中的大部分操作都是"异步并行"执行的
+     * 一个例子:
+     * 	假设一个主请求同时发起了三个子请求,在ngx中这四个请求(加上主请求)并不是按照发起的顺序同步
+     * 	执行的,当这些请求被发起后他们都各自并行执行,如果这个时候主请求先执行完毕,那么他会调用请求
+     * 	结束方法去关闭请求对应的资源,此时资源真的被关闭后会发生什么情况的?其它三个子请求肯定会因为
+     * 	找不到对应的资源而不知所错。
+     * 另一个例子:
+     *  假设一个主请求需要读取请求体,这个读请求体和主请求本身的处理也是一个并行操作,如果请求体非常
+     *  大,就有可能在请求体还没有读完的时候主请求已经独立完成了,如果这个时候去释放主请求的资源,那
+     *  读请求体的操作就会不知所错了。
+     * 为了避免出现上面的情况,ngx设计了一个主请求引用计数器,这个计数器用来记录某个主请求在执行时与
+     * 它并行的动作的个数,每个动作再完成后都会主动将计数器减一,主请求也会根据这个技术器的值来确定是
+     * 否可以关闭并释放器对应的资源。
+     */
     unsigned                          count:8;
     unsigned                          blocked:8;
 
