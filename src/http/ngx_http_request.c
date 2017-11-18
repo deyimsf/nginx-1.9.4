@@ -2396,6 +2396,30 @@ ngx_http_post_request(ngx_http_request_t *r, ngx_http_posted_request_t *pr)
 }
 
 
+/*
+ * 通过该方法来告诉ngx请求结束.
+ * 通常在content handler中通过过滤器把数据输出之后,使用这个方法在结束请求.如果过滤器无法一次
+ * 将数据输出完毕,那么这个方法会把写事件方法设置为ngx_http_writer()方法.
+ *
+ * 这个方法会对rc值为下面的情况做特殊处理:
+ * 	NGX_DONE:
+ * 		快速结束请求, 值为他则表示这个请求结束,可以把主请求的count减去1,然后销毁这个请求对象
+ *
+ * 	NGX_ERROR、NGX_HTTP_REQUEST_TIME_OUT(408)、NGX_HTTP_CLIENT_CLOSED_REQUEST(409):
+ *		Error finalization. Terminate the request as soon as possible and close the client connection.
+ *
+ *  NGX_HTTP_CREATED (201)、NGX_HTTP_NO_CONTENT (204)、NGX_HTTP_SPECIAL_RESPONSE(300):
+ *		Special response finalization. For these values nginx either sends to the client a default
+ *		response page for the code or performs the internal redirect to an error_page location if
+ *		that is configured for the code.
+ *	其它:
+ *		Other codes are considered successful finalization codes and might activate the request
+ *		writer to finish sending the response body. Once the body is completely sent, the request
+ *		count is decremented. If it reaches zero, the request is destroyed, but the client connection
+ *		can still be used for other requests. If count is positive, there are unfinished activities
+ *		 within the request, which will be finalized at a later point.
+ *
+ */
 void
 ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 {
@@ -2667,6 +2691,9 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             c->data = pr;
 
         } else {
+        	/*
+        	 * 非活跃请求(inactive)结束走这个逻辑,这个逻辑可以把非活跃请求的done字段设置为1
+        	 */
 
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                            "http finalize non-active request: \"%V?%V\"",
@@ -2674,6 +2701,10 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 
             r->write_event_handler = ngx_http_request_finalizer;
 
+            /*
+             * 非活跃请求(inactive)结束,也就是说此时不该当前请求向外输出数据,并且有设置NGX_HTTP_SUBREQUEST_WAITED
+             * 标记,这个标记的意思就是当请求结束后设置r->done为1
+             */
             if (r->waited) {
                 r->done = 1;
             }

@@ -2853,7 +2853,11 @@ ngx_http_subrequest(ngx_http_request_t *r,
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http subrequest \"%V?%V\"", uri, &sr->args);
 
-    // 子请求产生的数据需要在内存中   TODO 干啥的后续看
+    /*
+     * Output is not sent to the client, but rather stored in memory. The flag only affects
+     * subrequests which are processed by one of the proxying modules. After a subrequest
+     * is finalized its output is available in a r->upstream->buffer of type ngx_buf_t.
+     */
     sr->subrequest_in_memory = (flags & NGX_HTTP_SUBREQUEST_IN_MEMORY) != 0;
     // TODO
     sr->waited = (flags & NGX_HTTP_SUBREQUEST_WAITED) != 0;

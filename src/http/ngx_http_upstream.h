@@ -127,26 +127,56 @@ typedef struct {
  * 对应一个upstream
  */
 struct ngx_http_upstream_srv_conf_s {
-	// 用于构造负载均衡方法?
+	/*
+	 * object that holds generic methods for initializing upstream configuration
+	 *
+	 * 初始化upstram配置的一个对象
+	 */
     ngx_http_upstream_peer_t         peer;
+
     // ngx_http_conf_ctx_t->srv_conf
     // 用来存储ngx_http_upstream_srv_conf_t
     void                           **srv_conf;
 
-    // 该upstream下所有的server
+    /* 该upstream下所有的server */
     ngx_array_t                     *servers;  /* ngx_http_upstream_server_t */
 
-    // 标志位,是否支持NGX_HTTP_UPSTREAM_CREATE、NGX_HTTP_UPSTREAM_WEIGHT、NGX_HTTP_UPSTREAM_MAX_FAILS等
+    /*
+     * NGX_HTTP_UPSTREAM_CREATE:
+     * 		Distinguishes explicitly defined upstreams from those that are automatically created
+     * 		by the proxy_pass directive and “friends” (FastCGI, SCGI, etc.)
+     *
+     * NGX_HTTP_UPSTREAM_WEIGHT:
+     * 		The “weight” parameter is supported
+     *
+     * NGX_HTTP_UPSTREAM_MAX_FAILS:
+     * 		The “max_fails” parameter is supported
+     *
+     * NGX_HTTP_UPSTREAM_FAIL_TIMEOUT:
+     * 		The “fail_timeout” parameter is supported
+     *
+     * NGX_HTTP_UPSTREAM_DOWN:
+     * 		The “down” parameter is supported
+     *
+     * NGX_HTTP_UPSTREAM_BACKUP:
+     * 		The “backup” parameter is supported
+     *
+     * NGX_HTTP_UPSTREAM_MAX_CONNS:
+     * 		The “max_conns” parameter is supported
+     */
     ngx_uint_t                       flags;
-    // upstream的名字
+
+    /* upstream的名字 */
     ngx_str_t                        host;
-    // 该upstream所在的文件
+
+    /*
+     * upstream块所在文件的名字和行号
+     */
     u_char                          *file_name;
     ngx_uint_t                       line;
-    // upstream端口号
+
     in_port_t                        port;
     in_port_t                        default_port;
-    // 是否存在端口号
     ngx_uint_t                       no_port;  /* unsigned no_port:1 */
 
 #if (NGX_HTTP_UPSTREAM_ZONE)

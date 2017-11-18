@@ -236,6 +236,25 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     	 * 如果不是后一个buf,那现在还是不发送after子请求,万一中间有一次过滤器返回NGX_ERROR那不就白发了吗
     	 *
     	 * 如果conf->after_body.len == 0也就不用发了,因为根本没有这个after指令.
+    	 *
+    	 * 另一个需要注意的是因为buf_lasf这个标记代表的是整个请求群的最后一块数据,所以这里也说明一个问题
+    	 * add_after_body这个指令不能再嵌套子请求中,比如下面的例子:
+    	 * 		location /main {
+    	 * 			return 200 "main-->>> ";
+    	 * 			add_after_body /sub1;
+    	 * 		}
+    	 *
+    	 * 		location /sub1 {
+    	 * 			reutrn 200 "sub1-->>> "
+    	 * 			add_after_body /sub2;
+    	 * 		}
+    	 *
+    	 * 		location /sub2 {
+    	 * 			reutrn 200 "sub2-->>> "
+    	 * 		}
+    	 * 当访问/main的时候,/sub1中的add_after_body指令是不起作用的,因为这个指令不能嵌套在子请求中
+    	 * 当访问/sub1的时候,/sub1中的add_after_body指令是可以发出去的,因为他没有嵌套在子请求中
+    	 *
     	 */
         return rc;
     }

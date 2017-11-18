@@ -92,6 +92,13 @@
  * 数据的请求对象。
  * _request_handler()方法会调用ngx_http_create_request()创建主请求,并设置c->data为主请求。
  *
+ *
+ * 在ngx中有些子请求时不允许嵌套的:
+ * 	The ngx.location.capture and ngx.location.capture_multi directives cannot capture locations that include
+ * 	the add_before_body, add_after_body, auth_request, echo_location, echo_location_async, echo_subrequest,
+ * 	or echo_subrequest_async directives.
+ * 其中ngx.location.capture and ngx.location.capture_multi这两个指令允许互相嵌套,但是其它的不允许
+ *
  */
 
 

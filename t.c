@@ -6,6 +6,7 @@ int main(int argc, char **argv){
 	int alignment = 512;
 	int size;
 	
+	// 取模	
 	size = file_pos - (file_pos & ~(alignment-1));
 
 
@@ -15,4 +16,9 @@ int main(int argc, char **argv){
 
 
 	printf("%lu \n",sizeof("-9223372036854775808"));
+
+
+	int a[] = {1,2,3,4,5};
+
+	printf("%d  %d  \n",a[1], 1[a]);
 }

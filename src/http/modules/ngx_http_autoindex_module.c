@@ -413,6 +413,11 @@ ngx_http_autoindex_handler(ngx_http_request_t *r)
     /* TODO: free temporary pool */
 
     if (r == r->main) {
+    	/*
+    	 * 如果是主请求则直接设置last_buf为1
+    	 *
+    	 * 如果是子请求就不会设置这个标记
+    	 */
         b->last_buf = 1;
     }
 

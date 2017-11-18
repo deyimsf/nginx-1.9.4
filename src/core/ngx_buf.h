@@ -68,35 +68,60 @@ struct ngx_buf_s {
     unsigned         sync:1;
 
     /*
-     * 一个完整的响应数据在传递给filter的时候,有可能会被分隔成多个链(ngx_chain_t,表示一个链,里面有很多链项)。
-     * 假设数据在输出时被切割成了2个链进行传递,并且每个链包含了3个链项,那么
-     * 	last_buf=1 表示该buf是整个响应数据的最后一个块缓存
-     * 	last_in_chain=1 表示该buf只是某一个链的最后一块缓存
-     * 有次可以知道,last_buf一定是last_in_chain,但是last_in_chain不一定是last_buf.
+     * Flag indicating that the buffer is the last in output.
+     * The last_buf flag is set only for the main request because the last buffer
+     * for a subrequest does not end the entire output.
      *
-     * 画图举例
-     *  第一个链:
-     *		  	   ngx_chain_t						     ngx_chain_t						  ngx_chain_t
-     *			----------------					  ----------------						----------------
-     *			| *buf | *next | ------------------>  | *buf | *next | ------------------>	| *buf | *next |
-     *			----------------					  ----------------						----------------
-     *			0	/       0						 0   /		   0						0   /		   1
-     *     ----------------------------			  ----------------------------			----------------------------
-     *     | last_buf | last_in_chain |			  | last_buf | last_in_chain |			| last_buf | last_in_chain |
-     *	   ----------------------------			  ----------------------------			----------------------------
+     * 该标记为1表示这个buf是整个请求群的最后一块数据,这个标记主要用来对整个请求群做收尾工作.
      *
-     *  第二个链:
-     *		  	   ngx_chain_t						     ngx_chain_t						  ngx_chain_t
-     *			----------------					  ----------------						----------------
-     *			| *buf | *next | ------------------>  | *buf | *next | ------------------>	| *buf | *next |
-     *			----------------					  ----------------						----------------
-     *			0	/       0						 0   /		   0						1  /		   1
-     *     ----------------------------			  ----------------------------			----------------------------
-     *     | last_buf | last_in_chain |			  | last_buf | last_in_chain |			| last_buf | last_in_chain |
-     *	   ----------------------------			  ----------------------------			----------------------------
+     * 比如chunked_filter用它来判断是否应该输出 CRLF "0" CRLF CRLF 字符来结束这次chunk编码,显然
+     * 这个标记是不能出现在子请求中的.
+     *
+     * 再比如addtion_filter中的add_after_body指令,他会用last_buf标记来确定是否要发送该指令,只有
+     * 存在last_buf才会发送add_after_body指令,也就是说该指令只能在主请求中才能起作用:
+     * 		location /main {
+     * 			return 200 "main-->>> ";
+     * 			add_after_body /sub1;
+     * 		}
+     *
+     * 		location /sub1 {
+     * 			reutrn 200 "sub1-->>> "
+     * 			add_after_body /sub2;
+     * 		}
+     *
+     * 		location /sub2 {
+     * 			reutrn 200 "sub2-->>> "
+     * 		}
+     * 当访问/main的时候,/sub1中的add_after_body指令是不起作用的,因为这个指令不能嵌套在子请求中
+     * 当访问/sub1的时候,/sub1中的add_after_body指令是可以发出去的,因为他没有嵌套在子请求中
+     *
+     *
+     * 另行说明:
+     * 	其实add_before_body指令也是不允许嵌套的,这个逻辑的限制是在ngx_http_addition_header_filter()
+     * 	方法的下面的代码做限制的:
+     * 		if (r->headers_out.status != NGX_HTTP_OK || r != r->main) {
+	 *			return ngx_http_next_header_filter(r);
+	 *		}
+	 *  当r != r->main的时候就不会走下面的逻辑:
+	 *  	ngx_http_set_ctx(r, ctx, ngx_http_addition_filter_module);
+	 *  这样在addition_body_filter方法中就不会发起任何子请求了
      *
      */
     unsigned         last_buf:1;
+
+    /*
+     * Flag indicating that there are no more data buffers in a request or subrequest.
+     *
+     * 标记为1表示对于当前请求(包括子请求)已经没有更多的数据要输出了,属于当前请求的最后一块数据.如果当前为
+     * 子请求,那么该标记应该设置为1,last_buf是不是设置为1则由具体模块决定.
+     *
+     * 所以last_buf一定是last_in_chain,但是last_in_chain不一定是last_buf.
+     *
+     * 基本上在请求第一次调用过滤器时,如果当前buf是最后一块buf,都会有如下的代码:
+     * 		b->last_buf = (r == r->main) ? 1 : 0;
+     *		b->last_in_chain = 1;
+     * 可以看到只有主请求才会设置last_buf标记.
+     */
     unsigned         last_in_chain:1;
 
     unsigned         last_shadow:1;

@@ -841,6 +841,8 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
     u = r->upstream;
 
     if (plcf->proxy_lengths == NULL) {
+    	// TODO 走这里 ----->>>>
+
         ctx->vars = plcf->vars;
         u->schema = plcf->vars.schema;
 #if (NGX_HTTP_SSL)
@@ -909,6 +911,15 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
         return rc;
     }
 
+    /*
+     * TODO 此时请求的事件方法是什么?
+     * 在content handler中,返回参数会直接传递给ngx_http_finalize_request(r, r->content_handler(r))方法
+     * ngx_http_finalize_request()方法中对返回值是NGX_DONE的执行下面的逻辑:
+     *  	if (rc == NGX_DONE) {
+     *   		ngx_http_finalize_connection(r);
+     *   		return;
+     *  	}
+     */
     return NGX_DONE;
 }
 

@@ -59,7 +59,16 @@
 
 
 /* unused                                  1 */
+/*
+ * Output is not sent to the client, but rather stored in memory.The flag only affects
+ * subrequests which are processed by one of the proxying modules. After a subrequest is
+ * finalized its output is available in a r->upstream->buffer of type ngx_buf_t.
+ */
 #define NGX_HTTP_SUBREQUEST_IN_MEMORY      2
+/*
+ * The subrequest's done flag is set even if the subrequest is not active when it is finalized.
+ * This subrequest flag is used by the SSI filter.
+ */
 #define NGX_HTTP_SUBREQUEST_WAITED         4
 #define NGX_HTTP_LOG_UNSAFE                8
 
@@ -250,9 +259,21 @@ typedef struct {
 } ngx_http_headers_in_t;
 
 
+/*
+ * 存放响应头的结构体
+ * 由/src/http/ngx_http_header_filter_module.c模块输出
+ */
 typedef struct {
+	/*
+	 * To output an arbitrary header, append the headers list.
+	 *
+	 * 存放和输出自定义的响应头
+	 */
     ngx_list_t                        headers;
 
+    /*
+     * 响应状态码,必须一直有值
+     */
     ngx_uint_t                        status;
     ngx_str_t                         status_line;
 
@@ -271,6 +292,12 @@ typedef struct {
 
     ngx_str_t                        *override_charset;
 
+    /*
+     * The default value for this field is -1, which means that the body size is unknown.
+     * In this case, chunked transfer encoding is used
+     *
+     * 响应体的字节个数,如果设置为-1则表示不知道响应体大小,那么后续会使用chunk编码输出内容
+     */
     size_t                            content_type_len;
     ngx_str_t                         content_type;
     ngx_str_t                         charset;
@@ -407,23 +434,39 @@ typedef void (*ngx_http_event_handler_pt)(ngx_http_request_t *r);
 struct ngx_http_request_s {
     uint32_t                          signature;         /* "HTTP" */
 
+    /*
+     * 指向一个ngx_connection_t客户端连接对象,对个请求可以指向同一个该对象,这些请求必须是
+     * 一个主请求和他的所有子请求.
+     *
+     * 这个对象里面的data字段指向到一个请求,那么这个请求就是活跃的(active),一个活跃的对象用
+     * 来处理这个链接上的是事件,并且只有活跃的请求对象才允许向客户端输出数据.所以在一个有子请求
+     * 的主请求中,每一个相关的请求都可以变成活跃请求,然后向外输出数据.
+     */
     ngx_connection_t                 *connection;
 
-    // 当前请求的一个上下文,用来存放各个模块在当前请求的上下文
+    /*
+     * 一个存储http模块上下文的数组,请求中每一个NGX_HTTP_MODULE类型的模块都可以在这个数组中
+     * 存放自己的数据(一般是一个指针指向一个结构体),每个模块的存储位置就是每个模块的ctx_index
+     * 的值,这个值就是每个模块在ctx数组中的下标.
+     *
+     * ngx提供了两个便捷的方法来存储并获取这个值
+     * 	ngx_http_get_module_ctx(r, module): 获取module模块存放在ctx中的值
+     * 	ngx_http_set_ctx(r, c, module): 设置module模块存放在ctx中的值
+     */
     void                            **ctx;
 
     /*
-     * 用来存放所有http模块在http{}内的配置结构体信息
+     * 用来存放所有http模块在当前请求的http{}内的配置结构体信息
      */
     void                            **main_conf;
 
     /*
-     * 用来存放所有http模块在server{}内的配置结构体信息
+     * 用来存放所有http模块在当前请求的server{}内的配置结构体信息
      */
     void                            **srv_conf;
 
     /*
-     * 用来存储所有http模块在location{}内的配置结构体信息
+     * 用来存储所有http模块在当前请求的location{}内的配置结构体信息
      *
      * 该字段在匹配location{}的过程会用到,匹配成功就会设置该字段,下面两个方法会执行匹配操作
      * 	/src/http/ngx_http_core_module.c/ngx_http_core_find_location()
@@ -436,39 +479,111 @@ struct ngx_http_request_s {
      */
     void                            **loc_conf;
 
+    /*
+     * 当前请求的读写事件处理方法,通常一个http连接的读写事件都被设置为ngx_http_request_handler()
+     * 方法,这个方法根据具体情况来调用当前活跃的请求的读写方法(即下面两个方法).
+     */
     ngx_http_event_handler_pt         read_event_handler;
     ngx_http_event_handler_pt         write_event_handler;
 
 #if (NGX_HTTP_CACHE)
+    /*
+     * Request cache object for caching the upstream response.
+     */
     ngx_http_cache_t                 *cache;
 #endif
 
+    /*
+     * Request upstream object for proxying.
+     */
     ngx_http_upstream_t              *upstream;
     ngx_array_t                      *upstream_states;
                                          /* of ngx_http_upstream_state_t */
 
     ngx_pool_t                       *pool;
+
+    /*
+     * 读取到的http请求头(字符串)
+     */
     ngx_buf_t                        *header_in;
 
+    /*
+     * 解析并结构化的http请求头和响应头
+     * 另外这两个字段都包含一个ngx_list_t类型的headers字段,这个里面包含了原生的头列表
+     * 除此之外一些常用的头被单独拿出来,以便方便使用,比如status、content_length_n等
+     */
     ngx_http_headers_in_t             headers_in;
     ngx_http_headers_out_t            headers_out;
 
     ngx_http_request_body_t          *request_body;
 
     time_t                            lingering_time;
+
+    /*
+     * 请求被创建的一个时间点,一个是秒,一个是毫秒
+     */
     time_t                            start_sec;
     ngx_msec_t                        start_msec;
 
+    /*
+     * http请求方法的一个数字描述,在ngx中使用宏来表示,比如
+     * NGX_HTTP_GET、NGX_HTTP_HEAD、NGX_HTTP_POST等
+     */
     ngx_uint_t                        method;
+    /*
+     * 用来表示http客户端请求的协议版本号,用数字表示,比如:
+     *	NGX_HTTP_VERSION_10
+     *	NGX_HTTP_VERSION_11
+     */
     ngx_uint_t                        http_version;
 
+    /*
+     * http请求行,未做百分号解码,比如请求行:
+     * 	GET /add/%28%28%28 HTTP/1.1
+     */
     ngx_str_t                         request_line;
+
+    /*
+     * http请求行,做过百分号解码,比如对于请求:
+     * 	/add/%28%28%28
+     * 那么该字段值为:
+     * 	/add/(((
+     */
     ngx_str_t                         uri;
+
+    /*
+     * 原生请求参数,比如请求:
+     * 	/add?name=%28%28%28
+     * 那么该值为:
+     * 	name=%28%28%28
+     */
     ngx_str_t                         args;
+
+    /*
+     * 做过百分号解码的请求扩展名,比如请求:
+     * 	/add.ht%28ml
+     * 那么该字段值为:
+     * 	ht(ml
+     */
     ngx_str_t                         exten;
+
+    /*
+     * 未解析的请求uri,比如请求:
+     * 	/add/%28%28%28.htm%28l?name=%28%28%28
+     * 那么该值就是原始请求值
+     */
     ngx_str_t                         unparsed_uri;
 
+    /*
+	 * http请求方法的一个字符描述,GET、HEAD、POST等
+	 */
     ngx_str_t                         method_name;
+    /*
+     * 用来表示http客户端请求的协议版本号,用字符串表示,比如:
+     * 	HTTP/1.0
+     * 	HTTP/1.1
+     * 同http_version字段
+     */
     ngx_str_t                         http_protocol;
 
     ngx_chain_t                      *out;
@@ -571,7 +686,7 @@ struct ngx_http_request_s {
     unsigned                          subrequests:8;
 
     /*
-     * 一个请求引用计数器,这个字段仅对主请求有效
+     * 一个请求引用计数器,这个字段仅对主请求有效,一个正常单一请求则该值为1
      *
      * 通过 r->main->count++ 这种方式来增加这个计数器
      * 通过调用ngx_http_finalize_request(r, rc)方法来减小计数器
@@ -621,6 +736,7 @@ struct ngx_http_request_s {
 
     // 标记uri是否改变了
     unsigned                          uri_changed:1;
+
     /*
      * 在调用ngx_http_create_request()方法创建主请求和调用ngx_http_subrequest()方法
      * 创建子请求的时候被设置,目前大小是11; 后续在每次更改uri或者匹配named类型的location的
@@ -690,14 +806,20 @@ struct ngx_http_request_s {
 
     /*
      * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_memory
+     * 代表主请求和他的所有子请求的输出数据必须在内存中生产,不能在文件中,对于copy filter来说,这个标记会忽略
+     * sendfile功能
      */
     unsigned                          main_filter_need_in_memory:1;
     /*
 	 * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_memory
+	 * 和main_filter_need_in_memory标记一样,该标记值标记当前这个请求
 	 */
     unsigned                          filter_need_in_memory:1;
     /*
 	 * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_temp
+	 * Flag requesting that the request output be produced in temporary buffers, but not in
+	 * readonly memory buffers or file buffers. This is used by filters which may change
+	 * output directly in the buffers where it's sent.
 	 */
     unsigned                          filter_need_temporary:1;
     unsigned                          allow_ranges:1;
@@ -741,6 +863,11 @@ struct ngx_http_request_s {
     u_char                           *port_start;
     u_char                           *port_end;
 
+    /*
+     * 用数字表示的http协议主次版本号,比如
+     *	HTTP/1.1
+     * 则http_major=1,http_minor=1
+     */
     unsigned                          http_minor:16;
     unsigned                          http_major:16;
 };

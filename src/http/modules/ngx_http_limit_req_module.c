@@ -180,6 +180,11 @@ ngx_http_limit_req_handler(ngx_http_request_t *r)
     limit = NULL;
 #endif
 
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                              "the ---------------- key ");
+
+
+
     for (n = 0; n < lrcf->limits.nelts; n++) {
 
         limit = &limits[n];
