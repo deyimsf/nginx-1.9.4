@@ -4,6 +4,43 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/*
+ *
+ * upstream使用ngx_http_upstream_connect()方法连接上游服务器
+ * 	 在ngx_event_connect_peer()方法中获取上游连接(peer_conn)
+ *	 peer->data = r
+ *   peer->write_handler = ngx_http_upstream_handler
+ *   peer->read_handler = ngx_http_upstream_handler
+ *
+ *   u->write_event_handler = ngx_http_upstream_send_request_handler;
+ *   u->read_event_handler = ngx_http_upstream_process_header;
+ *
+ *
+ *
+ * 什么时候想客户端输出数据?
+ * 1.如果子请求(对于proxy_pass并没有产生一个r对象)中的数据不需要在内存中:(r->subrequest_in_memory == 0)
+ *   则upstream调用ngx_http_upstream_send_response()方法向下游(客户端)发送响应,发送时会先发送响应头,
+ *   此时的r代表客户端的请求对象:
+ *     rc = ngx_http_send_header(r);
+ *	   p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
+ *
+ *     u->read_event_handler = ngx_http_upstream_process_upstream;                                      │
+ *     r->write_event_handler = ngx_http_upstream_process_downstream;
+ *
+ *   读完上游中的数据后后调用ngx_http_upstream_finalize_request()方法来断开上游:
+ *     u->finalize_request(r, rc);
+ *     ngx_close_connection(u->peer.connection);
+ *     rc = ngx_http_send_special(r, NGX_HTTP_LAST);
+ *          ngx_http_output_filter(r, &out)  // 这一步会触发代表r中的过滤器
+ *
+ * 2.如果子请求(对于proxy_pass并没有产生一个r对象)中的数据需要在内存中:(r->subrequest_in_memory == 1)
+ *   TODO 先看上面的流程
+ *   u->input_filter
+ *
+ *
+ *
+ *
+ */
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -563,12 +600,13 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
         u->request_bufs = r->request_body->bufs;
     }
 
+    /* 调用赋值给upstream的回调方法创建一个请求对象*/
     if (u->create_request(r) != NGX_OK) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
 
-    // nginx与上游服务器连接用的本地地址
+    /* nginx与上游服务器连接用的本地地址 TODO 这个地址在什么时候设置的? 为啥返回空 */
     u->peer.local = ngx_http_upstream_get_local(r, u->conf->local);
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
@@ -1069,6 +1107,9 @@ failed:
 }
 
 
+/*
+ * 这个方法由peer触发? TODO
+ */
 static void
 ngx_http_upstream_handler(ngx_event_t *ev)
 {
@@ -1076,10 +1117,13 @@ ngx_http_upstream_handler(ngx_event_t *ev)
     ngx_http_request_t   *r;
     ngx_http_upstream_t  *u;
 
+    /* 这个是peer连接 */
     c = ev->data;
+    /* peer->data中存放的是客户端请求对象 */
     r = c->data;
 
     u = r->upstream;
+    /* 这个是客户端的连接 */
     c = r->connection;
 
     ngx_http_set_log_request(c->log, r);
@@ -1088,12 +1132,14 @@ ngx_http_upstream_handler(ngx_event_t *ev)
                    "http upstream request: \"%V?%V\"", &r->uri, &r->args);
 
     if (ev->write) {
+    	/* r是客户端的请求对象 */
         u->write_event_handler(r, u);
-
     } else {
+    	/* r是客户端的请求对象 */
         u->read_event_handler(r, u);
     }
 
+    /* 这个c是客户端的连接 */
     ngx_http_run_posted_requests(c);
 }
 
@@ -1779,6 +1825,7 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
 
     c->log->action = "sending request to upstream";
 
+    /* 向upstream发送数据? TODO */
     rc = ngx_http_upstream_send_request_body(r, u, do_write);
 
     if (rc == NGX_ERROR) {
@@ -1960,6 +2007,9 @@ ngx_http_upstream_send_request_body(ngx_http_request_t *r,
 }
 
 
+/*
+ * 向客户端发送数据
+ */
 static void
 ngx_http_upstream_send_request_handler(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
@@ -2178,19 +2228,18 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         return;
     }
 
-    // r->subrequest_in_memory为0 表示使用upstream的转发响应功能
-    // 所谓的使用upsteam的转发响应功能就是使用 u->buffering标志位？
+    /*
+     * 如果子请求的数据不需要在内存中,则直接调用ngx_http_upstream_send_response()方法将上游的数据返回给
+     * 下游在ngx_http_upstream_send_response()方法中会先向客户端发送响应头
+     */
     if (!r->subrequest_in_memory) {
         ngx_http_upstream_send_response(r, u);
 
-        // 读取上游协议头的方法ngx_http_upstream_process_header退出历史舞台
         return;
     }
 
-    // 不使用upstream的转发响应机制
-
     /* subrequest content in memory */
-    // r->subrequest_in_memory = 1 表示不需要upstream转发响应体到客户端？我们自己转发?
+    /* 子请求的数据需要在内存中则走下面的逻辑 */
 
     // 检查用户是否实现了input_filter回调函数,如果没有则使用nginx默认的方法
     if (u->input_filter == NULL) {
@@ -2679,6 +2728,9 @@ ngx_http_upstream_process_body_in_memory(ngx_http_request_t *r,
 }
 
 
+/*
+ * 向客户端r发送从上游获取到的数据
+ */
 static void
 ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {

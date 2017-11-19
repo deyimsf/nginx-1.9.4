@@ -373,6 +373,7 @@ struct ngx_http_upstream_s {
 
     ngx_buf_t                        from_client;
 
+    /* 存放上游返回的数据 TODO ? */
     ngx_buf_t                        buffer;
     off_t                            length;
 

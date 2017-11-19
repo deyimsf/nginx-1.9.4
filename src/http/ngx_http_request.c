@@ -2408,7 +2408,7 @@ ngx_http_post_request(ngx_http_request_t *r, ngx_http_posted_request_t *pr)
  * 	NGX_ERROR、NGX_HTTP_REQUEST_TIME_OUT(408)、NGX_HTTP_CLIENT_CLOSED_REQUEST(409):
  *		Error finalization. Terminate the request as soon as possible and close the client connection.
  *
- *  NGX_HTTP_CREATED (201)、NGX_HTTP_NO_CONTENT (204)、NGX_HTTP_SPECIAL_RESPONSE(300):
+ *  NGX_HTTP_CREATED (201)、NGX_HTTP_NO_CONTENT (204)、NGX_HTTP_SPECIAL_RESPONSE(300+):
  *		Special response finalization. For these values nginx either sends to the client a default
  *		response page for the code or performs the internal redirect to an error_page location if
  *		that is configured for the code.

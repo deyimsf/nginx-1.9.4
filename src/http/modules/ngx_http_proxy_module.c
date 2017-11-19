@@ -841,7 +841,6 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
     u = r->upstream;
 
     if (plcf->proxy_lengths == NULL) {
-    	// TODO 走这里 ----->>>>
 
         ctx->vars = plcf->vars;
         u->schema = plcf->vars.schema;
@@ -905,6 +904,7 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
         r->request_body_no_buffering = 1;
     }
 
+    /* 读取请求体 */
     rc = ngx_http_read_client_request_body(r, ngx_http_upstream_init);
 
     if (rc >= NGX_HTTP_SPECIAL_RESPONSE) {
@@ -912,13 +912,13 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
     }
 
     /*
-     * TODO 此时请求的事件方法是什么?
      * 在content handler中,返回参数会直接传递给ngx_http_finalize_request(r, r->content_handler(r))方法
      * ngx_http_finalize_request()方法中对返回值是NGX_DONE的执行下面的逻辑:
      *  	if (rc == NGX_DONE) {
      *   		ngx_http_finalize_connection(r);
      *   		return;
      *  	}
+     * 返回NGX_DONE会走一个捷径去尝试结束请求,其实这里返回200以下的码都可以(如NGX_OK),只不结束的链路会长一点.
      */
     return NGX_DONE;
 }
