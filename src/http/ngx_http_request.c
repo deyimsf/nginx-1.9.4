@@ -2837,6 +2837,9 @@ ngx_http_terminate_request(ngx_http_request_t *r, ngx_int_t rc)
 }
 
 
+/*
+ * 非正常中断请求,设置r->count计数器为1,并调用ngx_http_close_request()方法结束请求
+ */
 static void
 ngx_http_terminate_handler(ngx_http_request_t *r)
 {

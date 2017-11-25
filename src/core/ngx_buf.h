@@ -247,6 +247,7 @@ struct ngx_output_chain_ctx_s {
 typedef struct {
     ngx_chain_t                 *out;
     ngx_chain_t                **last;
+    /* 数据都写到这个链接中 */
     ngx_connection_t            *connection;
     ngx_pool_t                  *pool;
     off_t                        limit;

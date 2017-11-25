@@ -1,0 +1,193 @@
+
+开始看proxy_pass和upstream
+ (http://nginx.org/en/docs/dev/development_guide.html#http_load_balancing)
+  
+要debug看
+   upstream tomcat {
+	server 127.0.0.1:8080;
+	server 127.0.0.1:80;
+   }	
+
+   location / {
+	proxy_pass http://tomcat;
+   }
+ 
+
+break ngx_http_proxy_handler
+r->write_event_handler
+r->read_event_handler
+
+
+
+当前流程是r->subrequest_in_memory = 0,并且tomcat中的数据很少
+
+1.调用ngx_http_upstream_init()方法启动upsteam
+
+2.调用ngx_http_upstream_init_request()方法
+
+3.设置下游客户端的读写事件,以后代表下游客户端的读写事件到来的时候就会调用这些方法
+  r->read_event_handler = ngx_http_upstream_rd_check_broken_connection;
+  r->write_event_handler = ngx_http_upstream_wr_check_broken_connection;
+
+4.开始回调u->create_reqeust()方法,这是upsteam提供给第三方模块的一个钩子,比如要读redis
+  则需要在这个方法中构建请求redis的请求协议  ———— <ngx_http_proxy_create_request>
+
+
+5.设置输出upsteam数据的时候需要用到的一些参数,比如:
+  u->output.bufs.num = 1;
+  u->output.bufs.size = clcf->client_body_buffer_size;
+  
+  if (u->output.output_filter == NULL) {
+      u->output.output_filter = ngx_chain_writer;
+      u->output.filter_ctx = &u->writer;
+  }
+
+6.获取upstream配置,比如我们配置的tomcat
+  if (u->resolved == NULL) {
+        uscf = u->conf->upstream;
+    } else {
+
+7.回调upsteam的一个初始化方法
+  对于proxy_pass模块的一般流程是ngx_http_upstream_init_round_robin_peer()方法
+
+8.去和后端服务器建立网络连接
+  ngx_http_upstream_connect(r, u);
+
+9.调用真正建立网络连接的方法
+   rc = ngx_event_connect_peer(&u->peer); 
+       // 按照配置的负载方法从upsteam中获取一个连接
+       rc = pc->get(pc, pc->data);<ngx_http_upstream_get_round_robin_peer> 
+  这个方法执行完毕后才会正真获取一个ngx_connection_t对象,并正真有一个网络链路
+
+10.选定好准确的服务器后,设置到upsteam的状态字段中
+   u->state->peer  = u->peer.name (比如 “127.0.0.1:8080”)
+
+11.为这个上游服务器连接设置对应的读写事件和其它参数
+   c = u->peer.connection;
+   c->data = r; // 上游连接对象中的data保存的是客户端的请求对象
+
+    c->write->handler = ngx_http_upstream_handler;
+    c->read->handler = ngx_http_upstream_handler;
+
+    // 设置upstream的读写事件handler
+    u->write_event_handler = ngx_http_upstream_send_request_handler;
+    u->read_event_handler = ngx_http_upstream_process_header;
+
+12.检查是否已经发过请求,如果已经发过则代表上次发送出问题了,这里需要回调
+   u->reinit_request(r)方法去重新初始化请求,这个renit_reqeust方法必须存在 ————
+
+13.调用写事件方法向后端服务器发送请求数据
+   u->write_event_handler(r, u) <ngx_http_upstream_send_request(r, u, 1)>
+      ngx_http_upstream_send_request_body()	
+	 ngx_output_chain(&u->output, out);
+
+14.发送完之后设置写事件方法(完全发送完)
+     u->write_event_handler = ngx_http_upstream_dummy_handler; 
+   然后ngx_http_upstream_send_request()方法结束
+   本次上游触发的写事件结束,也就是下面的方法调用结束
+      ngx_http_upstream_handler
+	u->write_event_handler = ngx_http_upstream_send_request_handler;
+
+15.ngx_http_upstream_handler()方法调用结束后,操作权限交给ngx事件管理器
+
+
+16.对上游服务器请求发送完毕后,我们就可以从上游服务器读取返回的数据了
+
+
+17.事件管理器触发上游服务器的读事件,读取上游服务器返回的响应头
+     u->read_event_handler <ngx_http_upstream_process_header>
+   在这个事件方法中,数据会读取到u->buffer中
+
+   读取一部分数据到u->buffer中后,回调u->process_header(r)来处理上游服务器返回的响应头
+   如果响应头处理完毕,则u->buffer.pos会指向已处理的响应头后面,这样buffer中从pos到last就
+   只能是响应体数据了
+
+TODO 明天要看的
+18.ngx_http_upsteam.c/2305行
+   ngx_http_upstream_process_headers
+   ngx_http_upstream_send_response
+
+
+ 
+
+tomcat返回的数据太少好像就无法触发u的读事件,把u->buffer的值调小,这样在读tomcat数据时就不会一次全部读完了;
+在proxy_pass中由proxy_buffer_size指令指定u->buffer的大小;
+
+调整好buffer后应该就可以触发下面的u的读事件了
+u->read_event_handler = ngx_http_upstream_process_upstream;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ balance
+ 日志
+ 共享内存
+ http请求过程
+
+
+
+ 以后需要细看的
+  http://nginx.org/en/docs/dev/development_guide.html#http_variables
+  http://nginx.org/en/docs/dev/development_guide.html#http_complex_values
+  变量脚本引擎
+ 
+
+
+
+limit_req_zone $uri zone=cookie__jda:10m  rate=51r/s;
+
+location / {
+
+		limit_req zone=cookie__jda nodelay;
+}
+
+这个好像只对proxy_pass指令起作用啊。。。
+
+
+
+
+
+
+/**************关于lua的****************/
+
+/*创建一个新的lua状态机,以后所有的lua操作都依赖于该状态机(vm)*/
+luaL_newstate();
+/*打开指定状态机中的所有lua标准库*/
+luaL_openlibs(L);
+/*把居变量package里的值压栈,返回该值的类型*/
+lua_getglobal(L, "package");
+
+
+/*获取虚拟机(lua_State)*/
+L = ngx_http_lua_get_lua_vm(r, NULL);
+
+/*加载lua代码*/
+ngx_http_lua_cache_loadbuffer
+ngx_http_lua_cache_loadfile
+
+/*运行lua代码*/
+ngx_http_lua_run_thread
+
+
+
+access_by_lua指令调用ngx.print()方法
+  一但在该阶段调用ngx.print()方法后,该方法会把响应头也一块发出去,当在这个阶段把响应头发送出去后,
+  由于ngx本身的框架限制,再执行后续的阶段是不安全的,因为后续阶段中的方法一般不会再自己的逻辑中判断
+  响应头是否发送,还会按照原来的逻辑设置或修改响应头,这样整个逻辑就是错误的.
+
+  ngx_lua模块在这个阶段中判断了这响应头是否发送的逻辑,当发送后会返会NGX_HTTP_OK(200),这样就不
+  会执行后面的阶段了,就直接返回了.
+
+

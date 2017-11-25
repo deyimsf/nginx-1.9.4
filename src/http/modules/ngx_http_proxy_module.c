@@ -904,7 +904,15 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
         r->request_body_no_buffering = 1;
     }
 
-    /* 读取请求体 */
+    /*
+     * 读取请求体
+     *
+     * 读请求体是根据proxy_pass这个指令的业务意义而定的,我们自定义的代理(比如读redis)不一定需要
+     * 调用这个方法.
+     *
+     * 启动upstream的关键方法是ngx_http_upstream_init(),启动之前记住要把r->main->count++
+     * 用这个方法表明upstream和当前请求是一个并行操作
+     */
     rc = ngx_http_read_client_request_body(r, ngx_http_upstream_init);
 
     if (rc >= NGX_HTTP_SPECIAL_RESPONSE) {

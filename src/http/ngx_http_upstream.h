@@ -63,6 +63,14 @@ typedef struct {
     ngx_msec_t                       header_time;
     off_t                            response_length;
 
+    /*
+     * 对应的上游服务器的字符地址,比如:
+     *   upsteam tomcat {
+     *   	server 127.0.0.1:8080;
+     *   	server 127.0.0.1:80;
+     *   }
+     * 是上面这个配置中的某个地址
+     */
     ngx_str_t                       *peer;
 } ngx_http_upstream_state_t;
 
@@ -359,7 +367,16 @@ struct ngx_http_upstream_s {
 
     ngx_chain_t                     *request_bufs;
 
+    /*
+     * 调用ngx_output_chain(&u->output, out)方法向外发送数据的一个上下文,其中
+     * u->output就是这个字段
+     *
+     * copy_filter模块发送数据是也用到了这个结构体对象
+     */
     ngx_output_chain_ctx_t           output;
+    /*
+     * TODO 什么时候设置的
+     */
     ngx_chain_writer_ctx_t           writer;
 
     ngx_http_upstream_conf_t        *conf;
@@ -373,7 +390,17 @@ struct ngx_http_upstream_s {
 
     ngx_buf_t                        from_client;
 
-    /* 存放上游返回的数据 TODO ? */
+    /*
+     * 创建用来接收响应头的缓存buffer,其中buffer的大小由u->conf->buffer_size决定,这个值必须指定
+     *
+     * 在proxy_pass中由proxy_buffer_size指令指定
+     * 在memcached中用memcached_buffer_size指令指定
+     * 在fastcgi中用fastcgi_buffer_size指令指定
+	 * 在scgi中用scgi_buffer_size指令指定
+	 * 在uwsgi中用uwsgi_buffer_size指令指定
+	 *
+	 * TODO 接收响应体时也是用这个吗? 好像不是
+     */
     ngx_buf_t                        buffer;
     off_t                            length;
 
@@ -401,6 +428,15 @@ struct ngx_http_upstream_s {
 
     ngx_msec_t                       timeout;
 
+    /*
+     * 当前请求对应的一个确定的上游服务的状态
+     * 比如:
+     *   upsteam tomcat {
+     *   	server 127.0.0.1:8080;
+     *   	server 127.0.0.1:80;
+     *   }
+     * 是上面这个配置中的某个ip
+     */
     ngx_http_upstream_state_t       *state;
 
     ngx_str_t                        method;
@@ -425,6 +461,11 @@ struct ngx_http_upstream_s {
     unsigned                         keepalive:1;
     unsigned                         upgrade:1;
 
+    /*
+     * 用来标记当前地址是否已经发送过请求
+     *
+     * 没有发送过请求时才会调用ngx_http_upstream_next()方法? TODO
+     */
     unsigned                         request_sent:1;
     unsigned                         header_sent:1;
 };

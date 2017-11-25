@@ -144,7 +144,6 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
     /* add the incoming buf to the chain ctx->in */
     /* 正常路径,把in中的buf追加到ctx->in中 */
-
     if (in) {
 
     	/*
@@ -1106,6 +1105,9 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 }
 
 
+/*
+ * 貌似专门为upsteam模块准备的默认输出数据用的方法
+ */
 ngx_int_t
 ngx_chain_writer(void *data, ngx_chain_t *in)
 {

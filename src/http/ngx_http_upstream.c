@@ -5,6 +5,8 @@
  */
 
 /*
+ * 所有要启动upstream的模块都要使用ngx_http_upstream_init()方法
+ *
  *
  * upstream使用ngx_http_upstream_connect()方法连接上游服务器
  * 	 在ngx_event_connect_peer()方法中获取上游连接(peer_conn)
@@ -16,15 +18,20 @@
  *   u->read_event_handler = ngx_http_upstream_process_header;
  *
  *
+ * 当前请求调用ngx_http_upstream_init()方法启动upsteam后,当前请求对应的读写事件就变成了
+ *   r->read_event_handler = ngx_http_upstream_rd_check_broken_connection;
+ *   r->write_event_handler = ngx_http_upstream_wr_check_broken_connection;
+ * 这两个事件方法用来检查客户端的连接是否正常,如果客户端的连接都断了,那么也就没必要再处理上游的数据了
  *
- * 什么时候想客户端输出数据?
+ *
+ * 什么时候向客户端输出数据?
  * 1.如果子请求(对于proxy_pass并没有产生一个r对象)中的数据不需要在内存中:(r->subrequest_in_memory == 0)
  *   则upstream调用ngx_http_upstream_send_response()方法向下游(客户端)发送响应,发送时会先发送响应头,
  *   此时的r代表客户端的请求对象:
  *     rc = ngx_http_send_header(r);
  *	   p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
  *
- *     u->read_event_handler = ngx_http_upstream_process_upstream;                                      │
+ *     u->read_event_handler = ngx_http_upstream_process_upstream;
  *     r->write_event_handler = ngx_http_upstream_process_downstream;
  *
  *   读完上游中的数据后后调用ngx_http_upstream_finalize_request()方法来断开上游:
@@ -502,6 +509,9 @@ ngx_http_upstream_create(ngx_http_request_t *r)
 }
 
 
+/*
+ * 启动upstream
+ */
 void
 ngx_http_upstream_init(ngx_http_request_t *r)
 {
@@ -519,17 +529,22 @@ ngx_http_upstream_init(ngx_http_request_t *r)
     }
 #endif
 
-    // 删除nginx与下游客户端的超时限制
+    /* 如果客户端设置了超时标志则删除nginx与下游客户端的超时限制 TODO 什么时候由谁设置的 */
     if (c->read->timer_set) {
         ngx_del_timer(c->read);
     }
 
+    /* 对于epoll来说是使用边缘触发机制来触发事件 */
     if (ngx_event_flags & NGX_USE_CLEAR_EVENT) {
 
         if (!c->write->active) {
+
+        	/* 当前请求对应的连接写事件没有在epoll中,调用add_event()方法将其加入到epoll中 TODO 为啥水平触发就走这个逻辑? */
+
             if (ngx_add_event(c->write, NGX_WRITE_EVENT, NGX_CLEAR_EVENT)
                 == NGX_ERROR)
             {
+            	/* 注册事件失败则返回500 */
                 ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
                 return;
             }
@@ -591,7 +606,11 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
 
     u->store = u->conf->store;
 
+	/* 这些标记是干嘛的 TODO  一般流程走这个逻辑 */
     if (!u->store && !r->post_action && !u->conf->ignore_client_abort) {
+
+    	/* 设置下游客户端的读写事件,以后代表下游客户端的读写事件到来的时候就会调用这些方法 */
+
         r->read_event_handler = ngx_http_upstream_rd_check_broken_connection;
         r->write_event_handler = ngx_http_upstream_wr_check_broken_connection;
     }
@@ -617,6 +636,12 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     u->output.bufs.size = clcf->client_body_buffer_size;
 
     if (u->output.output_filter == NULL) {
+
+    	/*
+    	 * 当触发上游服务器的写事件后会调用ngx_output_chain(&u->output, out)方法去输出数据
+    	 * 最终ngx_output_chain()方法会调用ctx->output_filter(ctx->filter_ctx, in)来
+    	 * 发送数据,其中ctx就是&u->output,ctx->filter_ctx就是&u->writer
+    	 */
         u->output.output_filter = ngx_chain_writer;
         u->output.filter_ctx = &u->writer;
     }
@@ -655,6 +680,14 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     u->cleanup = &cln->handler;
 
     if (u->resolved == NULL) {
+
+    	/*
+    	 * 获取upsteam配置,比如:
+    	 * 	 upsteam tomcat {
+    	 *		server ...;
+    	 *		server ...;
+    	 * 	 }
+    	 */
 
         uscf = u->conf->upstream;
 
@@ -768,6 +801,7 @@ found:
         u->peer.tries = u->conf->next_upstream_tries;
     }
 
+    /* 去和后端服务器建立网络连接 */
     ngx_http_upstream_connect(r, u);
 }
 
@@ -1108,7 +1142,7 @@ failed:
 
 
 /*
- * 这个方法由peer触发? TODO
+ * 目前得到的结果,这个方法是由上游连接触发,所以事件中的连接也就代表ngx与上游机器的连接
  */
 static void
 ngx_http_upstream_handler(ngx_event_t *ev)
@@ -1158,6 +1192,9 @@ ngx_http_upstream_wr_check_broken_connection(ngx_http_request_t *r)
 }
 
 
+/*
+ * 检查客户端的连接是否正常,如果客户端的连接都断了,那么也就没必要再处理上游的数据了
+ */
 static void
 ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
     ngx_event_t *ev)
@@ -1173,6 +1210,7 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
                    "http upstream check client, write event:%d, \"%V\"",
                    ev->write, &r->uri);
 
+    /* r是客户端请求, c是客户端连接 */
     c = r->connection;
     u = r->upstream;
 
@@ -1384,6 +1422,9 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
         return;
     }
 
+    /*
+     * 选定好准确的服务器后,设置到upsteam的状态字段中,比如"127.0.0.1:8080"
+     */
     u->state->peer = u->peer.name;
 
     if (rc == NGX_BUSY) {
@@ -1401,7 +1442,7 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     c = u->peer.connection;
 
-    c->data = r;
+    c->data = r; /* 存放客户端的请求对象 */
 
     c->write->handler = ngx_http_upstream_handler;
     c->read->handler = ngx_http_upstream_handler;
@@ -1438,6 +1479,9 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     u->writer.limit = 0;
 
     if (u->request_sent) {
+
+    	/* TODO 什么情况下会进到这里 */
+
         if (ngx_http_upstream_reinit(r, u) != NGX_OK) {
             ngx_http_upstream_finalize_request(r, u,
                                                NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -1474,6 +1518,11 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     u->request_sent = 0;
 
     if (rc == NGX_AGAIN) {
+
+    	/*
+    	 * 有可能是和上游还没有建立起连接,所以等待上游连接的下一个事件的到来
+    	 */
+
         ngx_add_timer(c->write, u->conf->connect_timeout);
         return;
     }
@@ -1724,6 +1773,11 @@ done:
 #endif
 
 
+/*
+ * 回调reinit_request()方法
+ *
+ * 当在连接连接
+ */
 static ngx_int_t
 ngx_http_upstream_reinit(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
@@ -1802,6 +1856,9 @@ ngx_http_upstream_reinit(ngx_http_request_t *r, ngx_http_upstream_t *u)
 }
 
 
+/*
+ * 向上游服务器发送数据
+ */
 static void
 ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_uint_t do_write)
@@ -1814,6 +1871,7 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http upstream send request");
 
+    /* 记录向上游服务器发送数据的开始时间 */
     if (u->state->connect_time == (ngx_msec_t) -1) {
         u->state->connect_time = ngx_current_msec - u->state->response_time;
     }
@@ -1825,7 +1883,7 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
 
     c->log->action = "sending request to upstream";
 
-    /* 向upstream发送数据? TODO */
+    /* 向upstream发送请求数据,如果后端是一个http服务,那么这里发送的就是http请求 */
     rc = ngx_http_upstream_send_request_body(r, u, do_write);
 
     if (rc == NGX_ERROR) {
@@ -1904,10 +1962,19 @@ ngx_http_upstream_send_request_body(ngx_http_request_t *r,
                    "http upstream send request body");
 
     if (!r->request_body_no_buffering) {
+    	/* debug的一般流程走这里 */
 
        /* buffered request body */
 
        if (!u->request_sent) {
+
+    	   /*
+    	    * 如果请求还没有发送出去,则把请求数据赋值给out,然后调用ngx_output_chain()方法
+    	    * 把数据out发送出去.
+    	    *
+    	    * copy_filter模块就是用这个方法发送数据的.
+    	    */
+
            u->request_sent = 1;
            out = u->request_bufs;
 
@@ -2097,9 +2164,14 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         return;
     }
 
-    // 创建用来收响应的buffer
-    // 如果 u->conf->buffer_size值未设置,后续c->recv()会读不到数据
-    // nginx就会认为是链路过早的关闭造成的
+    /*
+     * 创建用来接收响应头的缓存buffer,其中buffer的大小由u->conf->buffer_size决定,这个值必须指定
+     * 在proxy_pass中由proxy_buffer_size指令指定
+     * 在memcached中用memcached_buffer_size指令指定
+     * 在fastcgi中用fastcgi_buffer_size指令指定
+	 * 在scgi中用scgi_buffer_size指令指定
+	 * 在uwsgi中用uwsgi_buffer_size指令指定
+     */
     if (u->buffer.start == NULL) {
         u->buffer.start = ngx_palloc(r->pool, u->conf->buffer_size);
         if (u->buffer.start == NULL) {
@@ -2137,6 +2209,8 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
     // 其中u->buffer的大小有u->conf->buffer_size决定
     for ( ;; ) {
 
+    	/* 从这里可以看出用于接收upsteam响应头的缓存大小已经确定了 */
+
         n = c->recv(c, u->buffer.last, u->buffer.end - u->buffer.last);
 
         if (n == NGX_AGAIN) {
@@ -2173,12 +2247,16 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         u->peer.cached = 0;
 #endif
 
-        // 调用回调函数
+        /*
+         * 调用回调函数处理响应头,如果是http协议那么在这个回调函数中需要系统u->buffer.pos的值
+         */
         rc = u->process_header(r);
 
         // 返回NGX_AGAIN,说明并未完全读取出用户的自定义协议头
         if (rc == NGX_AGAIN) {
-        	// 检查buffer缓冲区是否已经用尽,如果已经用完说明包头太大
+        	/*
+        	 * 如果u->buffer的容量都被用完了也没有读完响应头,则认为这是一个不合法的响应,寻找下一个upsteam去执行
+        	 */
             if (u->buffer.last == u->buffer.end) {
                 ngx_log_error(NGX_LOG_ERR, c->log, 0,
                               "upstream sent too big header");
@@ -2796,7 +2874,7 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
         u->read_event_handler = ngx_http_upstream_process_non_buffered_upstream;
         // 改事件方法负责向客户端发送数据
         r->write_event_handler =
-                             ngx_http_upstream_process_non_buffered_downstream;
+                                ngx_http_upstream_process_non_buffered_downstream;
 
         r->limit_rate = 0;
 

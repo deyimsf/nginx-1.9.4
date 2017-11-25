@@ -454,7 +454,7 @@ ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)
 
 
 /**
- * 向事件驱动器中添加写事件
+ * 向事件驱动器中添加写事件,是否真正添加需要看当前使用的是什么事件模型,以及当前事件的状态
  *
  * *wev: 要添加的写事件
  * lowat: This directive is ignored on Linux, Solaris, and Windows.

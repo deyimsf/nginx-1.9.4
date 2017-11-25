@@ -94,6 +94,12 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
     r->request_body = rb;
 
     if (r->headers_in.content_length_n < 0 && !r->headers_in.chunked) {
+
+    	/*
+    	 * 请求体的内容长度是-1,并且该请求也不是使用chunked形式发起的,这就说明没有请求体,
+    	 * 所以这里直接调用post_handler(r)方法后就返回了
+    	 */
+
         r->request_body_no_buffering = 0;
         post_handler(r);
         return NGX_OK;

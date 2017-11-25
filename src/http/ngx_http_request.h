@@ -693,7 +693,13 @@ struct ngx_http_request_s {
      *
      * 创建一个子请求和读取请求体都需要增加了这个计数器
      *
+     * 主请求刚开始的时候会设置这个值为1,ngx_http_create_request()方法中有如下操作
+     *  r->main = r;
+     *	r->count = 1;
+     *
      * 只有这个计数器为0的时候才能结束这个主请求
+     *  一般是进入ngx_http_close_request()方法之前是1,在这个方法中减去1后等于零,此时才是一个
+     *  正常的结束过程.
      *
      * ngx设计这个字段的目的是为了能够正确关闭主请求,因为ngx中的大部分操作都是"异步并行"执行的
      * 一个例子:
@@ -751,6 +757,8 @@ struct ngx_http_request_s {
     unsigned                          request_body_in_clean_file:1;
     unsigned                          request_body_file_group_access:1;
     unsigned                          request_body_file_log_level:3;
+
+    /* TODO */
     unsigned                          request_body_no_buffering:1;
 
     // 子请求产生的数据需要在内存中
