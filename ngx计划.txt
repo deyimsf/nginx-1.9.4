@@ -90,9 +90,7 @@ r->read_event_handler
 
 15.ngx_http_upstream_handler()方法调用结束后,操作权限交给ngx事件管理器
 
-
 16.对上游服务器请求发送完毕后,我们就可以从上游服务器读取返回的数据了
-
 
 17.事件管理器触发上游服务器的读事件,读取上游服务器返回的响应头
      u->read_event_handler <ngx_http_upstream_process_header>
@@ -100,21 +98,59 @@ r->read_event_handler
 
    读取一部分数据到u->buffer中后,回调u->process_header(r)来处理上游服务器返回的响应头
    如果响应头处理完毕,则u->buffer.pos会指向已处理的响应头后面,这样buffer中从pos到last就
-   只能是响应体数据了
+   只能是响应体数据了; 如果没有解析完毕就继续从链路中读取数据;
 
-TODO 明天要看的
-18.ngx_http_upsteam.c/2305行
-   ngx_http_upstream_process_headers
-   ngx_http_upstream_send_response
+   对于proxy_pass模块来说,刚开始process_header(r)是ngx_http_proxy_process_status_line()
+   用这个方法来处理响应行,如果是其它模块比如redis就不是他了;
+    
+18.协议头解析完毕之后调用ngx_http_upstream_process_headers(),把在u->headers_in.headers
+   中的头信息拷贝到r->headers_out.headers中,具体拷贝哪些响应头以及如何拷贝由  
+   ngx_http_upstream_headers_in[]数组决定
 
 
+
+
+TODO 下周从这里开始看,懂点看一下如何从上游读取响应体,以及验证u->buffer是不是只用来接收响应头(答案是)
+TODO ngx_http_upsteam.c/ngx_http_upstream_send_response() 2849行
+
+19.响应头处理完毕后开始向客户端发送数据,调用ngx_http_upstream_send_response()方法
+
+20.先调用ngx_http_send_header(r)方法把响应头发送出去
+
+21.回调,并设置事件
+   if (u->input_filter_init                                                                      
+        && u->input_filter_init(p->input_ctx) != NGX_OK)                                          
+   {                                                                                             
+   	ngx_http_upstream_finalize_request(r, u, NGX_ERROR);                                      
+        return;                                                                                   
+    }                                                                                             
+                                                                                                      
+    u->read_event_handler = ngx_http_upstream_process_upstream;                                   
+    r->write_event_handler = ngx_http_upstream_process_downstream;
+
+22.调用ngx_http_upstream_process_upstream()方法读取响应体
+   ngx_event_pipe()
+      ngx_event_pipe_read_upstream()
+	chain = p->preread_bufs; // p->preread_bufs中保存的就是u->buffer
+        p->preread_bufs = NULL;
+
+23.读取upstream中的数据
+   n = p->upstream->recv_chain(p->upstream, chain, limit);
+
+
+
+      
  
+
 
 tomcat返回的数据太少好像就无法触发u的读事件,把u->buffer的值调小,这样在读tomcat数据时就不会一次全部读完了;
 在proxy_pass中由proxy_buffer_size指令指定u->buffer的大小;
 
 调整好buffer后应该就可以触发下面的u的读事件了
 u->read_event_handler = ngx_http_upstream_process_upstream;
+
+
+
 
 
 

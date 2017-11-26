@@ -383,7 +383,8 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
 
 /**
- * 向事件框架添加读事件
+ * 向事件框架添加读事件,是否真正添加需要看当前使用的是什么事件模型,以及当前事件的状态
+ *
  */
 ngx_int_t
 ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)

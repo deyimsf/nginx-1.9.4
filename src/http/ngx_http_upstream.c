@@ -46,6 +46,23 @@
  *
  *
  *
+ * 上游响应头映射到客户端响应头的机制:
+ *  上游返回响应数据后通过u->read_event_handler <ngx_http_upstream_process_header>方法
+ *  读数据到u->buffer中,然后回调u->process_header(r)方法由实现这自己解析协议头;
+ *
+ *  一般在u->process_header(r)方法中,会设置上游的响应头到u->headers_in.headers中(当然一些
+ *  特殊的头比如content_type,也会被一并设置u->headers_in.content_type)
+ *
+ *  协议头解析完毕之后调用ngx_http_upstream_process_headers(),把在u->headers_in.headers
+ *  中的头信息拷贝到r->headers_out.headers中,具体拷贝哪些响应头以及如何拷贝由ngx_http_upstream_headers_in[]
+ *  数组决定
+ *
+ *  下面几个值单独设置:
+ *  r->headers_out.status = u->headers_in.status_n;
+ *  r->headers_out.status_line = u->headers_in.status_line;
+ *  r->headers_out.content_length_n = u->headers_in.content_length_n;
+ *
+ *
  *
  */
 
@@ -2136,7 +2153,7 @@ ngx_http_upstream_read_request_handler(ngx_http_request_t *r)
 }
 
 /*
- * 读取upstream响应头
+ * 读取upstream返回的协议头
  * 在该方法中，每成功读取一段数据，就会把数据放入到u.buffer中
  * 然后再回调u->process_header()方法
  */
@@ -2205,11 +2222,11 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 #endif
     }
 
-    // 从上游读取数据，并将其放入到u->buffer缓存中
-    // 其中u->buffer的大小有u->conf->buffer_size决定
+    /*
+     * 从上游读取协议头数据，并将其放入到u->buffer缓存中
+     * 其中buffer的大小由u->conf->buffer_size决定,这个值必须指定,在proxy_pass中由proxy_buffer_size指令指定
+     */
     for ( ;; ) {
-
-    	/* 从这里可以看出用于接收upsteam响应头的缓存大小已经确定了 */
 
         n = c->recv(c, u->buffer.last, u->buffer.end - u->buffer.last);
 
@@ -2218,8 +2235,11 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
             ngx_add_timer(rev, u->read_timeout);
 #endif
 
-            // 读数据后返回NGX_AGAIN,说明有未读完的数据
-            // 将当前读事件重新放入到nginx主事件循环中
+            /*
+             * 读数据后返回NGX_AGAIN,说明本次事件已经没有可用的数据了,需要等待下次可读事件的到来
+             * 这里调用read_event方法的字面意思是把这个读事件添加到事件管理器中,对于epoll来说相
+             * 当于什么也没做
+             */
             if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
                 ngx_http_upstream_finalize_request(r, u,
                                                NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -2252,7 +2272,7 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
          */
         rc = u->process_header(r);
 
-        // 返回NGX_AGAIN,说明并未完全读取出用户的自定义协议头
+        /* 返回NGX_AGAIN,说明并未完全读取出用户的自定义协议头 */
         if (rc == NGX_AGAIN) {
         	/*
         	 * 如果u->buffer的容量都被用完了也没有读完响应头,则认为这是一个不合法的响应,寻找下一个upsteam去执行
@@ -2266,7 +2286,7 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
                 return;
             }
 
-            // 继续去读数据c->recv
+            /* 走到这里说明本次读取的数据没有覆盖到用户自定义的协议头,继续去读数据c->recv */
             continue;
         }
 
@@ -2300,8 +2320,10 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         }
     }
 
-    // 处理已经解析出的头部，该方法会把已经解析出的头部放入到ngx_http_request_t结构体的headers_out成员中
-    // 做种ngx_http_send_header方法会将这些包头发送出去
+    /*
+     * 遍历上游服务器返回的响应头,把从上游返回的响应头复制到r->headers_out.headers数组中
+     * 具体复制什么头以及怎么复制由ngx_http_upstream_headers_in[]数组决定
+     */
     if (ngx_http_upstream_process_headers(r, u) != NGX_OK) {
         return;
     }
@@ -2581,6 +2603,10 @@ ngx_http_upstream_test_connect(ngx_connection_t *c)
 }
 
 
+/*
+ * 遍历上游服务器返回的响应头,把从上游返回的响应头复制到r->headers_out.headers数组中
+ * 具体复制什么头以及怎么复制由ngx_http_upstream_headers_in[]数组决定
+ */
 static ngx_int_t
 ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
@@ -2650,6 +2676,10 @@ ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
         return NGX_DONE;
     }
 
+    /*
+     * 遍历上游服务器返回的响应头,把从上游返回的响应头复制到r->headers_out.headers数组中
+     * 具体复制什么头以及怎么复制由ngx_http_upstream_headers_in[]数组决定
+     */
     part = &u->headers_in.headers.part;
     h = part->elts;
 
@@ -2671,10 +2701,16 @@ ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
             continue;
         }
 
+        /* TODO 干啥呢 content-type头会走到这里 */
         hh = ngx_hash_find(&umcf->headers_in_hash, h[i].hash,
                            h[i].lowcase_key, h[i].key.len);
 
         if (hh) {
+        	/*
+        	 * content-type头对应ngx_http_upstream_copy_content_type()方法
+        	 * 作用是把上游的content_type拷贝到r->headers_out.content_type中
+        	 *
+        	 */
             if (hh->copy_handler(r, &h[i], hh->conf) != NGX_OK) {
                 ngx_http_upstream_finalize_request(r, u,
                                                NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -3073,6 +3109,10 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
         return;
     }
 
+    /*
+     *  之前用于读响应头的buffer赋值给p->preread_bufs,u->buffer里面可能存在提前读到的响应体
+     *  当在ngx_event_pipe_read_upstream()方法中把u->buffer存起来后p->preread_bufs就置为空了
+     */
     p->preread_bufs->buf = &u->buffer;
     p->preread_bufs->next = NULL;
     u->buffer.recycled = 1;

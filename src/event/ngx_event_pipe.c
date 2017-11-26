@@ -129,7 +129,7 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
 
             /* use the pre-read bufs if they exist */
 
-            chain = p->preread_bufs;
+            chain = p->preread_bufs; /* 对于目前的upsteam来说就是u->buffer */
             p->preread_bufs = NULL;
             n = p->preread_size;
 

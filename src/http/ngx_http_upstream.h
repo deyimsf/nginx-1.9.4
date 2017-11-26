@@ -58,8 +58,10 @@ typedef struct {
     ngx_uint_t                       bl_state;
 
     ngx_uint_t                       status;
+    /* 记录上游服务器响应的开始时间 */
     ngx_msec_t                       response_time;
     ngx_msec_t                       connect_time;
+    /* 记录解析上游服务器响应头用掉的事件 */
     ngx_msec_t                       header_time;
     off_t                            response_length;
 
@@ -384,6 +386,12 @@ struct ngx_http_upstream_s {
     ngx_array_t                     *caches;
 #endif
 
+    /*
+     * 这个字段用来存放从上游获取的响应头,当然如果上游服务器并不是http协议,比如是redis,那就需要
+     * redis模块开发者根据redis的返回情况来设置这个字段中的值了
+     *
+     * TODO 是不是第三方开发者只需要设置这个头(u->headers_in),并不需要设置他对应的r中的头(r->headers_out)?
+     */
     ngx_http_upstream_headers_in_t   headers_in;
 
     ngx_http_upstream_resolved_t    *resolved;

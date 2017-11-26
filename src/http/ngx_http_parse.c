@@ -823,6 +823,19 @@ done:
 }
 
 
+/*
+ * 解析请求头,每解析出一个请求头就会返回
+ * 	 Server: Nginx
+ *	 Date: Sun, 26 Nov 2017 06:36:44 GMT
+ *	 Content-Type: image/jpeg
+ *	 Content-Length: 7092
+ *	 Connection: keep-alive
+ * 解析出第一个请求头"Server: MyNgx"就会返回,解析出的请求都的指针会放在下面四个变量中
+ *   u_char   *header_name_start; // 响应头名字("Server")开始地址
+ *   u_char   *header_name_end;   // 响应头名字("Server")结束地址
+ *   u_char   *header_start;	  // 响应头值("MyNgx")开始地址
+ *   u_char   *header_end;        // 响应头值("MyNgx")结束地址
+ */
 ngx_int_t
 ngx_http_parse_header_line(ngx_http_request_t *r, ngx_buf_t *b,
     ngx_uint_t allow_underscores)

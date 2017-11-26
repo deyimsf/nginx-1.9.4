@@ -841,15 +841,37 @@ struct ngx_http_request_s {
 
     /* used to parse HTTP headers */
 
+    /*
+     * 下面这八个字段在解析HTTP头的时候用到,比如目前用到这些字段的方法
+     *  ngx_http_parse_request_line()解析请求行
+     *  ngx_http_parse_status_line()解析响应状态行
+     * 	ngx_http_parse_header_line()解析请求头
+     * 用下面的响应数据解析这些字段的意义
+     *  HTTP/1.1 200 OK
+	 *	Server: MyNgx
+	 *	Date: Sun, 26 Nov 2017 06:36:44 GMT
+	 *	Content-Type: image/jpeg
+	 *	Content-Length: 7092
+	 *	Connection: keep-alive
+     */
+
+    /* 当前解析的状态,上面三个_line()方法呢都有一个state枚举(enum),用来表示当前解析时的状 */
     ngx_uint_t                        state;
 
+    /* 解析到的头hash值,比HTTP头"Server" */
     ngx_uint_t                        header_hash;
+    /* 如果解析到的小写形式的HTTP头是"server",那么lowcase_header[lowcase_index]就是这个头最后一个字符的下一个位置 */
     ngx_uint_t                        lowcase_index;
+    /* 解析到的小写形式的HTTP头,比如"server" */
     u_char                            lowcase_header[NGX_HTTP_LC_HEADER_LEN];
 
+    /* 解析到的一个HTTP头的开始地址,比如HTTP头"Server"在内存中的开始地址 */
     u_char                           *header_name_start;
+    /* "Server"这个HTTP头在内存中的结束地址 */
     u_char                           *header_name_end;
+    /* HTTP头"Server"的值("MyNgx")的内存开始地址*/
     u_char                           *header_start;
+    /* HTTP头"Server"的值("MyNgx")的内存结束地址*/
     u_char                           *header_end;
 
     /*

@@ -1680,6 +1680,9 @@ out:
 }
 
 
+/*
+ * 处理上游返回的响应行
+ */
 static ngx_int_t
 ngx_http_proxy_process_status_line(ngx_http_request_t *r)
 {
@@ -1743,6 +1746,7 @@ ngx_http_proxy_process_status_line(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
+    /* 拷贝状态行 */
     ngx_memcpy(u->headers_in.status_line.data, ctx->status.start, len);
 
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -1759,6 +1763,19 @@ ngx_http_proxy_process_status_line(ngx_http_request_t *r)
 }
 
 
+/*
+ * 处理上游返回的响应头,解析完后的响应头都放在了
+ * 	 r->upstream->headers_in.headers
+ * headers是一个ngx_table_elt_t类型的数组,另外对于一些常用的头会单独拿出来,比如下面的这些头
+ * 	 headers_in.content_length
+ * 			    content_type
+ * 			    status_line
+ * 			    date
+ * 			    server
+ * 这些头是通过下面的方法放入到对应位置的
+ * 	 hh->handler(r, h, hh->offset)
+ * 这个方法会把headers中的元素值赋值给 headers_in.content_length等这些特殊头
+ */
 static ngx_int_t
 ngx_http_proxy_process_header(ngx_http_request_t *r)
 {
@@ -1773,6 +1790,7 @@ ngx_http_proxy_process_header(ngx_http_request_t *r)
 
     for ( ;; ) {
 
+    	/* 解析请求头,每解析出一个请求头就会返回 */
         rc = ngx_http_parse_header_line(r, &r->upstream->buffer, 1);
 
         if (rc == NGX_OK) {
@@ -1803,6 +1821,7 @@ ngx_http_proxy_process_header(ngx_http_request_t *r)
             ngx_memcpy(h->value.data, r->header_start, h->value.len);
             h->value.data[h->value.len] = '\0';
 
+            /* 下面这俩逻辑有啥区别? TODO 哪种情况会出现h->key.len和r->lowcase_index不相等 */
             if (h->key.len == r->lowcase_index) {
                 ngx_memcpy(h->lowcase_key, r->lowcase_header, h->key.len);
 
@@ -1825,6 +1844,8 @@ ngx_http_proxy_process_header(ngx_http_request_t *r)
         }
 
         if (rc == NGX_HTTP_PARSE_HEADER_DONE) {
+
+        	/* 所有的http头解析完毕 */
 
             /* a whole header has been parsed successfully */
 
@@ -1868,6 +1889,10 @@ ngx_http_proxy_process_header(ngx_http_request_t *r)
             u = r->upstream;
 
             if (u->headers_in.chunked) {
+            	/*
+            	 * 如果上游响应头中有chunked,那说明上游要使用chunked形式传输数据
+            	 * 那么这里把content_length_n设置为-1
+            	 */
                 u->headers_in.content_length_n = -1;
             }
 
