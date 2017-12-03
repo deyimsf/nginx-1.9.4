@@ -1996,6 +1996,21 @@ ngx_http_proxy_input_filter_init(void *data)
 }
 
 
+/*
+ * 该方法的作用是把buf追加到p->in这个链表的尾部,追加的过程并没有复用buf这个结构体,
+ * 而是重新拷贝了一份这个buf对象b,把拷贝的对象b追加到了这个链表的尾部,然后彼此的shadow
+ * 字段指向了彼此.
+ *
+ * TODO 这个方法把数据追加到p->in中时为啥要拷贝buf而不是直接把buf对象追加过去?
+ * TODO 彼此的shadow又是干啥的?
+ *
+ * /http/modules/ngx_http_fastcgi_module.c:712:    u->pipe->input_filter = ngx_http_fastcgi_input_filter;
+ * /http/modules/ngx_http_proxy_module.c:890:    u->pipe->input_filter = ngx_http_proxy_copy_filter;
+ * /http/modules/ngx_http_proxy_module.c:1508:    r->upstream->pipe->input_filter = ngx_http_proxy_copy_filter;
+ * /http/modules/ngx_http_proxy_module.c:1975:        u->pipe->input_filter = ngx_http_proxy_chunked_filter;
+ * /http/modules/ngx_http_scgi_module.c:511:    u->pipe->input_filter = ngx_event_pipe_copy_input_filter;
+ * /http/modules/ngx_http_uwsgi_module.c:679:    u->pipe->input_filter = ngx_event_pipe_copy_input_filter;
+ */
 static ngx_int_t
 ngx_http_proxy_copy_filter(ngx_event_pipe_t *p, ngx_buf_t *buf)
 {
@@ -2007,6 +2022,7 @@ ngx_http_proxy_copy_filter(ngx_event_pipe_t *p, ngx_buf_t *buf)
         return NGX_OK;
     }
 
+    /* 获取一个链表项 */
     cl = ngx_chain_get_free_buf(p->pool, &p->free);
     if (cl == NULL) {
         return NGX_ERROR;
@@ -2014,15 +2030,44 @@ ngx_http_proxy_copy_filter(ngx_event_pipe_t *p, ngx_buf_t *buf)
 
     b = cl->buf;
 
+    /*
+     * 把入参buf这个结构体拷贝给刚获取的buf对象,所以b和buf指向的内存是相同的,只是他们本身的地址不同
+     * 用图表示如下:
+     *    	    b				buf
+     *  	---------		 ---------
+     *  	| 0 0 0 |		 | 1 0 1 |
+     *  	---------		 ---------
+     *  						/
+     *  			    ------------
+     *  			    |          |
+     *  			    ------------
+     * 拷贝后变成这样:
+     *    	    b				buf
+     *  	---------		 ---------
+     *  	| 1 0 1 |		 | 1 0 1 |
+     *  	---------		 ---------
+     *			   \		  /
+     *  		  --------------
+     *  		  |            |
+     *  		  --------------
+     * 此时b和buf对自身数据的改变不会影响彼此
+     */
     ngx_memcpy(b, buf, sizeof(ngx_buf_t));
+    /* 这个影子就是b这个缓存的数据来源 TODO 干啥用的 */
     b->shadow = buf;
     b->tag = p->tag;
     b->last_shadow = 1;
     b->recycled = 1;
+    /* b和buf变成了彼此的影子 TODO 干啥用的 */
     buf->shadow = b;
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, p->log, 0, "input buf #%d", b->num);
 
+    /*
+     * 下面这段逻辑用来把cl放入到p->in这个链表尾部
+     *
+     * p->last_in始终是p->in这个链表的最后一个链表项的next变量的地址
+     */
     if (p->in) {
         *p->last_in = cl;
     } else {
@@ -2030,6 +2075,7 @@ ngx_http_proxy_copy_filter(ngx_event_pipe_t *p, ngx_buf_t *buf)
     }
     p->last_in = &cl->next;
 
+    /* TODO upstream返回的总长度吗? */
     if (p->length == -1) {
         return NGX_OK;
     }
@@ -2183,6 +2229,15 @@ ngx_http_proxy_chunked_filter(ngx_event_pipe_t *p, ngx_buf_t *buf)
 }
 
 
+/*
+ * bytes: 字节个数
+ *
+ * 当proxy_buffering指令设置为off的时候通过回调u->input_filter()函数执行这个方法
+ * 作用就是把从upsteam中读到的数据追加到u->out_bufs这个链表尾部,追加的时候会启用新的
+ * ngx_buf_t结构体
+ *
+ * 后续会把u->out_bufs中的数据发送给客户端
+ */
 static ngx_int_t
 ngx_http_proxy_non_buffered_copy_filter(void *data, ssize_t bytes)
 {
@@ -2211,6 +2266,10 @@ ngx_http_proxy_non_buffered_copy_filter(void *data, ssize_t bytes)
     b = &u->buffer;
 
     cl->buf->pos = b->last;
+    /* 在upsteam的ngx_http_upstream_send_response()方法中回调这个方法的时候会有下面的操作:
+     * 	u->buffer.last = u->buffer.pos;
+     * 这里通过bytes又再加回来了
+     */
     b->last += bytes;
     cl->buf->last = b->last;
     cl->buf->tag = u->output.tag;

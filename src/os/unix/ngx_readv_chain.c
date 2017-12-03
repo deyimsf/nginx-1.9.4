@@ -10,6 +10,16 @@
 #include <ngx_event.h>
 
 
+/*
+ * 将连接c中的数据读到准备好的链表chain中,这个链表中的链表项个数以及链表项中buf的大小都已经
+ * 是准备好了的,比如这个链表中只有一个链表项,那么一次调用只会尽量把这一个链表项中的buf给填满
+ * ,读的数据不会多于这个链表可接收的最大数据量
+ *
+ * 这个方法跟/src/os/unix/ngx_writev_chain.c/ngx_writev_chain()方法类似,本方法是
+ * 用来从链路中读数据的,而writev_chain()方法则是把数据写到链路中的
+ *
+ * 返回值大于零则代表读到了n个字节数据
+ */
 ssize_t
 ngx_readv_chain(ngx_connection_t *c, ngx_chain_t *chain, off_t limit)
 {

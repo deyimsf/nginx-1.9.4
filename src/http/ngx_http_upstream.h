@@ -222,6 +222,17 @@ typedef struct {
     size_t                           max_temp_file_size_conf;
     size_t                           temp_file_write_size_conf;
 
+    /*
+     * upstream在读取上游返回的数据的时候会用到buffer,具体创建几个buffer以及buf有多大则有该字段
+     * 决定,这个字段跟copy_filter过滤器中用到的bufs功能类似.
+     *
+     * 在proxy_pass中这个字段由proxy_buffers指令设置:
+     * 	 Sets the number and size of the buffers used for reading a response
+     *   from the proxied server, for a single connection.
+     *
+     * 这个字段只是用来设置接收响应体数据时用到的buffer的个数和大小,用于接收响应头的buffer使用的是
+     * ngx_http_upstream_s结构体的buffer字段.
+     */
     ngx_bufs_t                       bufs;
 
     ngx_uint_t                       ignore_headers;
@@ -399,7 +410,7 @@ struct ngx_http_upstream_s {
     ngx_buf_t                        from_client;
 
     /*
-     * 创建用来接收响应头的缓存buffer,其中buffer的大小由u->conf->buffer_size决定,这个值必须指定
+     * 用来接收响应中第一部分数据的缓存buffer,其中buffer的大小由u->conf->buffer_size决定,这个值必须指定
      *
      * 在proxy_pass中由proxy_buffer_size指令指定
      * 在memcached中用memcached_buffer_size指令指定
@@ -407,16 +418,52 @@ struct ngx_http_upstream_s {
 	 * 在scgi中用scgi_buffer_size指令指定
 	 * 在uwsgi中用uwsgi_buffer_size指令指定
 	 *
-	 * TODO 接收响应体时也是用这个吗? 好像不是
+	 * 在真正接收响应体的时候并不是用的这个字段,upstream在接收响应体的时候会用到多个buffer,具体可以创建多少
+	 * 个buffer以及这些buffer的大小则有ngx_http_upstream_conf_t结构体的bufs字段决定
      */
     ngx_buf_t                        buffer;
+    /* TODO */
     off_t                            length;
 
+    /*
+     * 当禁用buffering功能的时候ngx就会不用用多个缓存块来接收响应数据,而是用单个缓存块来接收响应数据,一旦接收
+     * 到后就会立即输出,在输出之前ngx会把从上游收到的数据追加到out_bufs这个链表尾部.
+     *
+     * 这里有一个问题,既然只用一块缓存来接收响应数据,为什么在输出的时候还要用一个链表来暂存数据? (TODO 待确认)
+     * 假设存在这样一个场景,客户端和上游服务器网络都不好,每次只能从上游服务器读取整个响应的一部分数据,而且读到的
+     * 这些数据也因为客户端网络不好的问题,也没办法每次都百分之百输出到客户端,这种情况用图表示如下:
+     *
+     *  	    out_bufs
+     *		 ----------------     ----------------	   ----------------
+     *		 |  *buf  |*next| --> |  *buf  |*next| --> |  *buf  |*next|
+     *		 ----------------     ----------------	   ----------------
+     *		  /      \			  /	     \			   /        \
+     *      -----------------------------------------------------------
+     *      |														  |
+     *		-----------------------------------------------------------
+     *		 \														 /
+     *		  \													    /
+     *		   -----------------------------------------------------
+     *		   | 		   *start        |	       *end            |
+     *		   -----------------------------------------------------
+     *								   buffer
+     * 可以看到链表out_bufs中的多个链表项可以公用同一块缓存,不一样的地方是各自链表项中buf的pos和last的变量值
+     */
     ngx_chain_t                     *out_bufs;
     ngx_chain_t                     *busy_bufs;
     ngx_chain_t                     *free_bufs;
 
     ngx_int_t                      (*input_filter_init)(void *data);
+    /*
+     * TODO 目前的结论来自u->buffering = 0, 后续需要确定当u->buffering不等于0时是否还会回调这个方法
+     *
+     * 当接收到上游数据并准备向客户端输出之前会调用这个方法,这个方法的主要作用是把从上游读到的数据追加到
+     * u->out_bufs链表中,因为后续向客户端发送的数据都是从u->out_bufs链表中取的.
+     *
+     * 比如proxy模块和memcached模块都用到了这个方法,分别是:
+     * 	  /src/http/modules/ngx_http_proxy_module.c/ngx_http_proxy_non_buffered_copy_filter()
+     * 	  /src/http/modules/ngx_http_memcached_module.c/ngx_http_memcached_filter()
+     */
     ngx_int_t                      (*input_filter)(void *data, ssize_t bytes);
     void                            *input_filter_ctx;
 
@@ -465,6 +512,18 @@ struct ngx_http_upstream_s {
     unsigned                         cache_status:3;
 #endif
 
+    /*
+     * 读取上游数据的时候是否开启缓存buffer,如果不开启的话则从上游一单获取数据后会同步的输出到客户端,如果
+     * 开启,则ngx会尽可能的将响应数据保存到缓存中,如果整个响应数据无法保存到缓存,则会将一部分保存到磁盘.
+     *
+     * 缓存的大小和块数一般有对应的_buffers指令(ngx_http_upstream_conf_t.bufs)
+     *
+     * proxy模块和fastcgi模块都有类似的指令来设置这个值,分别是proxy_buffering和fastcgi_buffering
+     * 指令,并且默认都是开启的,
+     *
+     * 当buffering被禁用时,一旦读取到响应数据会立即发送给客户端,每次可以读到的最大数据量有_buffer_size
+     * 指令设置(ngx_http_upstream_conf_t.buffer_size)
+     */
     unsigned                         buffering:1;
     unsigned                         keepalive:1;
     unsigned                         upgrade:1;

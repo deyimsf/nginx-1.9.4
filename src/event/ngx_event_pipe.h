@@ -23,13 +23,45 @@ typedef ngx_int_t (*ngx_event_pipe_output_filter_pt)(void *data,
 
 
 struct ngx_event_pipe_s {
+	/* 上游链路,比如tomcat服务器 */
     ngx_connection_t  *upstream;
+    /* 下游链路,比如客户端的浏览器*/
     ngx_connection_t  *downstream;
 
+    // TODO 干啥的呀
     ngx_chain_t       *free_raw_bufs;
+
+    /*
+     * 从链路中读到的数据
+     *
+     * TODO 是全部数据吗,应该不是吧
+     */
     ngx_chain_t       *in;
+    /*
+     * 如果cl是链表in的最后一个链表项,那么这个字段指向cl->next这个变量的地址
+     *             in	     last_in
+     *          ---------     -----
+     *          | *next |     | * |
+     *			---------     -----
+     *				  \cl    /
+     *				  ------/--
+     *				  | *next |
+     *				  ---------
+     *				  	 \
+     *				  	-------
+     *				  	| xxx |
+     *				  	-------
+     *
+     * 此时last_in中的值就是cl->next这个变量的地址
+     * cl->next这个变量的地址加*就代表这个变量指向的内容xxx,如果我们要把xxx该为yyy
+     * 那么以下两个操作等价:
+     * 	 cl->next = yyy
+     * 	 *last_in = yyy
+     *
+     */
     ngx_chain_t      **last_in;
 
+    /* TODO 干啥的 */
     ngx_chain_t       *out;
     ngx_chain_t       *free;
     ngx_chain_t       *busy;
@@ -37,12 +69,28 @@ struct ngx_event_pipe_s {
     /*
      * the input filter i.e. that moves HTTP/1.1 chunks
      * from the raw bufs to an incoming chain
+     *
+     * 把buf中的数据移动到p->in链中
+     *
+     * TODO 如果不设置这个方法会怎么样?
+     *
+     * /http/modules/ngx_http_fastcgi_module.c:712:    u->pipe->input_filter = ngx_http_fastcgi_input_filter;
+     * /http/modules/ngx_http_proxy_module.c:890:    u->pipe->input_filter = ngx_http_proxy_copy_filter;
+     * /http/modules/ngx_http_proxy_module.c:1508:    r->upstream->pipe->input_filter = ngx_http_proxy_copy_filter;
+     * /http/modules/ngx_http_proxy_module.c:1975:        u->pipe->input_filter = ngx_http_proxy_chunked_filter;
+     * /http/modules/ngx_http_scgi_module.c:511:    u->pipe->input_filter = ngx_event_pipe_copy_input_filter;
+     * /http/modules/ngx_http_uwsgi_module.c:679:    u->pipe->input_filter = ngx_event_pipe_copy_input_filter;
      */
 
     ngx_event_pipe_input_filter_pt    input_filter;
     void                             *input_ctx;
 
+    /*
+     * 输出数据时用的方法,对于proxy模块来说就是ngx_http_output_filter()方法,这个方法
+     * 是用来启动http的过滤器的
+     */
     ngx_event_pipe_output_filter_pt   output_filter;
+    /* 存放调用output_filter方法时的入参 */
     void                             *output_ctx;
 
     unsigned           read:1;
@@ -63,6 +111,9 @@ struct ngx_event_pipe_s {
 
     ssize_t            busy_size;
 
+    /*
+     * 从链路中读到的数据的长度 TODO 一次读到的?
+     */
     off_t              read_length;
     off_t              length;
 
@@ -76,7 +127,17 @@ struct ngx_event_pipe_s {
     ngx_pool_t        *pool;
     ngx_log_t         *log;
 
+
+    /*
+     * 用来存放先前读到的数据链,在upstream中代表的是upstream中的buffer字段,比如在ngx_http_upstream_send_response()
+     * 方法中会有如下设置:
+     * 		p->preread_bufs->buf = &u->buffer;
+     */
     ngx_chain_t       *preread_bufs;
+    /*
+     * 数据链preread_bufs的数据大小,比如在ngx_http_upstream_send_response()方法中会有如下设置
+     * 		p->preread_size = u->buffer.last - u->buffer.pos;
+     */
     size_t             preread_size;
     ngx_buf_t         *buf_to_file;
 

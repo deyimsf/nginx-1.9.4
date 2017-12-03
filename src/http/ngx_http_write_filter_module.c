@@ -198,7 +198,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
      */
 
     /*
-     * 当设置了postpone_output指令后,如果这次要输出的数据小于这个值,那么就不允许输出数据
+     * 当设置了postpone_output指令后,如果这次要输出的数据小于这个值(默认1460),那么就不允许输出数据
      * 如果当前要输出的数据是整个请求的最后一个数据,或者有刷新标记,则忽略postpone_output指令直接输出数据
      *
      * 则直接返回NGX_OK,这个时候当前的cheker方法会调用ngx_http_finalize_request(r, rc)去结束请求

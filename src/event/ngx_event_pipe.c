@@ -28,8 +28,10 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 
     for ( ;; ) {
         if (do_write) {
+
             p->log->action = "sending to client";
 
+            /* 把从上游读到的数据写到下游 */
             rc = ngx_event_pipe_write_to_downstream(p);
 
             if (rc == NGX_ABORT) {
@@ -46,6 +48,7 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 
         p->log->action = "reading upstream";
 
+        /* 从上游读数据 */
         if (ngx_event_pipe_read_upstream(p) == NGX_ABORT) {
             return NGX_ABORT;
         }
@@ -326,21 +329,31 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
 
         delay = p->limit_rate ? (ngx_msec_t) n * 1000 / p->limit_rate : 0;
 
+        /* 读到的数据的长度 */
         p->read_length += n;
         cl = chain;
         p->free_raw_bufs = NULL;
 
+        /*
+         * n代表本次读到的数据长度,读到的数据都在cl链表中
+         * 下面这个循环用来把cl链表中的数据追加到p->in链表中,后续会从这个链表中把数据输出到客户端
+         */
         while (cl && n > 0) {
 
             ngx_event_pipe_remove_shadow_links(cl->buf);
 
+            /* size代表这个buf的容量 */
             size = cl->buf->end - cl->buf->last;
 
             if (n >= size) {
+            	/*
+            	 * 如果本次读到的数据大于单个buf的容量,那么说明这个buf已经被数据填满了,更新last为end就可以了
+            	 */
                 cl->buf->last = cl->buf->end;
 
                 /* STUB */ cl->buf->num = p->num++;
 
+                /* TODO */
                 if (p->input_filter(p, cl->buf) == NGX_ERROR) {
                     return NGX_ABORT;
                 }

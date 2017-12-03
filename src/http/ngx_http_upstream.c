@@ -64,6 +64,9 @@
  *
  *
  *
+ * 关闭u->buffering的时候,当向客户端发送数据时会回调u->input_filter()方法,第三方模块在实现这个
+ * 方法时需要把从上游读到的数据追加到u->out_bufs链表中,ngx通过这个链表向客户端输出数据
+ *
  */
 
 #include <ngx_config.h>
@@ -2895,8 +2898,14 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
-    // 如果u->buffering为0 则表示以下游网速优先，使用固定大小的内存作为缓存
+    /*
+     * 如果没有开启多块缓存则从上游读了多少数据就立即向客户端发送多少数据
+     */
     if (!u->buffering) {
+
+    	/*
+    	 * 走到这里说明不用缓存,对于上游返回的响应数据要立即输出到客户端
+    	 */
 
         if (u->input_filter == NULL) {
             u->input_filter_init = ngx_http_upstream_non_buffered_filter_init;
@@ -2904,11 +2913,16 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
             u->input_filter_ctx = r;
         }
 
-        // 以下这两个读写事件方法最终都会调用ngx_http_upstream_process_non_buffered_request方法
-        // 由buffer_request方法负责从上游读数据，并负责向下游写数据，并且buffer_request方法也会多次调用
-        // u->input_filter回调函数
+        /*
+         * 当上游的读事件触发时,通过下面的方法读上游数据并把上游数据写到客户端
+         *
+         * 使用ngx_http_upstream_process_non_buffered_upstream()函数来读取上游数据,该函数会调用
+         * ngx_http_upstream_process_non_buffered_request()方法来真正读取上游数据并向客户端写数据
+         */
         u->read_event_handler = ngx_http_upstream_process_non_buffered_upstream;
-        // 改事件方法负责向客户端发送数据
+        /*
+         * 当客户端写事件触发时,通过下面的方法读上游数据并把上游数据写到客户端
+         */
         r->write_event_handler =
                                 ngx_http_upstream_process_non_buffered_downstream;
 
@@ -2924,6 +2938,7 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
             tcp_nodelay = 1;
 
+            /* 关闭nagle算法 */
             if (setsockopt(c->fd, IPPROTO_TCP, TCP_NODELAY,
                                (const void *) &tcp_nodelay, sizeof(int)) == -1)
             {
@@ -2939,12 +2954,20 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
         n = u->buffer.last - u->buffer.pos;
 
         if (n) {
+
+        	/*
+        	 * ngx为了统一编程规范,把last向前移动到pos,因为后续u->input_filter()方法中会把last向后移动n个字节
+        	 * 这样所有实现u->input_filter()方法的模块都会按照这个规则来编码
+        	 */
+
             u->buffer.last = u->buffer.pos;
 
             // 响应体的长度吗？
             u->state->response_length += n;
 
-            // 调用u->input_filter回调函数
+            /*
+             * 回调u->input_filter()函数 对于proxy模块来说就是ngx_http_proxy_non_buffered_copy_filter()方法
+             */
             if (u->input_filter(u->input_filter_ctx, n) == NGX_ERROR) {
                 ngx_http_upstream_finalize_request(r, u, NGX_ERROR);
                 return;
@@ -3458,6 +3481,9 @@ ngx_http_upstream_process_upgraded(ngx_http_request_t *r,
 }
 
 
+/*
+ * 这个方法由客户端触发,r是客户端请求
+ */
 static void
 ngx_http_upstream_process_non_buffered_downstream(ngx_http_request_t *r)
 {
@@ -3508,6 +3534,9 @@ ngx_http_upstream_process_non_buffered_upstream(ngx_http_request_t *r,
 }
 
 
+/*
+ * 从上游读数据并向下游写数据
+ */
 static void
 ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
     ngx_uint_t do_write)
@@ -3533,7 +3562,9 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
         if (do_write) {
 
             if (u->out_bufs || u->busy_bufs) {
-            	// 对于没有发送完的数据会使用r->out链接起来
+            	/*
+            	 * 对于没有发送完的数据会使用r->out链接起来
+            	 */
                 rc = ngx_http_output_filter(r, u->out_bufs);
 
                 if (rc == NGX_ERROR) {
@@ -3541,8 +3572,33 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
                     return;
                 }
 
-                // 回收已经发送完数据的chain结构体,并且对于未发送完的数据放到u->busy_bufs链的末尾
-                // 此时r->out和u->busy_bufs各自拥有的chain指向的内存地址是一样的
+                /*
+                 * 回收已经发送完数据的chain结构体,分为两种请情况
+                 * 1.链表u->out_bufs中的数据已经完全发送到客户端:此时链表中所有链表项的buf的pos和last是相等的,
+                 *   这种情况下调用下面的方法后,该链表就会完全释放并且u->busy_bufs和u->out_bufs也会被设置为NULL
+                 *
+                 * 2.链表u->out_bufs中的数据未完全发送到客户端,此时r->out和u->out_bufs的结构图可能如下:
+                 *	 u->out_bufs				  r->out
+                 *	   -------		-------		  -------      -------
+                 *	   |  1  | ---> |  2  | --->  |  3  | ---> |  4  |
+                 *	   -------		-------       -------      -------
+                 *  上图表示u->out_bufs链表中的前两个链表项的数据都已经发送到了客户端,后两块还没有发送,没有发送的数据
+                 *  项追加到了r->out链表尾部.
+                 *
+                 * 对于第一种请情况,当执行完下面的方法后除了u->free_bufs链表,其它的链表都是NULL
+                 * 		r->out = NULL
+                 * 		u->busy_bufs = NULL
+                 * 		u->out_bufs = NULL
+                 *
+                 * 对于第二种请情况,当执行完下面的方法后会变成如下:
+                 *  u->out_bufs = NULL
+                 *
+                 *  u->free_bufs			 		r->out|u->busy_bufs
+                 *	   -------		-------		  		-------      -------
+                 *	   |  2  | ---> |  1  |       		|  3  | ---> |  4  |
+                 *	   -------		-------       		-------      -------
+                 * 可以看到r->out和u->busy_bufs其实指向的是同一个链表
+                 */
                 ngx_chain_update_chains(r->pool, &u->free_bufs, &u->busy_bufs,
                                         &u->out_bufs, u->output.tag);
             }
@@ -3581,9 +3637,12 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
 
         if (size && upstream->read->ready) {
 
+        	/*
+        	 * 从上游读取数据,读到的数据放到buffer中(b = &u->buffer)中
+        	 */
             n = upstream->recv(upstream, b->last, size);
 
-            // 还有可读的数据,方法返回，等待下一个可读事件
+            /* 还有可读的数据,方法返回,等待下一个可读事件 */
             if (n == NGX_AGAIN) {
                 break;
             }
@@ -3598,11 +3657,11 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
                 }
             }
 
-            // 读取到了上游的数据
-            // 可以向下游发送数据了
+            /*
+             * 读取到了上游的数据,将do_write置为1,后续会根据这个标志把读到的数据立即发送给客户端
+             */
             do_write = 1;
 
-            //
             continue;
         }
 
@@ -4619,6 +4678,10 @@ ngx_http_upstream_process_limit_rate(ngx_http_request_t *r, ngx_table_elt_t *h,
 }
 
 
+/*
+ * Buffering can also be enabled or disabled by passing “yes” or “no” in the “X-Accel-Buffering”
+ * response header field. This capability can be disabled using the proxy_ignore_headers directive.
+ */
 static ngx_int_t
 ngx_http_upstream_process_buffering(ngx_http_request_t *r, ngx_table_elt_t *h,
     ngx_uint_t offset)

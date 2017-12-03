@@ -86,7 +86,7 @@ static ngx_int_t ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx);
  *	  如果当前ctx->in->buf不可以直接发送出去,那么就需要为其创建buf和chain,将数据拷贝到buf中,并将其追加到out链的尾部:
  *      创建的buf大小和个数由output_buffers指令决定,超过这个大小就让出资源,让别的事件去执行.
  *
- *    每形成一个out链就会执行下一个过滤器试着去发送一次数据,不关有没有完全发送完毕都会把out链表项全部移动到ctx->busy链表
+ *    每形成一个out链就会执行下一个过滤器试着去发送一次数据,不管有没有完全发送完毕都会把out链表项全部移动到ctx->busy链表
  *    下,然后out变量置空并继续装新的链表
  *
  *    ctx->busy链表中空闲的链表项会被释放到ctx->free或pool->chian中
