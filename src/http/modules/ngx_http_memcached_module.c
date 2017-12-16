@@ -516,6 +516,9 @@ ngx_http_memcached_filter(void *data, ssize_t bytes)
 
     *ll = cl;
 
+    /*
+     * 下面这一段代码是把cl中的buf指针,指向u->buffer中有效的数据区域
+     */
     last = b->last;
     cl->buf->pos = last;
     b->last += bytes;
@@ -528,6 +531,8 @@ ngx_http_memcached_filter(void *data, ssize_t bytes)
 
     if (bytes <= (ssize_t) (u->length - NGX_HTTP_MEMCACHED_END)) {
         u->length -= bytes;
+
+        /* 读到一点数据就返回 */
         return NGX_OK;
     }
 

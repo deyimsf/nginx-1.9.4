@@ -378,6 +378,13 @@ struct ngx_http_upstream_s {
 
     ngx_event_pipe_t                *pipe;
 
+    /*
+     * 任何三方模块使用upstream时,都会把协议的请求数据放到这个链表中
+     * upsteam模块通过回调u->create_request(r)方法来触发三方模块的实现
+     *
+     * 比如proxy模块对应的u->create_request()回调方法是ngx_http_proxy_create_request()方法,该方法
+     * 会把要发送的http协议头组装好并赋值给request_bufs这个链表
+     */
     ngx_chain_t                     *request_bufs;
 
     /*
@@ -401,10 +408,15 @@ struct ngx_http_upstream_s {
      * 这个字段用来存放从上游获取的响应头,当然如果上游服务器并不是http协议,比如是redis,那就需要
      * redis模块开发者根据redis的返回情况来设置这个字段中的值了
      *
-     * TODO 是不是第三方开发者只需要设置这个头(u->headers_in),并不需要设置他对应的r中的头(r->headers_out)?
+     * 第三方开发者只需要设置这个头(u->headers_in),并不需要设置他对应的r中的头(r->headers_out)
+     *
+     * 协议头解析完毕之后调用ngx_http_upstream_process_headers()方法,该方法会把在u->headers_in.headers
+     * 中的头信息拷贝到r->headers_out.headers中,具体拷贝哪些响应头以及如何拷贝由ngx_http_upstream_headers_in[]
+     * 数组决定
      */
     ngx_http_upstream_headers_in_t   headers_in;
 
+    /* TODO 干啥的 */
     ngx_http_upstream_resolved_t    *resolved;
 
     ngx_buf_t                        from_client;
@@ -426,8 +438,10 @@ struct ngx_http_upstream_s {
     off_t                            length;
 
     /*
-     * 当禁用buffering功能的时候ngx就会不用用多个缓存块来接收响应数据,而是用单个缓存块来接收响应数据,一旦接收
+     * 当禁用buffering功能的时候ngx就会不用多个缓存块来接收响应数据,而是用单个缓存块来接收响应数据,一旦接收
      * 到后就会立即输出,在输出之前ngx会把从上游收到的数据追加到out_bufs这个链表尾部.
+     *
+     * TODO? 如果不禁用buffering功能就不用这个字段了吗?
      *
      * 这里有一个问题,既然只用一块缓存来接收响应数据,为什么在输出的时候还要用一个链表来暂存数据? (TODO 待确认)
      * 假设存在这样一个场景,客户端和上游服务器网络都不好,每次只能从上游服务器读取整个响应的一部分数据,而且读到的
@@ -463,17 +477,48 @@ struct ngx_http_upstream_s {
      * 比如proxy模块和memcached模块都用到了这个方法,分别是:
      * 	  /src/http/modules/ngx_http_proxy_module.c/ngx_http_proxy_non_buffered_copy_filter()
      * 	  /src/http/modules/ngx_http_memcached_module.c/ngx_http_memcached_filter()
+     *
      */
     ngx_int_t                      (*input_filter)(void *data, ssize_t bytes);
+    /*
+     * upstream在回调input_filter()方法时,会把这个字段传递给这个方法的第一个参数
+     * 大部分时候这个字段值是请求对象r
+     */
     void                            *input_filter_ctx;
 
 #if (NGX_HTTP_CACHE)
     ngx_int_t                      (*create_key)(ngx_http_request_t *r);
 #endif
+    /*
+     * 用来创建请求的回调方法
+     * 第三方模块在实现这个函数时要把向上游发送的协议头内容赋值给u->request_bufs链表
+     *
+     * 一个请求只调用一次
+     */
     ngx_int_t                      (*create_request)(ngx_http_request_t *r);
+    /*
+     * 一个重新初始化请求的回调方法,每次调用ngx_http_upstream_connect()方法时,都会在这个方法中检查是否已经发送过请求,
+     * 如果发送过则通过ngx_http_upstream_reinit()方法来回调u->reinit_request(r)[会被多次调用]方法,否做就不回调.
+     *
+     * 这个方法目前没发现什么潜规则,第三发模块自己决定该做什么事
+     *
+     * 一个请求可能被多次调用
+     */
     ngx_int_t                      (*reinit_request)(ngx_http_request_t *r);
+    /*
+     * 负责处理上游返回的响应头,ngx仅用一块u->buffer来接收响应头数据,如果响应头数据大于这个缓存块可承受的容量,ngx就不玩了.
+     * 这个方法的潜规则是,第三方模块要更改u->buffer->pos的值,比如proxy模块中ngx_http_proxy_process_status_line()
+     * 方法,它会通过调用ngx_http_parse_status_line()方法来把响应行数据给吃掉(u->buffer->pos=响应行最后一个字符的后面)
+     *
+     * 一个请求可能被多次调用
+     */
     ngx_int_t                      (*process_header)(ngx_http_request_t *r);
+    /* 目前没用到 */
     void                           (*abort_request)(ngx_http_request_t *r);
+    /*
+     * 结束upstream请求,在ngx_http_upstream_finalize_request()方法中调用
+     * 一个请求只调用一次
+     */
     void                           (*finalize_request)(ngx_http_request_t *r,
                                          ngx_int_t rc);
     ngx_int_t                      (*rewrite_redirect)(ngx_http_request_t *r,

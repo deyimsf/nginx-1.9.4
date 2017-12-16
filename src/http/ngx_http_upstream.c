@@ -24,28 +24,6 @@
  * 这两个事件方法用来检查客户端的连接是否正常,如果客户端的连接都断了,那么也就没必要再处理上游的数据了
  *
  *
- * 什么时候向客户端输出数据?
- * 1.如果子请求(对于proxy_pass并没有产生一个r对象)中的数据不需要在内存中:(r->subrequest_in_memory == 0)
- *   则upstream调用ngx_http_upstream_send_response()方法向下游(客户端)发送响应,发送时会先发送响应头,
- *   此时的r代表客户端的请求对象:
- *     rc = ngx_http_send_header(r);
- *	   p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
- *
- *     u->read_event_handler = ngx_http_upstream_process_upstream;
- *     r->write_event_handler = ngx_http_upstream_process_downstream;
- *
- *   读完上游中的数据后后调用ngx_http_upstream_finalize_request()方法来断开上游:
- *     u->finalize_request(r, rc);
- *     ngx_close_connection(u->peer.connection);
- *     rc = ngx_http_send_special(r, NGX_HTTP_LAST);
- *          ngx_http_output_filter(r, &out)  // 这一步会触发代表r中的过滤器
- *
- * 2.如果子请求(对于proxy_pass并没有产生一个r对象)中的数据需要在内存中:(r->subrequest_in_memory == 1)
- *   TODO 先看上面的流程
- *   u->input_filter
- *
- *
- *
  * 上游响应头映射到客户端响应头的机制:
  *  上游返回响应数据后通过u->read_event_handler <ngx_http_upstream_process_header>方法
  *  读数据到u->buffer中,然后回调u->process_header(r)方法由实现这自己解析协议头;
@@ -64,8 +42,70 @@
  *
  *
  *
- * 关闭u->buffering的时候,当向客户端发送数据时会回调u->input_filter()方法,第三方模块在实现这个
- * 方法时需要把从上游读到的数据追加到u->out_bufs链表中,ngx通过这个链表向客户端输出数据
+ * ----------场景1: r->subrequest_in_memory=0    u->buffering=0 -----------
+ * 1.每次客户端有事件时都检查客户端连接是否正常,如果客户端连接都不正常了,那也就没必要处理下面的数据了
+ * 	  r->read_event_handler = ngx_http_upstream_rd_check_broken_connection;
+ * 	  r->write_event_handler = ngx_http_upstream_wr_check_broken_connection;
+ *
+ * *2.回调【*】u->create_request(r)函数(整个请求中只调用一次);
+ * 	  第三方模块在实现这个函数时要把向上游发送的协议头内容赋值给u->request_bufs链表
+ *
+ * *3.每次连接上游服务器的时候都调用ngx_http_upstream_connect()方法,这个方法每次都是设置如下事件方法:
+ * 		c->write->handler = ngx_http_upstream_handler;
+ * 		c->read->handler = ngx_http_upstream_handler;
+ *
+ * 		u->write_event_handler = ngx_http_upstream_send_request_handler;
+ * 		u->read_event_handler = ngx_http_upstream_process_header;
+ *
+ *   每次都会在这个方法中检查是否已经发送过请求,如果发送过则通过ngx_http_upstream_reinit()方法
+ *   来回调【*】u->reinit_request(r)[会被多次调用]方法,否做就不回调.
+ *
+ * 4.ngx_http_upstream_send_request_handler()方法用来向上游发送请求,当u->header_sent
+ *   为1的时候说明已经已经发送过请求了,直接把u->write_event_handler设置为ngx_http_upstream_dummy_handler()
+ *   方法,这个方法就啥也不干了.
+ *
+ * *5.ngx_http_upstream_process_header()方法负责读取上游服务器返回协议头,读到的协议透数据
+ *    会放到u->buffer缓存块中
+ *
+ *   在这个方法中会回调【*】u->process_header(r)[会被多次调用]方法来处理响应协议头数据,第三方模块
+ *   需要实现这个方法并更改u->buffer->pos的指针
+ *
+ * 6.处理完响应头后因为r->subrequest_in_memory=0所以直接走ngx_http_upstream_send_response()方法.
+ *
+ *   这个方法会先调用ngx_http_send_header()方法发送响应头
+ *
+ * 7.u->input_filter()这个回调方法如果没有设置的话会设置一个默认值
+ *     u->input_filter_init = ngx_http_upstream_non_buffered_filter_init;
+ *     u->input_filter = ngx_http_upstream_non_buffered_filter;
+ *
+ * 8.走到这里后续要做的事基本就是从上游读数据,让后把从上游读到的数据发送给客户端,做这件事可以有下面两个事件触发,
+ *   一个是上游的可读事件,另一个是下游的可写事件.
+ *   因为不需要缓存,所以当上游有数据的时候我们应该立即读上游数据,并把数据发送给客户端
+ * 		u->read_event_handler = ngx_http_upstream_process_non_buffered_upstream;
+ *   因为不需要缓存,所以当下游链路可写时我们应该立即从上游读数据,并把数据发送给客户端
+ * 		r->write_event_handler = ngx_http_upstream_process_non_buffered_downstream;
+ *
+ * *9.在发送数据之前先回调【*】u->input_filter_init()方法,第三方模块需要在这个方法中做一些潜规则动作吗? TODO
+ *
+ * *10.回调【*】u->input_filter()方法,这个方法要做的事是把u->buffer中的数据追加到u->out_bufs中
+ *
+ * 11.通过ngx_http_upstream_process_non_buffered_downstream()方法间接调用ngx_http_output_filter(r, u->out_bufs)方法
+ *    来发送数据,如果u->buffer中的数据完全发送到客户端了,但是还没有读到上游的结束标记(比如已经明确知道u->length==0了),那么就重置缓存块
+ *	   	 b->pos = b->start;
+ *    	 b->last = b->start;
+ *    此时的b就是&u->buffer这个缓存块
+ *
+ * *12.如果数据还没有读完,那就继续从上游读数据到u->buffer中,只要能读到数据就要回调【*】u->input_filter()方法,
+ *     在这个方法中做的事仍然是把读取到的数据追加到u->out_bufs中
+ *
+ * *13.调用ngx_http_upstream_finalize_request()方法来结束这次请求,在这个方法中会回调【*】u->finalize_request()方法.
+ *
+ *
+ *
+ *----------场景2: r->subrequest_in_memory=1    u->buffering=0 -----------
+ * 目前proxy模块和memcached模块都没用到subrequest_in_memory=1的标记
+ *
+ *
  *
  */
 
@@ -699,6 +739,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     cln->data = r;
     u->cleanup = &cln->handler;
 
+    /* TODO这个resolved是干啥的 */
     if (u->resolved == NULL) {
 
     	/*
@@ -1163,6 +1204,8 @@ failed:
 
 /*
  * 目前得到的结果,这个方法是由上游连接触发,所以事件中的连接也就代表ngx与上游机器的连接
+ *
+ * 用来调用upstream的读写事件(u->write_event_handler | u->read_event_handler)
  */
 static void
 ngx_http_upstream_handler(ngx_event_t *ev)
@@ -1378,6 +1421,7 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
             return;
         }
 
+        /* 标记事件出错 */
         ev->error = 1;
 
     } else { /* n == 0 */
@@ -1385,6 +1429,7 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
     }
 
     ev->eof = 1;
+    /* 标记连接出错 */
     c->error = 1;
 
     if (!u->cacheable && u->peer.connection) {
@@ -1467,7 +1512,7 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     c->write->handler = ngx_http_upstream_handler;
     c->read->handler = ngx_http_upstream_handler;
 
-    // 设置upstream的读写事件handler
+    /* 设置upstream的读写事件handler,这些事件方法由ngx_http_upstream_handler()方法触发 */
     u->write_event_handler = ngx_http_upstream_send_request_handler;
     u->read_event_handler = ngx_http_upstream_process_header;
 
@@ -1500,7 +1545,7 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     if (u->request_sent) {
 
-    	/* TODO 什么情况下会进到这里 */
+    	/* TODO 什么情况下会进到这里, 重新发送链接? */
 
         if (ngx_http_upstream_reinit(r, u) != NGX_OK) {
             ngx_http_upstream_finalize_request(r, u,
@@ -1968,6 +2013,9 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
 }
 
 
+/*
+ * 向上游服务器发送数据
+ */
 static ngx_int_t
 ngx_http_upstream_send_request_body(ngx_http_request_t *r,
     ngx_http_upstream_t *u, ngx_uint_t do_write)
@@ -2157,8 +2205,9 @@ ngx_http_upstream_read_request_handler(ngx_http_request_t *r)
 
 /*
  * 读取upstream返回的协议头
- * 在该方法中，每成功读取一段数据，就会把数据放入到u.buffer中
- * 然后再回调u->process_header()方法
+ * 在该方法中每成功读取一段数据,就会把数据放入到u.buffer中然后再回调u->process_header()方法
+ *
+ * 可以看出ngx使用仅仅一块buffer来处理上游返回的协议头
  */
 static void
 ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
@@ -2186,11 +2235,11 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     /*
      * 创建用来接收响应头的缓存buffer,其中buffer的大小由u->conf->buffer_size决定,这个值必须指定
-     * 在proxy_pass中由proxy_buffer_size指令指定
-     * 在memcached中用memcached_buffer_size指令指定
-     * 在fastcgi中用fastcgi_buffer_size指令指定
-	 * 在scgi中用scgi_buffer_size指令指定
-	 * 在uwsgi中用uwsgi_buffer_size指令指定
+     *  proxy_pass中由proxy_buffer_size指令指定
+     *  memcached中用memcached_buffer_size指令指定
+     *  fastcgi中用fastcgi_buffer_size指令指定
+	 *  scgi中用scgi_buffer_size指令指定
+	 *  uwsgi中用uwsgi_buffer_size指令指定
      */
     if (u->buffer.start == NULL) {
         u->buffer.start = ngx_palloc(r->pool, u->conf->buffer_size);
@@ -2203,6 +2252,7 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         u->buffer.pos = u->buffer.start;
         u->buffer.last = u->buffer.start;
         u->buffer.end = u->buffer.start + u->conf->buffer_size;
+        /* TODO 设置为1表示内容可以改变? */
         u->buffer.temporary = 1;
 
         u->buffer.tag = u->output.tag;
@@ -2278,7 +2328,7 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         /* 返回NGX_AGAIN,说明并未完全读取出用户的自定义协议头 */
         if (rc == NGX_AGAIN) {
         	/*
-        	 * 如果u->buffer的容量都被用完了也没有读完响应头,则认为这是一个不合法的响应,寻找下一个upsteam去执行
+        	 * 如果u->buffer的容量都被用完了也没有读完响应头,则认为这是一个不合法的响应,寻找下一个upstream去执行
         	 */
             if (u->buffer.last == u->buffer.end) {
                 ngx_log_error(NGX_LOG_ERR, c->log, 0,
@@ -2342,7 +2392,9 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
     }
 
     /* subrequest content in memory */
-    /* 子请求的数据需要在内存中则走下面的逻辑 */
+    /* 子请求的数据需要在内存中则走下面的逻辑
+     * 目前proxy和memcached模块都没有用到这块逻辑,也不知道哪些upstream模块用这个逻辑了
+     */
 
     // 检查用户是否实现了input_filter回调函数,如果没有则使用nginx默认的方法
     if (u->input_filter == NULL) {
@@ -3628,6 +3680,10 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
                     return;
                 }
 
+                /*
+                 * 此时的b就是&u->buffer,数据已经完全发送到客户端了(因为u->busy_bufs是null),所以这里
+                 * 重置缓存块b,这样后续就又可以用整块缓存来接收数据了
+                 */
                 b->pos = b->start;
                 b->last = b->start;
             }
@@ -3700,6 +3756,11 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
 }
 
 
+/*
+ * upstream的回调函数u->input_filter_init()的默认实现方式
+ *
+ * 只要用到它就代表u->buffering=0
+ */
 static ngx_int_t
 ngx_http_upstream_non_buffered_filter_init(void *data)
 {
@@ -3707,6 +3768,13 @@ ngx_http_upstream_non_buffered_filter_init(void *data)
 }
 
 
+/*
+ * upstream的回调函数u->input_filter()的默认实现方式
+ *
+ * 只要用到它就代表u->buffering=0
+ *
+ * 会设置u->length -= bytes;
+ */
 static ngx_int_t
 ngx_http_upstream_non_buffered_filter(void *data, ssize_t bytes)
 {
