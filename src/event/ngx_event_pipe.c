@@ -19,6 +19,13 @@ static ngx_inline void ngx_event_pipe_remove_shadow_links(ngx_buf_t *buf);
 static ngx_int_t ngx_event_pipe_drain_chains(ngx_event_pipe_t *p);
 
 
+/*
+ * 用ngx_event_pipe_read_upstream()方法从上游读数据
+ * 用ngx_event_pipe_write_to_downstream()方法向下游写数据
+ *
+ * 类似ngx_http_upstream.c/ngx_http_upstream_process_non_buffered_request()方法,只不过
+ * 这个返回中会用到多块缓存以及临时文件.
+ */
 ngx_int_t
 ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 {
@@ -31,7 +38,10 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 
             p->log->action = "sending to client";
 
-            /* 把从上游读到的数据写到下游 */
+            /*
+             * 把从上游读到的数据写到下游
+             * 先把p->out中的数据写到下游,然后再把p->in中的数据写到下游
+             */
             rc = ngx_event_pipe_write_to_downstream(p);
 
             if (rc == NGX_ABORT) {
@@ -48,12 +58,21 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 
         p->log->action = "reading upstream";
 
-        /* 从上游读数据 */
+        /*
+         * 从上游读数据
+         * 读到的数据会放到p->in中
+         */
         if (ngx_event_pipe_read_upstream(p) == NGX_ABORT) {
             return NGX_ABORT;
         }
 
         if (!p->read && !p->upstream_blocked) {
+        	/*
+        	 * 当读数据时返回NGX_AGAIN时,p->read不会被设置为1
+        	 * TODO p->upstream_blocked 验证他如何设置,需要ngx读数据时返回NGX_AGAIN
+        	 *      如果ngx返回NGX_AGAIN时也没设置这个值,那就可以说明当ngx没办法一次读取完所有上游数据时
+        	 *		就会通过这里返回,从而把执行权利交给ngx事件框架.
+        	 */
             break;
         }
 
@@ -101,6 +120,10 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 }
 
 
+/*
+ * 从上游读数据
+ * 读到的数据放到p->in中
+ */
 static ngx_int_t
 ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
 {
@@ -121,6 +144,7 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
     for ( ;; ) {
 
         if (p->upstream_eof || p->upstream_error || p->upstream_done) {
+        	/* upstream已经有结束标记了就不要在往下走了 */
             break;
         }
 
@@ -236,6 +260,7 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
                  * a downstream is ready then write the bufs to a downstream
                  */
 
+            	/* TODO */
                 p->upstream_blocked = 1;
 
                 ngx_log_debug0(NGX_LOG_DEBUG_EVENT, p->log, 0,
@@ -337,6 +362,7 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
         /*
          * n代表本次读到的数据长度,读到的数据都在cl链表中
          * 下面这个循环用来把cl链表中的数据追加到p->in链表中,后续会从这个链表中把数据输出到客户端
+         * 追加的动作有p->input_filter(p, cl->buf)方法完成
          */
         while (cl && n > 0) {
 
@@ -353,7 +379,7 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
 
                 /* STUB */ cl->buf->num = p->num++;
 
-                /* TODO */
+                /* 把cl->buf中的数据追加到p->in链表中 */
                 if (p->input_filter(p, cl->buf) == NGX_ERROR) {
                     return NGX_ABORT;
                 }
@@ -497,6 +523,10 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
 }
 
 
+/*
+ * 把从上游读到的数据写到下游
+ * 先把p->out中的数据写到下游,然后再把p->in中的数据写到下游
+ */
 static ngx_int_t
 ngx_event_pipe_write_to_downstream(ngx_event_pipe_t *p)
 {

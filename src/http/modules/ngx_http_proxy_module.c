@@ -882,11 +882,12 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
 
     u->buffering = plcf->upstream.buffering;
 
+    /* 创建pipe */
     u->pipe = ngx_pcalloc(r->pool, sizeof(ngx_event_pipe_t));
     if (u->pipe == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
-
+    /* 设置pipe的过滤器  */
     u->pipe->input_filter = ngx_http_proxy_copy_filter;
     u->pipe->input_ctx = r;
 
@@ -907,7 +908,7 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
     /*
      * 读取请求体
      *
-     * 读请求体是根据proxy_pass这个指令的业务意义而定的,我们自定义的代理(比如读redis)不一定需要
+     * 读请求体是根据proxy这个模块的业务意义而定的,我们自定义的代理(比如读redis)不一定需要
      * 调用这个方法.
      *
      * 启动upstream的关键方法是ngx_http_upstream_init(),启动之前记住要把r->main->count++
@@ -2031,8 +2032,9 @@ ngx_http_proxy_copy_filter(ngx_event_pipe_t *p, ngx_buf_t *buf)
     b = cl->buf;
 
     /*
-     * 把入参buf这个结构体拷贝给刚获取的buf对象,所以b和buf指向的内存是相同的,只是他们本身的地址不同
-     * 用图表示如下:
+     * 把入参buf这个结构体拷贝给刚获取的buf对象,未拷贝之前b和buf是不同的ngx_buf_t结构对象,对象各自的内容也不一样.
+     * 拷贝完成后b和buf仍然是两个不同的ngx_buf_t结构对象,只不过对象的内容完全一样了.
+     * 拷贝前内存结构如下:
      *    	    b				buf
      *  	---------		 ---------
      *  	| 0 0 0 |		 | 1 0 1 |
@@ -3102,6 +3104,10 @@ ngx_http_proxy_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
              "\"proxy_busy_buffers_size\" must be less than "
              "the size of all \"proxy_buffers\" minus one buffer");
+
+        printf("proxy_busy_buffers_size[%zd] upstream.bufs.num[%zd] upstream.bufs.size[%zd]",
+        		conf->upstream.busy_buffers_size,conf->upstream.bufs.num,
+				conf->upstream.bufs.size);
 
         return NGX_CONF_ERROR;
     }

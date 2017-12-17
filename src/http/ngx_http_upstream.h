@@ -469,7 +469,8 @@ struct ngx_http_upstream_s {
 
     ngx_int_t                      (*input_filter_init)(void *data);
     /*
-     * TODO 目前的结论来自u->buffering = 0, 后续需要确定当u->buffering不等于0时是否还会回调这个方法
+     * 当u->buffering = 0也就是不使用缓存功能时,ngx在读取到上游部分数据后会回调这个方法.所以必须设置
+     * 当u->buffering = 1也就是使用多缓存块时,ngx就不会回调这个方法,所以可以不设置
      *
      * 当接收到上游数据并准备向客户端输出之前会调用这个方法,这个方法的主要作用是把从上游读到的数据追加到
      * u->out_bufs链表中,因为后续向客户端发送的数据都是从u->out_bufs链表中取的.
@@ -478,6 +479,15 @@ struct ngx_http_upstream_s {
      * 	  /src/http/modules/ngx_http_proxy_module.c/ngx_http_proxy_non_buffered_copy_filter()
      * 	  /src/http/modules/ngx_http_memcached_module.c/ngx_http_memcached_filter()
      *
+     *
+     * 这里的input有这样一层含义,把外部数据搬运到内部
+     * 比如:(ngx_http_proxy_module.c/ngx_http_proxy_handler方法中)
+     * 	   u->input_filter = ngx_http_proxy_non_buffered_copy_filter;
+     * ngx_http_proxy_non_buffered_copy_filter()方法把u->buffer中的数据搬运到u->out_bufs中
+     *
+     * 比如:(ngx_http_proxy_module.c/ngx_http_proxy_handler方法中)
+     * 	  u->pipe->input_filter = ngx_http_proxy_copy_filter;
+     * ngx_http_proxy_copy_filter()方法把buf中的数据追加到pipe->in中
      */
     ngx_int_t                      (*input_filter)(void *data, ssize_t bytes);
     /*
@@ -490,34 +500,46 @@ struct ngx_http_upstream_s {
     ngx_int_t                      (*create_key)(ngx_http_request_t *r);
 #endif
     /*
+     * 必须设置
+     *
      * 用来创建请求的回调方法
      * 第三方模块在实现这个函数时要把向上游发送的协议头内容赋值给u->request_bufs链表
      *
      * 一个请求只调用一次
+     *
      */
     ngx_int_t                      (*create_request)(ngx_http_request_t *r);
     /*
+     * 必须设置
+     *
      * 一个重新初始化请求的回调方法,每次调用ngx_http_upstream_connect()方法时,都会在这个方法中检查是否已经发送过请求,
      * 如果发送过则通过ngx_http_upstream_reinit()方法来回调u->reinit_request(r)[会被多次调用]方法,否做就不回调.
      *
      * 这个方法目前没发现什么潜规则,第三发模块自己决定该做什么事
      *
      * 一个请求可能被多次调用
+     *
      */
     ngx_int_t                      (*reinit_request)(ngx_http_request_t *r);
     /*
+     * 必须设置
+     *
      * 负责处理上游返回的响应头,ngx仅用一块u->buffer来接收响应头数据,如果响应头数据大于这个缓存块可承受的容量,ngx就不玩了.
      * 这个方法的潜规则是,第三方模块要更改u->buffer->pos的值,比如proxy模块中ngx_http_proxy_process_status_line()
      * 方法,它会通过调用ngx_http_parse_status_line()方法来把响应行数据给吃掉(u->buffer->pos=响应行最后一个字符的后面)
      *
      * 一个请求可能被多次调用
+     *
      */
     ngx_int_t                      (*process_header)(ngx_http_request_t *r);
     /* 目前没用到 */
     void                           (*abort_request)(ngx_http_request_t *r);
     /*
+     * 必须设置
+     *
      * 结束upstream请求,在ngx_http_upstream_finalize_request()方法中调用
      * 一个请求只调用一次
+     *
      */
     void                           (*finalize_request)(ngx_http_request_t *r,
                                          ngx_int_t rc);

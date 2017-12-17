@@ -237,9 +237,16 @@ struct ngx_output_chain_ctx_s {
     ngx_buf_tag_t                tag;
 
     /*
-     * 指定用户输出当前chain的过滤器
+     * 指定用户输出当前chain的方法
+     * 在copy过滤器中是:
+     * 		ctx->output_filter = (ngx_output_chain_filter_pt)ngx_http_next_body_filter;
+     * 在upstream模块中是:(ngx_http_upstream.c/ngx_http_upstream_init_request)
+     * 		u->output.output_filter = ngx_chain_writer;
      */
     ngx_output_chain_filter_pt   output_filter;
+    /*
+     * output_filter()方法的第一个入参
+     */
     void                        *filter_ctx;
 };
 

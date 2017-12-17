@@ -47,7 +47,7 @@
  * 	  r->read_event_handler = ngx_http_upstream_rd_check_broken_connection;
  * 	  r->write_event_handler = ngx_http_upstream_wr_check_broken_connection;
  *
- * *2.回调【*】u->create_request(r)函数(整个请求中只调用一次);
+ * *2.回调【*】u->create_request(r)函数(整个请求中只调用一次,必须设置);
  * 	  第三方模块在实现这个函数时要把向上游发送的协议头内容赋值给u->request_bufs链表
  *
  * *3.每次连接上游服务器的时候都调用ngx_http_upstream_connect()方法,这个方法每次都是设置如下事件方法:
@@ -102,8 +102,64 @@
  *
  *
  *
- *----------场景2: r->subrequest_in_memory=1    u->buffering=0 -----------
+ *----------场景2: r->subrequest_in_memory=0    u->buffering=1 -----------
  * 目前proxy模块和memcached模块都没用到subrequest_in_memory=1的标记
+ * 1.初始化请求
+ *	 r->read_event_handler = ngx_http_upstream_rd_check_broken_connection;
+ *   r->write_event_handler = ngx_http_upstream_wr_check_broken_connection;
+ *
+ * *2.回调【*】u->create_request(r)方法
+ *   if (u->output.output_filter == NULL) {
+ *      u->output.output_filter = ngx_chain_writer;
+ *      u->output.filter_ctx = &u->writer;
+ *   }
+ *
+ * 3.绑定事件方法
+ *   c->write->handler = ngx_http_upstream_handler;
+ *   c->read->handler = ngx_http_upstream_handler;
+ *
+ *   u->write_event_handler = ngx_http_upstream_send_request_handler;
+ *   u->read_event_handler = ngx_http_upstream_process_header;
+ *
+ * 4.向上游发送请求ngx_http_upstream_send_request()
+ *
+ * 5.ngx_http_upstream_send_response()方法发送从上游获取的数据到客户端，缓存是关闭的
+ *   buffering==0,所以走pipe逻辑
+ * 	 p = u->pipe;  u->pipe是啥时候赋值的?
+ * 	 在proxy模块中是在ngx_http_proxy_handler()方法中分配的
+ *
+ * 	 如果buffering为1的话必须分配u->pipe,因为upstream机制中,只要buffering为1就会用到
+ * 	 pipe,并且ngx也没有为pipe设置默认值.
+ *
+ * 6.做一些pipe的初始化工作
+ * 		p->max_temp_file_size
+ * 		p->preread_bufs->buf = &u->buffer;
+ * 		p->preread_bufs->next = NULL;
+ *
+ * *7.回调【*】u->input_filter_init()方法
+ *
+ * 8.以上的事都做完后就剩下从上游读取数据并且向下游发送数据了,做这件事可以有下面两个事件触发,
+ *    一个是上游的可读事件:
+ *    	u->read_event_handler = ngx_http_upstream_process_upstream;
+ *    另一个是下游的可写事件
+ *    	r->write_event_handler = ngx_http_upstream_process_downstream;
+ *
+ * 9.上面两个事件方法通过调用ngx_event_pipe()方法来从上游读数据和向下游写数据
+ *
+ * *10.读的时候通过ngx_event_pipe_read_upstream(p)方法回调【*】p->input_filter()把上游数据读到p->in链表中.
+ *     读的时候如果允许会把p->in中的一些数据写到临时文件中,并用p->out链表记录.
+ *     在读的过程中会用到多块缓存(因为u->buffering=1).
+ *
+ * *11.写的时候通过ngx_event_pipe_write_to_downstream(p)方法回调【*】p->output_filter()把p->ou和p->in中
+ *     的数据输出到客户端.
+ *     回调函数p->output_filter()在ngx_http_upstream_send_response()方法中设置:
+ *    		p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
+ *
+ * *12.调用ngx_http_upstream_finalize_request()方法来结束这次请求,在这个方法中会回调【*】u->finalize_request()方法.
+ *
+ *
+ *
+ *
  *
  *
  *
@@ -701,6 +757,8 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     	 * 当触发上游服务器的写事件后会调用ngx_output_chain(&u->output, out)方法去输出数据
     	 * 最终ngx_output_chain()方法会调用ctx->output_filter(ctx->filter_ctx, in)来
     	 * 发送数据,其中ctx就是&u->output,ctx->filter_ctx就是&u->writer
+    	 *
+    	 * 比如向上游发送数据的ngx_http_upstream_send_request_body()方法,他里面会调用ngx_output_chain()方法
     	 */
         u->output.output_filter = ngx_chain_writer;
         u->output.filter_ctx = &u->writer;
@@ -3534,7 +3592,7 @@ ngx_http_upstream_process_upgraded(ngx_http_request_t *r,
 
 
 /*
- * 这个方法由客户端触发,r是客户端请求
+ * 这个方法由客户端触发,r是客户端请求对象
  */
 static void
 ngx_http_upstream_process_non_buffered_downstream(ngx_http_request_t *r)
@@ -3563,6 +3621,9 @@ ngx_http_upstream_process_non_buffered_downstream(ngx_http_request_t *r)
 }
 
 
+/*
+ * 这个方法由上游触发,r是客户端请求对象
+ */
 static void
 ngx_http_upstream_process_non_buffered_upstream(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
@@ -3817,6 +3878,11 @@ ngx_http_upstream_non_buffered_filter(void *data, ssize_t bytes)
 }
 
 
+/*
+ * 该方法由下游(客户端)可写事件触发
+ * 从上游读数据,然后写到客户端,这个动作由ngx_event_pipe()方法执行
+ *
+ */
 static void
 ngx_http_upstream_process_downstream(ngx_http_request_t *r)
 {
@@ -3883,10 +3949,16 @@ ngx_http_upstream_process_downstream(ngx_http_request_t *r)
         }
     }
 
+    /* 如果存在upstream结束标记则结束这个upsteam请求 */
     ngx_http_upstream_process_request(r, u);
 }
 
 
+/*
+ * 该方法由上游可读事件触发
+ * 从上游读取数据,然后发送给客户端,这个动作由ngx_event_pipe()方法执行
+ *
+ */
 static void
 ngx_http_upstream_process_upstream(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
@@ -3895,8 +3967,10 @@ ngx_http_upstream_process_upstream(ngx_http_request_t *r,
     ngx_event_pipe_t  *p;
     ngx_connection_t  *c;
 
+    /* 上游连接 */
     c = u->peer.connection;
     p = u->pipe;
+    /* 上游连接的读事件对象 */
     rev = c->read;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0,
@@ -3945,16 +4019,26 @@ ngx_http_upstream_process_upstream(ngx_http_request_t *r,
             return;
         }
 
+        /*
+         * 用ngx_event_pipe_read_upstream()方法从上游读数据
+         * 用ngx_event_pipe_write_to_downstream()方法向下游写数据
+         */
         if (ngx_event_pipe(p, 0) == NGX_ABORT) {
             ngx_http_upstream_finalize_request(r, u, NGX_ERROR);
             return;
         }
     }
 
+    /* 如果存在upstream结束标记则结束这个upsteam请求 */
     ngx_http_upstream_process_request(r, u);
 }
 
 
+/*
+ * 如果存在upstream结束标记则结束这个upsteam请求
+ *
+ * TODO 还有其它用处
+ */
 static void
 ngx_http_upstream_process_request(ngx_http_request_t *r,
     ngx_http_upstream_t *u)
@@ -4011,6 +4095,9 @@ ngx_http_upstream_process_request(ngx_http_request_t *r,
 
 #endif
 
+        /*
+         * 下面的逻辑用来结束这个upsteam请求
+         */
         if (p->upstream_done || p->upstream_eof || p->upstream_error) {
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                            "http upstream exit: %p", p->out);
@@ -4277,6 +4364,9 @@ ngx_http_upstream_cleanup(void *data)
 }
 
 
+/*
+ * 结束upstream请求
+ */
 static void
 ngx_http_upstream_finalize_request(ngx_http_request_t *r,
     ngx_http_upstream_t *u, ngx_int_t rc)
@@ -4421,6 +4511,7 @@ ngx_http_upstream_finalize_request(ngx_http_request_t *r,
         return;
     }
 
+    /* 发送数据到客户端 */
     if (rc == 0) {
         rc = ngx_http_send_special(r, NGX_HTTP_LAST);
 

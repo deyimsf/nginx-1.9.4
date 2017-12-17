@@ -70,9 +70,9 @@ struct ngx_event_pipe_s {
      * the input filter i.e. that moves HTTP/1.1 chunks
      * from the raw bufs to an incoming chain
      *
-     * 把buf中的数据移动到p->in链中
-     *
-     * TODO 如果不设置这个方法会怎么样?
+     * 这个方法的潜规则是把buf中的数据移动到p->in链中
+     * 如果u->buffering=1,则这个方法必须设置
+     * 这个方法实现一个数据搬运的过程,类似u->input_filter(),ngx中有很多这个搬运数据的用法
      *
      * /http/modules/ngx_http_fastcgi_module.c:712:    u->pipe->input_filter = ngx_http_fastcgi_input_filter;
      * /http/modules/ngx_http_proxy_module.c:890:    u->pipe->input_filter = ngx_http_proxy_copy_filter;
