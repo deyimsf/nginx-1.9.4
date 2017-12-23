@@ -96,6 +96,7 @@ typedef struct {
     unsigned                  no_resolve:1;
     unsigned                  one_addr:1;  /* compatibility */
 
+    /* TODO 啥意思 端口号? */
     unsigned                  no_port:1;
     unsigned                  wildcard:1;
 

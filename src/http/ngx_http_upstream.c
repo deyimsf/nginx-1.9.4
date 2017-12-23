@@ -5703,8 +5703,39 @@ ngx_http_upstream_cache_etag(ngx_http_request_t *r,
 #endif
 
 /*
- * cf: 解析到的当前指令的一些基本信息
- * cmd: 当前指令在ngx_http_upstream_commands[]数组中对应的ngx_command_t
+ * cf: 由ngx_http.c/ngx_http_block()方法通过调用ngx_conf_parse()方法传递过来
+ * cycle->conf_ctx
+ *   -----
+ *	 | * |
+ *	 -----
+ *	  \     ngx_http_module.index				   cf->ctx
+ *	   ---------									-----
+ *	   | * | * | ngx_max_module个					| * |
+ *     ---------									-----
+ *    		 \         ngx_http_conf_ctx_t			/
+ *    		 -----------------------------------------
+ *    		 | **main_conf | **srv_conf | **loc_conf |
+ *			 -----------------------------------------
+ *			   		\		 	\				\
+ *			    		 	 					---------------
+ *			    		 	 					| * | ... | * | ngx_http_max_module个
+ *			    		 	 					---------------
+ *			              	  				  	  \
+ *						  	  				  	 --------------------------
+ *						  	   				  	 |ngx_http_core_loc_conf_t|
+ *						  	   				  	 --------------------------
+ * 上图中main_conf和src_conf下面指向的结构体统loc_conf一样,只是存的数据不一样而已,详细的可以看ngx_http_block()方法
+ *
+ *
+ * cmd: 当前指令在ngx_http_upstream_commands[]数组中对应的ngx_command_t配置信息
+ * 	   {
+ * 	  	  ngx_string("upstream"),
+ *     	  NGX_HTTP_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_TAKE1,
+ *     	  ngx_http_upstream,
+ *     	  0,
+ *     	  0,
+ *     	  NULL
+ *     }
  */
 static char *
 ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
@@ -5721,12 +5752,26 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
     ngx_memzero(&u, sizeof(ngx_url_t));
 
+    /*
+     * upstream tomcat {
+     *		server 127.0.0.1:8080;
+     * }
+     */
     value = cf->args->elts;
-    u.host = value[1]; //upstream的名字,比如redis
+    u.host = value[1]; /* upstream的名字,tomcat */
     u.no_resolve = 1;
-    u.no_port = 1;  //没有端口
+    u.no_port = 1;  /* 端口号? */
 
-    // 将解析到的upstream添加到ngx_http_upstream_main_conf_t->upstreams数组中
+    /*
+     * 将解析到的upstream{}配置块添加到ngx_http_upstream_main_conf_t->upstreams数组中,并返回这个块对应的机构体
+     * ngx_http_upstream_srv_conf_t
+     *
+     * upstreams数组在ngx_http_upstream_create_main_conf()方法中进行初始化:
+     *	 ngx_array_init(&umcf->upstreams, cf->pool, 4, sizeof(ngx_http_upstream_srv_conf_t *)
+     * 每一个ngx_http_upstream_srv_conf_t结构体就对应一个upstream{}配置块
+     *
+     * NGX_HTTP_UPSTREAM_CREATE: 代表u中的信息是一个标准的upsteam配置,不是一个url(比如prox_pass可以直接写url)
+     */
     uscf = ngx_http_upstream_add(cf, &u, NGX_HTTP_UPSTREAM_CREATE
                                          |NGX_HTTP_UPSTREAM_WEIGHT
                                          |NGX_HTTP_UPSTREAM_MAX_FAILS
@@ -5988,8 +6033,20 @@ not_supported:
 
 
 /*
- * 把已经解析到的upstream添加到ngx_http_upstream_main_conf_t->upstreams数组中并返回
- * 如果upstreams数组中已经存在解析到的upstream则直接返回
+ * 将解析到的upstream{}配置块添加到ngx_http_upstream_main_conf_t->upstreams数组中,并返回这个块对应的机构体
+ * ngx_http_upstream_srv_conf_t,如果upstreams数组中已经存在解析到的upstream则直接返回
+ *
+ * upstreams数组在ngx_http_upstream_create_main_conf()方法中进行初始化:
+ *	 ngx_array_init(&umcf->upstreams, cf->pool, 4, sizeof(ngx_http_upstream_srv_conf_t *)
+ * 每一个ngx_http_upstream_srv_conf_t结构体就对应一个upstream{}配置块
+ *
+ * flags可以是如下值:
+ *  NGX_HTTP_UPSTREAM_CREATE: 表u中的信息是一个标准的upsteam配置,不是一个url(比如prox_pass可以直接写url)
+ *  NGX_HTTP_UPSTREAM_WEIGHT
+ *  NGX_HTTP_UPSTREAM_MAX_FAILS
+ *  NGX_HTTP_UPSTREAM_FAIL_TIMEOUT
+ *  NGX_HTTP_UPSTREAM_DOWN
+ *  NGX_HTTP_UPSTREAM_BACKUP
  */
 ngx_http_upstream_srv_conf_t *
 ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
@@ -5999,8 +6056,10 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     ngx_http_upstream_srv_conf_t   *uscf, **uscfp;
     ngx_http_upstream_main_conf_t  *umcf;
 
-    // 如果flags中没有NGX_HTTP_UPSTREAM_CREATE标记，则直接解析这个url
-    // redis:8001(错误)  192.168.123.4:8002(正确)
+    /*
+     * 如果flags中没有NGX_HTTP_UPSTREAM_CREATE标记,那么说明u中的信息不是一个upstream,而是一个url(比如proxy_pass指定的url)
+     * 这时候就直接把u当成url来解析? TODO 这个结论好像不对
+     */
     if (!(flags & NGX_HTTP_UPSTREAM_CREATE)) {
     	// proxy_pass在调用ngx_http_upstream_add方法时会把http://和https://去掉
     	// 所以如果配置的是http://channel，那么实际过来的u->host是channel字符串
@@ -6017,15 +6076,32 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
         }
     }
 
+    /*
+     * 取出upsteam在main级别(对于http模块来说就是http{}块内)的配置信息结构体
+     */
     umcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_upstream_module);
 
-    // 对umcf->upstreams进行遍历，检查当前解析到的upstream是否可以添加到umcf->upstreams数组中
-    // 因为upstreams数组中存放的不是ngx_http_upstream_srv_conf_t结构体,而是指向这个结构体的指针
-    // 所以对于upstreams.elts变量,它是一个指针变量,它的值是一个指针,这个指针有指向另一个指针,所以这里用了两个**
-    // 如果想用一个星号可以这样使用:
-    //		ngx_http_upstream_srv_conf_t   *uscfp;
-    //		uscfp = *(umcf->upstreams.elts);
-    //
+    /*
+     * 对umcf->upstreams进行遍历，检查当前解析到的upstream是否可以添加到umcf->upstreams数组中
+     * 因为upstreams数组中存放的不是ngx_http_upstream_srv_conf_t结构体,而是指向这个结构体的指针
+     * 所以对于upstreams.elts变量,它是一个指针变量,它的值是一个指针,这个指针有指向另一个指针,所以这里用了两个**
+     * 如果想用一个星号可以这样使用:
+     *		ngx_http_upstream_srv_conf_t   *uscfp;
+     *		uscfp = *(umcf->upstreams.elts);
+     * 用两个*只是为了方便操作upstreams数组,内存结构如下:
+     * 		   		     uscfp|umcf->upstreams.elts
+     * 		   				-----
+     * 		   				| * |
+     * 		   				-----
+     *		    			 /
+     * 		  				---------------------
+     * 		  				| * |    ...    | * |  总共upstreams.nelts个
+     * 		  				---------------------
+     * 		  				/					\
+     *   --------------------------------       --------------------------------
+     *   | ngx_http_upstream_srv_conf_t |		| ngx_http_upstream_srv_conf_t |
+     *   --------------------------------		--------------------------------
+     */
     uscfp = umcf->upstreams.elts;
 
     for (i = 0; i < umcf->upstreams.nelts; i++) {

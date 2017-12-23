@@ -357,11 +357,13 @@ ngx_module_t  ngx_http_module = {
  *	 cf->module_type = NGX_CORE_MODULE
  *	 cf->cmd_type = NGX_MAIN_CONF
  *
- * ngx_conf_parse()方法在调用完ngx_conf_read_token()解析出一个指令"http"后
- * 调用/src/core/ngx_conf_file.c/ngx_conf_handler()方法来执行指令.
+ * ngx_conf_parse()方法在调用完ngx_conf_read_token()解析出一个指令"http"后调用
+ * /src/core/ngx_conf_file.c/ngx_conf_handler()方法,这个方法会会做一些判断和设置,
+ * 然后在回调命令中的方法(cmd->set(cf, cmd, conf)).
+ *
  * ngx_conf_handler()方法遍历所有的模块指令,从中查找匹配的指令,其中一个比较就是
  * 当前要查找的指令区域(cf->cmd_type)是否和指令(http)应该在的区域(cmd->type)相同,
- * 这样可以区分出相同指令名,但所在区域不同的指令(也就是说不同模块之间可以有相同的指令名)。
+ * 这样可以区分出相同指令名,但所在区域不同的指令(也就是说不同模块之间可以有相同的指令名,前提是所在区域不同)。
  *
  *
  * cmd: 该指令的配置信息

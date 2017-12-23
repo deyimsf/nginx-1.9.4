@@ -79,12 +79,16 @@ typedef struct {
 
 typedef struct {
     ngx_hash_t                       headers_in_hash;
+
+    /*
+     * 数组中存放着ngx_http_upstream_srv_conf_t对象
+     */
     ngx_array_t                      upstreams;
-                                             /* ngx_http_upstream_srv_conf_t */
+
 } ngx_http_upstream_main_conf_t;
 
 /*
- * 对应一个upstream
+ * 对应一个upstream{}配置块
  */
 typedef struct ngx_http_upstream_srv_conf_s  ngx_http_upstream_srv_conf_t;
 
@@ -125,6 +129,9 @@ typedef struct {
 } ngx_http_upstream_server_t;
 
 
+/*
+ * 代表u中的信息是一个标准的upsteam配置,不是一个url(比如prox_pass可以直接写url)
+ */
 #define NGX_HTTP_UPSTREAM_CREATE        0x0001
 #define NGX_HTTP_UPSTREAM_WEIGHT        0x0002
 #define NGX_HTTP_UPSTREAM_MAX_FAILS     0x0004
@@ -134,7 +141,11 @@ typedef struct {
 
 
 /**
- * 对应一个upstream
+ * 对应一个upstream配置块,比如
+ * 	 upstream tomcat {
+ * 		 server ...;
+ * 	 }
+ *
  */
 struct ngx_http_upstream_srv_conf_s {
 	/*
@@ -176,7 +187,7 @@ struct ngx_http_upstream_srv_conf_s {
      */
     ngx_uint_t                       flags;
 
-    /* upstream的名字 */
+    /* upstream的名字,比如上面的tomcat */
     ngx_str_t                        host;
 
     /*
