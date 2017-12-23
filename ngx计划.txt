@@ -22,7 +22,7 @@ upstream机制入口 ngx_http_upstream_init()
    r->subrequest_in_memory=0  u->buffering=0
    r->subrequest_in_memory=0  u->buffering=1
 
-r->subrequest_in_memory=1时的情况暂时没看到upstream中使用的场景,以后有多余事件再看
+r->subrequest_in_memory=1时的情况暂时没看到upstream中使用的场景,以后有多余时间再看
 
 
 TODO 
@@ -32,9 +32,12 @@ TODO
    看是什么情况下启动nextngx_http_upstream_next方法的?
    
 
+看到这里了:
+upsteam指令对应ngx_http_upstream()
+刚进入ngx_http_upstream_add()方法
 
-
-
+目前会有两个地方用到ngx_http_upstream_add()方法,一个是解析到upstream tomcat {}配置时
+另一个是解析到proxy_pass http://tomcat时,明天看的时候先把proxy_pass注释掉
 
 
 
