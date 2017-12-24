@@ -1,43 +1,35 @@
-
-开始看proxy_pass和upstream
- (http://nginx.org/en/docs/dev/development_guide.html#http_load_balancing)
   
 要debug看
    upstream tomcat {
 	server 127.0.0.1:8080;
-	server 127.0.0.1:80;
    }	
 
    location / {
 	proxy_pass http://tomcat;
    }
- 
 
-
-
-break ngx_http_proxy_handler
-upstream机制入口 ngx_http_upstream_init()
-
-确定好了两个大的处理路径,分别是
-   r->subrequest_in_memory=0  u->buffering=0
-   r->subrequest_in_memory=0  u->buffering=1
-
-r->subrequest_in_memory=1时的情况暂时没看到upstream中使用的场景,以后有多余时间再看
-
-
-TODO 
-   看upstream指令?
-   看upstream指令块下的server都放到哪里了?
-   看是如何均衡upstream下的server的?
-   看是什么情况下启动nextngx_http_upstream_next方法的?
    
+看完upstream指令对应的的ngx_http_upstream()方法主轮廓
 
-看到这里了:
-upsteam指令对应ngx_http_upstream()
-刚进入ngx_http_upstream_add()方法
+TODO 基本看了一下upstream中的server指令对应的ngx_http_upstream_server方法的执行
+     下周把这个方法再大概过一下
 
-目前会有两个地方用到ngx_http_upstream_add()方法,一个是解析到upstream tomcat {}配置时
-另一个是解析到proxy_pass http://tomcat时,明天看的时候先把proxy_pass注释掉
+     然后开始看ngx_http_upstream_add()方法中的两种情况
+	1.upstream{}块中只有一个server的情况
+ 	2.upstream{}块中有多个server的情况
+
+
+
+看是如何均衡upstream下的server的?
+ (http://nginx.org/en/docs/dev/development_guide.html#http_load_balancing)
+
+看是什么情况下启动nextngx_http_upstream_next方法的?
+
+
+
+
+
+
 
 
 

@@ -106,7 +106,7 @@ typedef struct {
 } ngx_http_upstream_peer_t;
 
 /*
- * 对应upstream中的一个server
+ * 对应upstream中的一个server指令信息
  */
 typedef struct {
 	// 字符串形式的套接字地址,包括端口
@@ -155,8 +155,25 @@ struct ngx_http_upstream_srv_conf_s {
 	 */
     ngx_http_upstream_peer_t         peer;
 
-    // ngx_http_conf_ctx_t->srv_conf
-    // 用来存储ngx_http_upstream_srv_conf_t
+    /*
+     * ngx_http_conf_ctx_t->srv_conf
+     *
+     * 用来存储所有http模块在srv_conf区域的配置信息结构体,当然这里包括ngx_http_upstream_srv_conf_t结构体
+     * 但是目前在ngx代码中没有看到使用这个字段的地方(除了在ngx_http_upstream()方法中对他的一个赋值)
+     *
+     * 		   srv_conf
+     * 			-----
+     * 			| * |
+     * 			-----
+     * 			  \
+     * 		---------------
+     * 		| * | ... | * | ngx_http_max_module个
+     * 		---------------
+     * 				\ngx_http_upstream_module.ctx_index
+     * 		   ------------------------------
+     * 		   |ngx_http_upstream_srv_conf_t|
+     * 		   ------------------------------
+     */
     void                           **srv_conf;
 
     /* 该upstream下所有的server */

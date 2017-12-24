@@ -5704,27 +5704,28 @@ ngx_http_upstream_cache_etag(ngx_http_request_t *r,
 
 /*
  * cf: 由ngx_http.c/ngx_http_block()方法通过调用ngx_conf_parse()方法传递过来
- * cycle->conf_ctx
- *   -----
- *	 | * |
- *	 -----
- *	  \     ngx_http_module.index				   cf->ctx
- *	   ---------									-----
- *	   | * | * | ngx_max_module个					| * |
- *     ---------									-----
- *    		 \         ngx_http_conf_ctx_t			/
- *    		 -----------------------------------------
- *    		 | **main_conf | **srv_conf | **loc_conf |
- *			 -----------------------------------------
- *			   		\		 	\				\
- *			    		 	 					---------------
- *			    		 	 					| * | ... | * | ngx_http_max_module个
- *			    		 	 					---------------
- *			              	  				  	  \
- *						  	  				  	 --------------------------
- *						  	   				  	 |ngx_http_core_loc_conf_t|
- *						  	   				  	 --------------------------
+ *				  		cycle->conf_ctx
+ *				    		-----
+ *				 	 		| * |
+ *				 	 		-----
+ *				 	 		  \ ngx_http_module.index			       cf->ctx
+ *				 	   ---------------									-----
+ *				 	   | ... | * | * | ngx_max_module个					| * |
+ *				       ---------------									-----
+ *				     		   \         ngx_http_conf_ctx_t			/
+ *				     		    -----------------------------------------
+ *				     		 	| **main_conf | **srv_conf | **loc_conf |
+ *				 			 	-----------------------------------------
+ *				 			   		    \		 					\
+ *				 			 -----------------------------
+ *				 			 | * |      ...    | * | ... | ngx_http_max_module个
+ *				 			 -----------------------------
+ *				 			   /                 \
+ *		-------------------------- 		------------------------------------
+ *		|ngx_http_core_loc_conf_t| 		|ngx_http_upstream_create_main_conf|
+ *		-------------------------- 		------------------------------------
  * 上图中main_conf和src_conf下面指向的结构体统loc_conf一样,只是存的数据不一样而已,详细的可以看ngx_http_block()方法
+ * 其中ngx_http_upstream_create_main_conf结构体就是用来存储整个ngx配置文件中的upstream信息的
  *
  *
  * cmd: 当前指令在ngx_http_upstream_commands[]数组中对应的ngx_command_t配置信息
@@ -5760,7 +5761,7 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     value = cf->args->elts;
     u.host = value[1]; /* upstream的名字,tomcat */
     u.no_resolve = 1;
-    u.no_port = 1;  /* 端口号? */
+    u.no_port = 1;  /* 没有端口号 */
 
     /*
      * 将解析到的upstream{}配置块添加到ngx_http_upstream_main_conf_t->upstreams数组中,并返回这个块对应的机构体
@@ -5783,38 +5784,97 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     }
 
 
-    // 为该upstream{}块创建一个ngx_http_conf_ctx_t结构体
+    /*
+     * 为该当前解析到的upstream{}块创建一个ngx_http_conf_ctx_t结构体,分配完毕后内存结构如下:
+     * 			    ctx
+     * 			   -----
+     *			   | * |
+     *			   -----
+     *			     \ ngx_http_conf_ctx_t
+     *			    -----------------------------------------
+     *			    | **main_conf | **srv_conf | **loc_conf |
+     *				-----------------------------------------
+     */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    /*
+     * 执行完如下代码后内存结构如下:
+	 *					  	  	  	  	    ctx		       http_ctx							        cf->ctx
+	 *					 	 	 	 	   -----			 -----									 -----
+	 *				 	 	 	 	  	   | * |			 | * | 									 | * |
+	 *					 	 	 	 	   -----			 -----									 -----
+	 *			ngx_http_conf_ctx_t   	     /				   \         ngx_http_conf_ctx_t		  /
+	 *  ------------------------------------------             -----------------------------------------
+	 *  | **loca_conf | **srv_conf | **main_conf |  		   | **main_conf | **srv_conf | **loc_conf |
+     *  ------------------------------------------			   -----------------------------------------
+	 *						 			 \			   		         /		 					\
+	 *						 		     -----------------------------
+	 *						 			 | * |      ...    | * | ... | ngx_http_max_module个
+	 *						 			 -----------------------------
+	 *						 			  /                  \
+	 *				-------------------------- 			------------------------------------
+	 *				|ngx_http_core_loc_conf_t| 			|ngx_http_upstream_create_main_conf|
+	 *				-------------------------- 			------------------------------------
+     */
     http_ctx = cf->ctx;
     ctx->main_conf = http_ctx->main_conf;
 
     /* the upstream{}'s srv_conf */
-
+    /*
+     * 为upstream{}块创建srv_conf级别的区域
+     * 执行完下面6行代码后内存结构如下:
+	 *		 					  	  	  	  	    ctx		        http_ctx							    cf->ctx
+	 *		 					 	 	 	 	   -----			 -----									 -----
+	 *		 				 	 	 	 	  	   | * |			 | * | 									 | * |
+	 *		 					 	 	 	 	   -----			 -----									 -----
+	 *		 			ngx_http_conf_ctx_t   	     /				   \         ngx_http_conf_ctx_t		  /
+	 *		    ------------------------------------------             -----------------------------------------
+	 *		    | **loc_conf | **srv_conf | **main_conf |  		   | **main_conf | **srv_conf | **loc_conf |
+	 *		    ------------------------------------------			   -----------------------------------------
+	 *		 				   / 			 		    \			   		    /		 			 \
+	 *		                 -----------------	 		-------------------------
+	 *		 		         | * | ... |  *  |			| * |    ...  | * | ... | ngx_http_max_module个
+	 *		 			     -----------/-----			-------------------------
+	 *		 	 				uscf   \/	/\		                      \
+	 *		 --------------------------------\----------				  ------------------------------------
+	 *		 |ngx_http_upstream_srv_conf_t|**srv_conf  |				  |ngx_http_upstream_create_main_conf|
+	 *		 -------------------------------------------				  ------------------------------------
+	 * 从上图可以看到ctx->src_conf中的指针和uscf->srv_conf指针是相等的,所以他们都指向了一块共同的内存
+     */
     ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->srv_conf == NULL) {
         return NGX_CONF_ERROR;
     }
 
-    // 存放代表某个upstream的ngx_http_upstream_srv_conf_t结构体
-    // 只是临时用于存放ngx_http_upstream_srv_conf_t结构体的,这样在解析某个upstream{}块内的指令时
-    // ctx->srv_conf[ngx_http_upstream_module.ctx_index]就一直是代表该upstream的ngx_http_upstream_srv_conf_t结构体了
+    /*
+     * 存放代表某个upstream的ngx_http_upstream_srv_conf_t结构体
+     * 只是临时用于存放ngx_http_upstream_srv_conf_t结构体的,这样在解析某个upstream{}块内的指令时
+     * ctx->srv_conf[ngx_http_upstream_module.ctx_index]就一直是代表该upstream的ngx_http_upstream_srv_conf_t结构体了
+     *
+     * 目前没有在ngx代码中看到直接使用uscf->srv_conf这个字段的地方,大部分upstream模块使用
+     * 		uscf = ngx_http_conf_get_module_srv_conf(cf, ngx_http_upstream_module);
+     * 这种方式来获取uscf这个结构体
+     */
     ctx->srv_conf[ngx_http_upstream_module.ctx_index] = uscf;
-
     uscf->srv_conf = ctx->srv_conf;
 
 
     /* the upstream{}'s loc_conf */
-
+    /*
+     * 为upstream配置块创建loc_conf级别的存储区域
+     */
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
     }
 
-    // 在upsteam{}块,为所有http模块创建各自在srv_conf和loc_conf级别的自定义结构体？ 有啥用呢?
+    /*
+     * 在upsteam{}块,为所有http模块创建各自在srv_conf和loc_conf级别的自定义结构体
+     * 但是目前并没有在ngx代码中看到使用这两个区域的模块
+     */
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -5822,8 +5882,11 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
         module = ngx_modules[m]->ctx;
 
-        // ngx_http_upstream_module模块并没有实现create_srv_conf方法
-        // 所以不会覆盖上面的ctx->srv_conf[ngx_http_upstream_module.ctx_index] = uscf
+        /*
+         * 为所有http模块创建srv_conf级别的配置信息结构体,但是目前并没有在ngx代码中看到使用这个区域的模块
+         * ngx_http_upstream_module模块并没有实现create_srv_conf方法
+         * 所以不会覆盖上面的ctx->srv_conf[ngx_http_upstream_module.ctx_index] = uscf
+         */
         if (module->create_srv_conf) {
             mconf = module->create_srv_conf(cf);
             if (mconf == NULL) {
@@ -5833,6 +5896,9 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
             ctx->srv_conf[ngx_modules[m]->ctx_index] = mconf;
         }
 
+        /*
+         * 为所有http模块创建loc_conf级别的配置信息结构体,但是目前并没有在ngx代码中看到使用这个区域的模块
+         */
         if (module->create_loc_conf) {
             mconf = module->create_loc_conf(cf);
             if (mconf == NULL) {
@@ -5843,7 +5909,9 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         }
     }
 
-    // 创建用于存放upstream中server的数据,初始化数组大小为4
+    /*
+     * 创建用于存放upstream中server的数据,初始化数组大小为4
+     */
     uscf->servers = ngx_array_create(cf->pool, 4,
                                      sizeof(ngx_http_upstream_server_t));
     if (uscf->servers == NULL) {
@@ -5853,12 +5921,41 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
     /* parse inside upstream{} */
 
-    // 解析upstream{}块内的指令
-    // copy一份当前ngx_conf_t结构体,因为在解析的过程中ngx_conf_t中的值会改变
+    /*
+     * copy一份当前ngx_conf_t结构体,因为在解析的过程中ngx_conf_t中的值会改变
+     */
     pcf = *cf;
     cf->ctx = ctx;
-    cf->cmd_type = NGX_HTTP_UPS_CONF;
+    cf->cmd_type = NGX_HTTP_UPS_CONF; /* 标注只解析upstream{}块内的指令 */
 
+    /*
+     * 开始解析upstream{}块内的指令
+     *
+     * 此时cf->ctx是在这个方法中刚创建的,是一个ngx_http_conf_ctx_t结构体,等下面的方法解析完毕后ctx的句柄也就消失了,
+     * ctx中的三个字段除了main_conf和srv_conf有对应的句柄,只有loc_conf字段是没有对应句柄的
+     *
+     * ctx->main_conf的句柄是http_ctx->main_conf
+     * ctx->srv_conf的句柄是uscf->srv_conf(uscf可以从ngx_http_upstream_main_conf_t->upstreams中找到)
+     * ctx->loc_conf没有直接句柄
+     *
+     * 此时cf->ctx的内存结构如下:
+     *		 					  	  	  	  	 ctx|cf->ctx
+	 *		 					 	 	 	 	   -----
+	 *		 				 	 	 	 	  	   | * |
+	 *		 					 	 	 	 	   -----
+	 *		 			ngx_http_conf_ctx_t   	     /
+	 *		    -----------------------------------------
+	 *		    | **main_conf | **srv_conf | **loc_conf |
+	 *		    -----------------------------------------
+	 *		 				    /
+	 *		                 -----------------
+	 *		 		         | * | ... |  *  | ngx_http_max_module个
+	 *		 			     -----------/-----
+	 *		 	 				uscf   \/	/\
+	 *		 --------------------------------\----------
+	 *		 |ngx_http_upstream_srv_conf_t|**srv_conf  |
+	 *		 -------------------------------------------
+     */
     rv = ngx_conf_parse(cf, NULL);
 
     *cf = pcf;
@@ -5868,6 +5965,10 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     }
 
     if (uscf->servers->nelts == 0) {
+
+    	/*
+    	 * servers数组内元素个数为零说明没有在upstream{}块内解析到server指令
+    	 */
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "no servers are inside upstream");
         return NGX_CONF_ERROR;
@@ -5877,7 +5978,27 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 }
 
 /*
- * conf : ngx_http_upstream_srv_conf_t,代表某个upstream
+ * server指令对应的方法
+ *
+ * 此时cf中的ctx的结构如下:
+ *		 					  	  	  	  	  cf->ctx
+ *		 					 	 	 	 	   -----
+ *		 				 	 	 	 	  	   | * |
+ *		 					 	 	 	 	   -----
+ *		 			ngx_http_conf_ctx_t   	     /
+ *		    -----------------------------------------
+ *		    | **main_conf | **srv_conf | **loc_conf |
+ *		    -----------------------------------------
+ *		 				    /
+ *		                 -----------------
+ *		 		         | * | ... |  *  | ngx_http_max_module个
+ *		 			     -----------/-----
+ *    ngx_http_upstream_srv_conf_t \/	/\
+ *		 				-----------------\----
+ *		 				|  ...  |**srv_conf  |
+ *		 				----------------------
+ *
+ * conf: ngx_http_upstream_srv_conf_t,代表当前解析到的upstream
  *
  * see ngx_conf_file.c/ngx_conf_handler方法
  *
@@ -5895,7 +6016,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_uint_t                   i;
     ngx_http_upstream_server_t  *us;
 
-    // 将解析到的server放入到upstream中
+    /* 将解析到的server放入到upstream中 */
     us = ngx_array_push(uscf->servers);
     if (us == NULL) {
         return NGX_CONF_ERROR;
@@ -5903,14 +6024,26 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ngx_memzero(us, sizeof(ngx_http_upstream_server_t));
 
-    // 取出指令及其参数 server 192.168.1.1:8001 weight=1  max_fails=3 fail_timeout=5;
+    /*
+     * 取出指令及其参数 server 192.168.1.1:8001 weight=1  max_fails=3 fail_timeout=5;
+     */
     value = cf->args->elts;
 
+    /*
+     * 先对这三个参数设置一个默认值
+     */
     weight = 1;
     max_fails = 1;
     fail_timeout = 10;
 
-    // 直接检查server的一些标志位
+    /*
+     * 直接检查server的一些标志位
+     *  weight
+     *  max_fails
+     *  fail_timeout
+     *  backup
+     *  down
+     */
     for (i = 2; i < cf->args->nelts; i++) {
 
     	// 是否支持权重 weight
@@ -5993,7 +6126,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ngx_memzero(&u, sizeof(ngx_url_t));
 
-    //192.168.1.1:8001
+    /* 192.168.1.1:8001 */
     u.url = value[1];
     u.default_port = 80;
 
@@ -6104,6 +6237,9 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
      */
     uscfp = umcf->upstreams.elts;
 
+    /*
+     * TODO 当多于一个upstream时会走这里,一会看
+     */
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
     	// 检查是否有一样名字的upstream,如果都不一样说明可以添加到umcf->upstreams数组中
@@ -6164,6 +6300,11 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
 
         return uscfp[i];
     }
+
+    /*
+     * 走到这里说明传进来的u代表一个新的upstream(或者url)
+     * 下面的逻辑就是创建一个upstream信息并放到upstreams数组中
+     */
 
     uscf = ngx_pcalloc(cf->pool, sizeof(ngx_http_upstream_srv_conf_t));
     if (uscf == NULL) {

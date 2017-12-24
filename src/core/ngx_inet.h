@@ -77,17 +77,37 @@ typedef struct {
 
 
 typedef struct {
+	/*
+	 * 可以是upstream中server指令指定的,比如
+	 * 		server 127.0.0.1:8080
+	 * 		server www.jd.com
+	 *
+	 */
     ngx_str_t                 url;
-    // host名字,可以是upstream名字和 ip地址加端口号
-    // 在解析server的时候url和host相同(如192.168.1.1:8001)
+
+    /*
+     * 可以是upstream tomcat {}中的tomcat
+     *
+     * 可以是upsteam{}中server指令指定的值,比如
+     * 		server 127.0.0.1:8080
+     * 		server www.jd.com
+     *
+     */
     ngx_str_t                 host;
-    // 字符串形式的端口号
+
+    /*
+     * 文本形式的端口号,比如"8080"
+     */
     ngx_str_t                 port_text;
     ngx_str_t                 uri;
 
-    // 端口号
+    /*
+     * 数字形式的端口号,比如8080
+     */
     in_port_t                 port;
-    // 默认端口号
+    /*
+     * 默认端口号80
+     */
     in_port_t                 default_port;
     int                       family;
 
@@ -96,14 +116,24 @@ typedef struct {
     unsigned                  no_resolve:1;
     unsigned                  one_addr:1;  /* compatibility */
 
-    /* TODO 啥意思 端口号? */
+    /* 表示这个url没有指明端口号 */
     unsigned                  no_port:1;
     unsigned                  wildcard:1;
 
+    /* host对应ip的socket长度 */
     socklen_t                 socklen;
+    /* host对应ip的socket信息 */
     u_char                    sockaddr[NGX_SOCKADDRLEN];
 
-    // 套接字地址,包括端口
+    /*
+     * 套接字地址,包括端口
+     * addrs->sockaddr中的值和上面字段sockaddr值相同
+     * 		print *(struct sockaddr*)&u.sockaddr
+     * 		print *u.addrs->sockaddr
+     *
+     * addrs->socklen和socklen值相同
+     *
+     */
     ngx_addr_t               *addrs;
     ngx_uint_t                naddrs;
 
