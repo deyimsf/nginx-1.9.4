@@ -8,15 +8,20 @@
 	proxy_pass http://tomcat;
    }
 
-   
-看完upstream指令对应的的ngx_http_upstream()方法主轮廓
 
-TODO 基本看了一下upstream中的server指令对应的ngx_http_upstream_server方法的执行
-     下周把这个方法再大概过一下
 
-     然后开始看ngx_http_upstream_add()方法中的两种情况
-	1.upstream{}块中只有一个server的情况
- 	2.upstream{}块中有多个server的情况
+
+upstream的配置信息看完了,明天看负载均衡相关的
+
+TODO从下面方法开始看,如果自己要写一个负载均衡模块,应该设置哪些回调方法
+  ngx_http_upstream_init_main_conf
+	ngx_http_upstream_init_round_robin
+
+  需要看ngx是如何选择upstream,以及如何选择upstream中的server的
+  
+
+
+
 
 
 
@@ -25,6 +30,7 @@ TODO 基本看了一下upstream中的server指令对应的ngx_http_upstream_serv
 
 看是什么情况下启动nextngx_http_upstream_next方法的?
 
+ngx_url_t->naddrs 字段作用
 
 
 
@@ -87,6 +93,7 @@ ngx_http_lua_cache_loadfile
 
 /*运行lua代码*/
 ngx_http_lua_run_thread
+
 
 
 

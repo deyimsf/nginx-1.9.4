@@ -55,10 +55,24 @@ struct ngx_http_upstream_rr_peer_s {
 
 typedef struct ngx_http_upstream_rr_peers_s  ngx_http_upstream_rr_peers_t;
 
-/**
- * 代表upstream中的一组peer
+/*
+ * upstream中的server采用轮训负载均衡时用到的结构体,假设有如下upstream配置块
+ * 		upstream tomcat {
+ * 			server 127.0.0.1:8080;
+ * 			server 127.0.0.1:9090;
+ * 		}
+ * 那么这个结构体就代表上面的配置
+ *
  */
 struct ngx_http_upstream_rr_peers_s {
+	/*
+	 * 在ngx_http_upstream_round_robin.c/ngx_http_upstream_init_round_robin()方法中设置
+	 *
+	 * TODO
+	 * 代表server的个数?
+	 * 	 n += server[i].naddrs;
+	 * 	 peers->number = n;
+	 */
     ngx_uint_t                      number;
 
 #if (NGX_HTTP_UPSTREAM_ZONE)
@@ -67,11 +81,23 @@ struct ngx_http_upstream_rr_peers_s {
     ngx_http_upstream_rr_peers_t   *zone_next;
 #endif
 
+    /*
+     * 在ngx_http_upstream_round_robin.c/ngx_http_upstream_init_round_robin()方法中设置
+     *
+     * upstream块下的所有server的权重值
+     *   n += server[i].naddrs;
+     *   w += server[i].naddrs * server[i].weight;
+     *   peers->total_weight = w;
+     * 其中w就是该字段的值
+     */
     ngx_uint_t                      total_weight;
 
     unsigned                        single:1;
     unsigned                        weighted:1;
 
+    /*
+     * upstream块的名字,比如tomcat
+     */
     ngx_str_t                      *name;
 
     // upsteam中的另一组peer(比如所有的backup)

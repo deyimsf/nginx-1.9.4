@@ -82,16 +82,24 @@ typedef struct {
 	 * 		server 127.0.0.1:8080
 	 * 		server www.jd.com
 	 *
+	 * 可以是proxy模块中proxy_pass指令指定的,比如
+	 * 		proxy_pass http://127.0.0.1:8080
+	 * 		proxy_pass http://tomcat;
+	 * 去掉http://
 	 */
     ngx_str_t                 url;
 
     /*
-     * 可以是upstream tomcat {}中的tomcat
+     * 可以是upstream tomcat {}块中的tomcat
      *
      * 可以是upsteam{}中server指令指定的值,比如
      * 		server 127.0.0.1:8080
      * 		server www.jd.com
+     * 去掉端口号
      *
+     *
+     * 该字段的值是url字段解析后的值,代表一个域名、ip地址,但是不包括端口号
+     * 比如 127.0.0.1:808 这个url解析完毕后就是 127.0.0.1,这个值就是host
      */
     ngx_str_t                 host;
 
@@ -135,6 +143,14 @@ typedef struct {
      *
      */
     ngx_addr_t               *addrs;
+    /*
+     * TODO
+     * 目前看到在以下方法中会设置这个值
+     * 	 ngx_parse_unix_domain_url()
+     * 	 ngx_parse_inet_url()
+	 *	 ngx_parse_inet6_url()
+	 *	 ngx_inet_resolve_host()
+     */
     ngx_uint_t                naddrs;
 
     char                     *err;

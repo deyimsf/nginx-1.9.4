@@ -5759,7 +5759,8 @@ ngx_http_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
      * }
      */
     value = cf->args->elts;
-    u.host = value[1]; /* upstream的名字,tomcat */
+    /* 用u中的host字段存放upstream的名字,tomcat */
+    u.host = value[1];
     u.no_resolve = 1;
     u.no_port = 1;  /* 没有端口号 */
 
@@ -6121,6 +6122,9 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        /*
+         * 走到这里说明输入了一个无效的配置参数
+         */
         goto invalid;
     }
 
@@ -6166,15 +6170,15 @@ not_supported:
 
 
 /*
- * 将解析到的upstream{}配置块添加到ngx_http_upstream_main_conf_t->upstreams数组中,并返回这个块对应的机构体
- * ngx_http_upstream_srv_conf_t,如果upstreams数组中已经存在解析到的upstream则直接返回
+ * 将解析到的upstream{}配置块添加到ngx_http_upstream_main_conf_t->upstreams数组中,并返回这个块对应的结构体
+ * ngx_http_upstream_srv_conf_t,如果upstreams数组中已经存在解析到的upstream则直接返回(比如proxy_pass指令找upstream配置块)
  *
  * upstreams数组在ngx_http_upstream_create_main_conf()方法中进行初始化:
  *	 ngx_array_init(&umcf->upstreams, cf->pool, 4, sizeof(ngx_http_upstream_srv_conf_t *)
  * 每一个ngx_http_upstream_srv_conf_t结构体就对应一个upstream{}配置块
  *
  * flags可以是如下值:
- *  NGX_HTTP_UPSTREAM_CREATE: 表u中的信息是一个标准的upsteam配置,不是一个url(比如prox_pass可以直接写url)
+ *  NGX_HTTP_UPSTREAM_CREATE: 表是u中的信息是一个标准的upstream配置,不是一个url(比如prox_pass可以直接写url)
  *  NGX_HTTP_UPSTREAM_WEIGHT
  *  NGX_HTTP_UPSTREAM_MAX_FAILS
  *  NGX_HTTP_UPSTREAM_FAIL_TIMEOUT
@@ -6190,15 +6194,16 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     ngx_http_upstream_main_conf_t  *umcf;
 
     /*
-     * 如果flags中没有NGX_HTTP_UPSTREAM_CREATE标记,那么说明u中的信息不是一个upstream,而是一个url(比如proxy_pass指定的url)
-     * 这时候就直接把u当成url来解析? TODO 这个结论好像不对
+     * 如果flags中没有NGX_HTTP_UPSTREAM_CREATE标记,那么说明u中的信息不是一个upstream,
+     * 而是一个url(比如proxy_pass指定的url)这时候把u当成url来解析
      */
     if (!(flags & NGX_HTTP_UPSTREAM_CREATE)) {
-    	// proxy_pass在调用ngx_http_upstream_add方法时会把http://和https://去掉
-    	// 所以如果配置的是http://channel，那么实际过来的u->host是channel字符串
-    	// 后续会用channel和umcf->upstreams数组中的upstream进行对比,如果数组中存在该upstre则直接返回
-    	// 如果不存在则会在umcf->upstreams数组中创建一个名字是"channel"的upstream，并且其中有一个server channel
-    	// 这种请情况可以使用吗? 后续会有一个警告
+    	/*
+    	 * proxy_pass在调用ngx_http_upstream_add方法时会把http://和https://去掉
+    	 * 所以如果配置的是http://channel:8080，那么实际过来的u->host是channel:8080字符串
+    	 *
+         * 对u做url解析,解析后最明显的区别是u.url(channel:8080)和u.host(channel)
+    	 */
         if (ngx_parse_url(cf->pool, u) != NGX_OK) {
             if (u->err) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
@@ -6217,7 +6222,7 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     /*
      * 对umcf->upstreams进行遍历，检查当前解析到的upstream是否可以添加到umcf->upstreams数组中
      * 因为upstreams数组中存放的不是ngx_http_upstream_srv_conf_t结构体,而是指向这个结构体的指针
-     * 所以对于upstreams.elts变量,它是一个指针变量,它的值是一个指针,这个指针有指向另一个指针,所以这里用了两个**
+     * 所以对于upstreams.elts变量,它是一个指针变量,它的值是一个指针,这个指针有指向另一个指针,所以这里用了两个
      * 如果想用一个星号可以这样使用:
      *		ngx_http_upstream_srv_conf_t   *uscfp;
      *		uscfp = *(umcf->upstreams.elts);
@@ -6238,12 +6243,15 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     uscfp = umcf->upstreams.elts;
 
     /*
-     * TODO 当多于一个upstream时会走这里,一会看
+     * 当多于一个upstream时会走这里
+     * 用来确定当前解析到的upstream是否在umcf->upstreams中已经存在,如果已经存在就返回存在的,如果不存在
+     * 就创建一个
      */
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
-    	// 检查是否有一样名字的upstream,如果都不一样说明可以添加到umcf->upstreams数组中
-    	// *(uscfp+i) 和 uscfp[i] 一样
+    	/*
+    	 * 对比当前解析到的upsteam是否和现有的同名,如果同名则继续走下面的逻辑
+    	 */
         if (uscfp[i]->host.len != u->host.len
             || ngx_strncasecmp(uscfp[i]->host.data, u->host.data, u->host.len)
                != 0)
@@ -6251,14 +6259,20 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
             continue;
         }
 
-        // 走到这里说明当前解析到的upsteam和umcf->upstreams数组中有名字一样的upstream
-        // 如果当前方法传入的flags没有NGX_HTTP_UPSTREAM_CREATE标志,说明当前方法不是在向umcf->upstreams数组中添加该upstream?
-        // uscfp[i]->flags & NGX_HTTP_UPSTREAM_CREATE又是在做什么
         if ((flags & NGX_HTTP_UPSTREAM_CREATE)
              && (uscfp[i]->flags & NGX_HTTP_UPSTREAM_CREATE))
         {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "duplicate upstream \"%V\"", &u->host);
+            /*
+             * 走到这里说明当前解析到的upsteam和umcf->upstreams数组中有名字一样的upstream
+             * 如果当前方法传入的flags没有NGX_HTTP_UPSTREAM_CREATE标志,说明当前解析到的upstream是一个配置块,
+             * 而不是一个单独的url(比如proxy_pass指令指定的)
+             *
+             * flags & NGX_HTTP_UPSTREAM_CREATE: 表示当前解析到的upstream是一个upstream配置块
+             * uscfp[i]->flags & NGX_HTTP_UPSTREAM_CREATE: 表示umcf->upstreams数组中第i个upstream是一个upstream配置块
+             */
+
             return NULL;
         }
 
@@ -6266,6 +6280,24 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
             ngx_conf_log_error(NGX_LOG_WARN, cf, 0,
                                "upstream \"%V\" may not have port %d",
                                &u->host, u->port);
+            /*
+             * 如果ngx中有如下配置会走到这个逻辑
+             *	 upstream tomcat {
+             * 		server 127.0.0.1:808;
+             * 	 }
+             *
+             * 	 location / {
+             * 		proxy_pass http://tomcat:8080;
+             * 	 }
+             * 因为proxy_pass指定了一个带有端口的upstream配置块tomcat,但是ngx中并不支持带端口的upsteam,
+             * 即使写成如下的形式:
+             * 	 upstream tomcat:8080 {
+             *
+             * 	 }
+             * ngx并不会把这个upstream块解析成带端口的,ngx会把整个"tomcat:8080"看成一个upstream配置块
+             *
+             */
+
             return NULL;
         }
 
@@ -6274,17 +6306,34 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
                           "upstream \"%V\" may not have port %d in %s:%ui",
                           &u->host, uscfp[i]->port,
                           uscfp[i]->file_name, uscfp[i]->line);
+            /*
+             * 这个和上面的情况是一样的,只不过proxy_pass和upstream的配置顺序不一样,porxy_pass在前,upstream在后
+             *   location / {
+             * 		proxy_pass http://tomcat:8080;
+             * 	 }
+             *
+             * 	 upstream tomcat {
+             * 	 	server 127.0.0.1:808;
+             * 	 }
+             * 这种情况是先把proxy_pass指定的tomcat看成一个upstream块放入到了umcf->upstreams中,然后才解析到upstream
+             * 配置块tomcat
+             *
+             */
             return NULL;
         }
 
-        // 如果upstream名字一样,但是端口不一样
-        // 下面的配置会出现这种情况
-        //   upstream "192.168.1.1:80" { server ...}
-        //   proxy_pass http://192.168.1.1:80
-        // nginx在解析完配置文件后会出现两个upsteam,它们的名字(u->host)都是"192.168.1.1:80" 但是端口一个是0，一个是80
         if (uscfp[i]->port && u->port
             && uscfp[i]->port != u->port)
         {
+        	/*
+        	 * 走到这里说明uscfp[i]的host和u的host是相同的,因为这两个host是相同的,所以肯定不是upstream配置块,
+        	 * 因为ngx不允许有两个相同的upstream配置块,所以走到这里的话一定的类似proxy_pass这样的指令指定的,比如
+        	 * 	  proxy_pass 127.0.0.1:808;
+        	 * 	  proxy_pass 127.0.0.1:909;
+        	 * 因为两个upstream端口不同,所以视为不同的upstream
+        	 * 注意:
+        	 * 	  upstream配置块是不支持配置端口的,但是ngx类似proxy_pass设置的upstream是支持端口的
+        	 */
             continue;
         }
 
@@ -6298,6 +6347,9 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
             uscfp[i]->flags = flags;
         }
 
+        /*
+         * 走到这里说明当前解析到的upstream在umcf->upstreams数组中是存在的
+         */
         return uscfp[i];
     }
 
@@ -6319,7 +6371,7 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     uscf->default_port = u->default_port;
     uscf->no_port = u->no_port;
 
-    // u->naddrs是什么意思？
+    // u->naddrs是什么意思？在ngx_parse_unix_domain_url()方法中设置这个值
     if (u->naddrs == 1 && (u->port || u->family == AF_UNIX)) {
         uscf->servers = ngx_array_create(cf->pool, 1,
                                          sizeof(ngx_http_upstream_server_t));
@@ -6655,6 +6707,9 @@ ngx_http_upstream_create_main_conf(ngx_conf_t *cf)
 }
 
 
+/*
+ *
+ */
 static char *
 ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
 {
@@ -6673,8 +6728,12 @@ ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
     	// 为每个upstream设置负载均衡方法? 可以在什么地方改动吗?
+    	/*
+    	 *
+    	 */
         init = uscfp[i]->peer.init_upstream ? uscfp[i]->peer.init_upstream:
                                             ngx_http_upstream_init_round_robin;
+
 
         if (init(cf, uscfp[i]) != NGX_OK) {
             return NGX_CONF_ERROR;
@@ -6683,6 +6742,9 @@ ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
 
 
     /* upstream_headers_in_hash */
+    /*
+     * 下面的代码将ngx_http_upstream_headers_in[]数组中的http头放到umcf->headers_in_hash中
+     */
 
     if (ngx_array_init(&headers_in, cf->temp_pool, 32, sizeof(ngx_hash_key_t))
         != NGX_OK)

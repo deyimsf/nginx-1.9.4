@@ -78,6 +78,9 @@ typedef struct {
 
 
 typedef struct {
+	/*
+	 * 用于存放ngx_http_upstream.c/ngx_http_upstream_headers_in[]数组的hash结构
+	 */
     ngx_hash_t                       headers_in_hash;
 
     /*
@@ -99,6 +102,13 @@ typedef ngx_int_t (*ngx_http_upstream_init_peer_pt)(ngx_http_request_t *r,
 
 
 typedef struct {
+	/*
+	 * 第三方模块可以通过设置这个字段来定义自己的负载均衡策略,目前ngx官方用的这个的模块有:
+	 *		ngx_http_upstream_ip_hash_module.c/ngx_http_upstream_ip_hash()方法,该方法对应ip_hash指令
+	 *		ngx_http_upstream_hash_module.c/ngx_http_upstream_hash()方法,该方法对应upstream中的hash指令
+	 *		ngx_http_upstream_keepalive_module.c/ngx_http_upstream_keepalive()方法,对应keepalive指令
+	 *		ngx_http_upstream_least_conn_module.c/ngx_http_upstream_least_conn()方法,对应least_conn指令
+	 */
     ngx_http_upstream_init_pt        init_upstream;
     ngx_http_upstream_init_peer_pt   init;
     // 有上面两个方法构造的peers (如，ngx_http_upstream_rr_peers_t)
@@ -109,7 +119,12 @@ typedef struct {
  * 对应upstream中的一个server指令信息
  */
 typedef struct {
-	// 字符串形式的套接字地址,包括端口
+	/*
+	 * 可以是upstream中server指令指定的,比如
+	 * 		server 127.0.0.1:8080
+	 * 		server www.jd.com
+	 *
+	 */
     ngx_str_t                        name;
     // 套接字地址,包括端口
     ngx_addr_t                      *addrs;

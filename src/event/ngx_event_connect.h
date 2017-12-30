@@ -48,7 +48,11 @@ struct ngx_peer_connection_s {
     // 获取一个上游连接的方法
     ngx_event_get_peer_pt            get;
     ngx_event_free_peer_pt           free;
+
     // 如果是默认轮询负载就是 ngx_http_upstream_rr_peer_data_t
+    /*
+     * 在ngx_http_upstream_round_robin.c/ngx_http_upstream_init_round_robin_peer()方法中有设置
+     */
     void                            *data;
 
 #if (NGX_SSL)
