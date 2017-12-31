@@ -153,7 +153,7 @@ struct ngx_http_upstream_rr_peers_s {
 
 
 typedef struct {
-	// upsteam中的一组peer
+	// upsteam中的一组server
     ngx_http_upstream_rr_peers_t   *peers;
     // 当前使用的peer(upstream中的server)
     ngx_http_upstream_rr_peer_t    *current;

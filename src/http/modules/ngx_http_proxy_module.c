@@ -4,6 +4,26 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/* -----------------------------proxy模式实现upstream模块的基本步骤------------------------------------
+ * 1.proxy_pass指令解析时设置内容handler函数
+ * 	   ngx_http_core_loc_conf_t->handler = ngx_http_proxy_handler;
+ *
+ * 2.proxy_pass指令解析时利用ngx_http_upstream_add()方法寻找或者创建一个对应的upstream配置信息(ngx_http_upstream_srv_conf_t)
+ * 	  这样就为proxy_pass指令所在的location确定好了对应的upstream配置信息
+ *
+ * 3.当请求到来的时候会调用ngx_http_proxy_handler()方法,这个方法会首先为当前请求创建一个ngx_http_upstream_t对象
+ *
+ * 4.设置ngx_http_upstream_t对象中的一些回调函数,以及是否使用缓存接收上游数据等开关
+ * 	  ngx_http_upstream_t->create_request = ngx_http_proxy_create_request;
+ * 	  ngx_http_upstream_t->process_header = ngx_http_proxy_process_status_line;
+ *
+ *    ngx_http_upstream_t->buffering = ngx_http_proxy_loc_conf_t->upstream.buffering;
+ *
+ * 5.调用ngx_http_upstream_init()方法启动upstream,调用之前把主请求的引用计数器加一
+ *	  r->main->count++;
+ *
+ * 6.ngx_http_proxy_handler()方法返回NGX_DONE
+ */
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -35,10 +55,27 @@ struct ngx_http_proxy_rewrite_s {
 };
 
 
+/*
+ * location / {
+ *		proxy_pass http://tomcat1;
+ * }
+ */
 typedef struct {
+	/*
+	 * http://tomcat1
+	 */
     ngx_str_t                      key_start;
+    /*
+     * http://
+     */
     ngx_str_t                      schema;
+    /*
+     * tomcat1
+     */
     ngx_str_t                      host_header;
+    /*
+     * 80
+     */
     ngx_str_t                      port;
     ngx_str_t                      uri;
 } ngx_http_proxy_vars_t;
@@ -825,6 +862,9 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
     ngx_http_proxy_main_conf_t  *pmcf;
 #endif
 
+    /*
+     * 为当前请求创建一个ngx_http_upstream_t对象,后续需要为这个对象设置一些回调函数
+     */
     if (ngx_http_upstream_create(r) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -2002,7 +2042,6 @@ ngx_http_proxy_input_filter_init(void *data)
  * 而是重新拷贝了一份这个buf对象b,把拷贝的对象b追加到了这个链表的尾部,然后彼此的shadow
  * 字段指向了彼此.
  *
- * TODO 这个方法把数据追加到p->in中时为啥要拷贝buf而不是直接把buf对象追加过去?
  * TODO 彼此的shadow又是干啥的?
  *
  * /http/modules/ngx_http_fastcgi_module.c:712:    u->pipe->input_filter = ngx_http_fastcgi_input_filter;
@@ -3703,6 +3742,10 @@ ngx_http_proxy_init_headers(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *conf,
 }
 
 
+/*
+ * 在解析proxy_pass指令的时候就已经选择好了对应的upstream配置信息(upstream配置块或者直接指定的url)
+ *   plcf->upstream.upstream = ngx_http_upstream_add(cf, &u, 0);
+ */
 static char *
 ngx_http_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -3791,6 +3834,9 @@ ngx_http_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     u.uri_part = 1;
     u.no_resolve = 1;
 
+    /*
+     * 在解析proxy_pass指令的时候就已经选择好了对应的upstream配置信息(upstream配置块或者直接指定的url)
+     */
     plcf->upstream.upstream = ngx_http_upstream_add(cf, &u, 0);
     if (plcf->upstream.upstream == NULL) {
         return NGX_CONF_ERROR;

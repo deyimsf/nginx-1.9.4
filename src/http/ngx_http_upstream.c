@@ -159,8 +159,79 @@
  *
  *
  *
+ * ---------------upstream确定使用哪一个配置信息(配置块或者类似proxy_pass指定的url)的时机--------------------------
+ * 1.upstream每遇到一个upstream指令的时候,都会利用ngx_http_upstream_add()方法把这个配置块信息放入到ngx_http_upstream_main_conf_t->upstreams[]
+ *   数组中,同时这个方法也会返回该upstream配置信息对应的ngx_http_upstream_srv_conf_t结构体对象
+ *
+ * 2.当解析到类似proxy_pass指令时仍然会调用ngx_http_upstream_add()方法,这个方法会先从ngx_http_upstream_main_conf_t->upstreams[]
+ *   数组中找已经存在的upstream配置信息,如果找到则直接返回,那么当前指令就会把对应的ngx_http_upstream_srv_conf_t结构体赋值给:
+ *   	ngx_http_proxy_loc_conf_t->upstream.upstream = ngx_http_upstream_add(cf, &u, 0);
+ *   此时就已经确定好了upstream配置信息所对应的location
  *
  *
+ *
+ * -----------------------------proxy模式实现upstream模块的基本步骤------------------------------------
+ * 1.proxy_pass指令解析时设置内容handler函数
+ * 	   ngx_http_core_loc_conf_t->handler = ngx_http_proxy_handler;
+ *
+ * 2.proxy_pass指令解析时利用ngx_http_upstream_add()方法寻找或者创建一个对应的upstream配置信息(ngx_http_upstream_srv_conf_t)
+ * 	  这样就为proxy_pass指令所在的location确定好了对应的upstream配置信息
+ *
+ * 3.当请求到来的时候会调用ngx_http_proxy_handler()方法,这个方法会首先为当前请求创建一个ngx_http_upstream_t对象
+ *
+ * 4.设置ngx_http_upstream_t对象中的一些回调函数,以及是否使用缓存接收上游数据等开关
+ * 	  ngx_http_upstream_t->create_request = ngx_http_proxy_create_request;
+ * 	  ngx_http_upstream_t->process_header = ngx_http_proxy_process_status_line;
+ *
+ *    ngx_http_upstream_t->buffering = ngx_http_proxy_loc_conf_t->upstream.buffering;
+ *
+ * 5.调用ngx_http_upstream_init()方法启动upstream,调用之前把主请求的引用计数器加一
+ *	  r->main->count++;
+ *
+ * 6.ngx_http_proxy_handler()方法返回NGX_DONE
+ *
+ *
+ *
+ * -----------------------------upstream中负载均衡的实现步骤-----------------------------
+ * 1.在解析upstream块时,当解析到负载均衡指令后(比如ip_hash指令)会执行对应的指令方法(比如ngx_http_upstream_ip_hash()),
+ *    对应的指令方法需要设置相应的init_upstream字段,比如:
+ * 	     ngx_http_upstream_srv_conf_t->peer.init_upstream = <自定义init_upstream方法>;
+ *    如果没有设置init_upstream则默认使用ngx_http_upstream_init_round_robin()方法
+ *
+ * *2.当ngx的配置文件解析完毕后会执行ngx_http_upstream_init_main_conf()方法,该方法会遍历umcf->upstreams[]
+ *    数组中的所有ngx_http_upstream_srv_conf_t结构体,然后依次回调对应的peer.init_upstream()【*】方法
+ *
+ * *3.在ngx_http_upstream_srv_conf_t->peer.init_upstream()方法中,第三方模块需要把ngx_http_upstream_srv_conf_t->servers
+ *    中的server组装成一个特定的容器(比如ip_hash模块的ngx_http_upstream_rr_peers_t),然后把这个容器赋值给
+ * 	     ngx_http_upstream_srv_conf_t->peer.data = <自定义容器> 【*】
+ *    以便以后从这个容器中获取对应的server
+ *
+ *    设置对应的init()方法ngx_http_upstream_srv_conf_t->peer.init = <自定义init方法>【*】
+ *
+ * 4.当请求过来的时候会找到对应的location,然后通过调用ngx_http_upstream_init()方法来启动upstream,启动的过程中会
+ *   回调u->create_request(r)方法并设置一些其他参数
+ *
+ *   当确定找到对应的upstream配置信息后开始回调ngx_http_upstream_srv_conf_t->peer.init(r, uscf)方法
+ *
+ * *5.peer.init()方法的潜规则是设置一些回调方法,比如在ngx_http_upstream_init_round_robin_peer()方法中有如下设置
+ *	     r->upstream->peer.get = ngx_http_upstream_get_round_robin_peer; 【*】
+ *       r->upstream->peer.free = ngx_http_upstream_free_round_robin_peer; 【*】
+ *       r->upstream->peer.tries = ngx_http_upstream_tries(rrp->peers);  【*】
+ *   其中peer.get()方法是真正获取上游服务器信息的方法
+ *
+ * 6.调用ngx_http_upstream_connect(r, u)方法去和上游服务器建立连接,其中u是r->upstream.
+ *
+ * *7.调动ngx_event_connect_peer(&u->peer)方法
+ *    启动r->upstream->peer.get()【*】方法,这个get()方法根据自定义的负载均衡规则获取一个上游服务的sockaddr信息
+ *        ngx_peer_connection_t->sockaddr = peer->sockaddr;
+ *        ngx_peer_connection_t->socklen = peer->socklen;
+ *        ngx_peer_connection_t->name = &peer->name; <127.0.0.1:8080>
+ *
+ *    创建为这个上游服务地址创建socket
+ *    获取一个对应的ngx_connection_t对象,并设置一些初始话参数
+ *    调用connect(s, ngx_peer_connection_t->sockaddr, ngx_peer_connection_t->socklen)方法连接上游服务器
+ *
+ * 8.调用ngx_http_upstream_send_request(r, u, 1)方法向上游发送请求
  *
  *
  */
@@ -592,6 +663,9 @@ ngx_conf_bitmask_t  ngx_http_upstream_ignore_headers_masks[] = {
 };
 
 
+/*
+ * 创建一个ngx_http_upstream_t对象,并把该对象赋值给r->upstream
+ */
 ngx_int_t
 ngx_http_upstream_create(ngx_http_request_t *r)
 {
@@ -735,7 +809,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
         u->request_bufs = r->request_body->bufs;
     }
 
-    /* 调用赋值给upstream的回调方法创建一个请求对象*/
+    /* 调用赋值给upstream的回调方法创建一个请求对象 */
     if (u->create_request(r) != NGX_OK) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
@@ -798,6 +872,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     u->cleanup = &cln->handler;
 
     /* TODO这个resolved是干啥的 */
+
     if (u->resolved == NULL) {
 
     	/*
@@ -906,6 +981,7 @@ found:
     u->ssl_name = uscf->host;
 #endif
 
+    // ngx_http_upstream_init_round_robin_peer
     if (uscf->peer.init(r, uscf) != NGX_OK) {
         ngx_http_upstream_finalize_request(r, u,
                                            NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -1509,6 +1585,9 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
 }
 
 
+/*
+ * 连接上游服务器
+ */
 static void
 ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
@@ -1534,6 +1613,9 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     u->state->connect_time = (ngx_msec_t) -1;
     u->state->header_time = (ngx_msec_t) -1;
 
+    /*
+     * 根据负载均衡规则连接上游服务器
+     */
     rc = ngx_event_connect_peer(&u->peer);
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -6170,8 +6252,12 @@ not_supported:
 
 
 /*
- * 将解析到的upstream{}配置块添加到ngx_http_upstream_main_conf_t->upstreams数组中,并返回这个块对应的结构体
+ * 将解析到的upstream{}配置块添加到ngx_http_upstream_main_conf_t->upstreams[]数组中,并返回这个块对应的结构体
  * ngx_http_upstream_srv_conf_t,如果upstreams数组中已经存在解析到的upstream则直接返回(比如proxy_pass指令找upstream配置块)
+ *
+ * proxy模块的proxy_pass指令在解析的时候会调用该方法:
+ * 	  ngx_http_proxy_loc_conf_t->upstream.upstream = ngx_http_upstream_add(cf, &u, 0);
+ * 可以看到在指令解析的时候就已经确定好对应的upstream配置块了
  *
  * upstreams数组在ngx_http_upstream_create_main_conf()方法中进行初始化:
  *	 ngx_array_init(&umcf->upstreams, cf->pool, 4, sizeof(ngx_http_upstream_srv_conf_t *)

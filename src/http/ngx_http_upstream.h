@@ -244,7 +244,14 @@ typedef struct {
 } ngx_http_upstream_local_t;
 
 
+/*
+ * 某个请求对应的配置信息,比如连接上游服务器的超时时间,向上游发送数据的超时时间,从上游读数据时的超时时间等
+ */
 typedef struct {
+
+	/*
+	 * 当前请求用到的upstream{}块信息(或者类似proxy_pass指定的url)
+	 */
     ngx_http_upstream_srv_conf_t    *upstream;
 
     ngx_msec_t                       connect_timeout;
@@ -413,6 +420,11 @@ typedef void (*ngx_http_upstream_handler_pt)(ngx_http_request_t *r,
     ngx_http_upstream_t *u);
 
 
+/*
+ * 里面存放了实现upstream的一些钩子,比如实现upstream的各个回调函数
+ * 第三方模块在实现upstream的时候需要为该对象中的回调方法赋值,比如如何创建请求(create_request)
+ * 如何处理上游返回的数据(process_header)
+ */
 struct ngx_http_upstream_s {
     ngx_http_upstream_handler_pt     read_event_handler;
     ngx_http_upstream_handler_pt     write_event_handler;
@@ -442,6 +454,10 @@ struct ngx_http_upstream_s {
      */
     ngx_chain_writer_ctx_t           writer;
 
+    /*
+     * TODO
+     * 某个请求对应的配置信息
+     */
     ngx_http_upstream_conf_t        *conf;
 #if (NGX_HTTP_CACHE)
     ngx_array_t                     *caches;
@@ -484,9 +500,10 @@ struct ngx_http_upstream_s {
      * 当禁用buffering功能的时候ngx就会不用多个缓存块来接收响应数据,而是用单个缓存块来接收响应数据,一旦接收
      * 到后就会立即输出,在输出之前ngx会把从上游收到的数据追加到out_bufs这个链表尾部.
      *
-     * TODO? 如果不禁用buffering功能就不用这个字段了吗?
+     * 当开启buffering功能的时候就不会用到该字段了,开启缓存的时候会用到ngx_event_pipe_s结构体中的in和out,
+     * 详情可以查看ngx_event_pipe_s结构体中对in和out的注释
      *
-     * 这里有一个问题,既然只用一块缓存来接收响应数据,为什么在输出的时候还要用一个链表来暂存数据? (TODO 待确认)
+     * 这里有一个问题,既然只用一块缓存来接收响应数据,为什么在输出的时候还要用一个链表来暂存数据?
      * 假设存在这样一个场景,客户端和上游服务器网络都不好,每次只能从上游服务器读取整个响应的一部分数据,而且读到的
      * 这些数据也因为客户端网络不好的问题,也没办法每次都百分之百输出到客户端,这种情况用图表示如下:
      *

@@ -20,8 +20,11 @@ static ngx_int_t ngx_event_pipe_drain_chains(ngx_event_pipe_t *p);
 
 
 /*
- * 用ngx_event_pipe_read_upstream()方法从上游读数据
- * 用ngx_event_pipe_write_to_downstream()方法向下游写数据
+ * 这个方法ngx_http_upstream_process_upstream()和ngx_http_upstream_process_downstream()
+ * 这两个事件方法来触发
+ *
+ * 该方法用ngx_event_pipe_read_upstream()方法从上游读数据
+ * 该方法用ngx_event_pipe_write_to_downstream()方法向下游写数据
  *
  * 类似ngx_http_upstream.c/ngx_http_upstream_process_non_buffered_request()方法,只不过
  * 这个返回中会用到多块缓存以及临时文件.
@@ -60,7 +63,7 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 
         /*
          * 从上游读数据
-         * 读到的数据会放到p->in中
+         * 通过回调p->input_filter()方法将读到的数据会放到p->in中
          */
         if (ngx_event_pipe_read_upstream(p) == NGX_ABORT) {
             return NGX_ABORT;
@@ -121,8 +124,7 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 
 
 /*
- * 从上游读数据
- * 读到的数据放到p->in中
+ * 从上游读数据,最多使用p->bufs.num个buf来读取数据,最终这些读取到的数据通过回调p->input_filter()放到p->in中
  */
 static ngx_int_t
 ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
@@ -747,6 +749,9 @@ ngx_event_pipe_write_to_downstream(ngx_event_pipe_t *p)
 }
 
 
+/*
+ *
+ */
 static ngx_int_t
 ngx_event_pipe_write_chain_to_temp_file(ngx_event_pipe_t *p)
 {

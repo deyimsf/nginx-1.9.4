@@ -32,9 +32,8 @@ struct ngx_event_pipe_s {
     ngx_chain_t       *free_raw_bufs;
 
     /*
-     * 从链路中读到的数据
-     *
-     * TODO 是全部数据吗,应该不是吧
+     * 从链路中读到的数据都会追加到这个链表中
+     * 由ngx_event_pipe_read_upstream()方法通过回调p->input_filter()方法来实现
      */
     ngx_chain_t       *in;
     /*
@@ -61,7 +60,12 @@ struct ngx_event_pipe_s {
      */
     ngx_chain_t      **last_in;
 
-    /* TODO 干啥的 */
+    /*
+     * TODO 暂时得到的结论,待验证
+     * 这个字段用来存放写到临时文件中的数据,这些数据来自链表in
+     * 在向客户端输出的时候要先输出该字段的数据,然后在输出in中的数据
+     * 由ngx_event_pipe_write_to_downstream()方法通过回调p->output_filter()方法来实现
+     */
     ngx_chain_t       *out;
     ngx_chain_t       *free;
     ngx_chain_t       *busy;
@@ -86,8 +90,9 @@ struct ngx_event_pipe_s {
     void                             *input_ctx;
 
     /*
-     * 输出数据时用的方法,对于proxy模块来说就是ngx_http_output_filter()方法,这个方法
-     * 是用来启动http的过滤器的
+     * 当开启buffering时输出数据使用的方法,目前在ngx_http_upstream_send_response()方法中设置
+     * 	 p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
+     * 通过启动http的过滤器来输出数据
      */
     ngx_event_pipe_output_filter_pt   output_filter;
     /* 存放调用output_filter方法时的入参 */

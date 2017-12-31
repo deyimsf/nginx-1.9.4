@@ -11,6 +11,9 @@
 #include <ngx_event_connect.h>
 
 
+/*
+ * 根据负载均衡规则连接上游服务器
+ */
 ngx_int_t
 ngx_event_connect_peer(ngx_peer_connection_t *pc)
 {
@@ -22,11 +25,19 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     ngx_event_t       *rev, *wev;
     ngx_connection_t  *c;
 
+    /*
+     * 根据负载均衡规则获取上游服务获取上游服务器的struct sockaddr信息
+     * 	 ngx_http_upstream_round_robin.c/ngx_http_upstream_get_round_robin_peer()
+     * 这个方法是真正定位上游服务器的方法
+     */
     rc = pc->get(pc, pc->data);
     if (rc != NGX_OK) {
         return rc;
     }
 
+    /*
+     * 为上游服务器创建一个socket
+     */
     s = ngx_socket(pc->sockaddr->sa_family, SOCK_STREAM, 0);
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, pc->log, 0, "socket %d", s);

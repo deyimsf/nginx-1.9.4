@@ -11,27 +11,23 @@
 
 
 
-upstream的配置信息看完了,明天看负载均衡相关的
+了解ngx是如何选择upstream块配置信息的
+了解upstream中实现负载均衡的步骤
 
-TODO从下面方法开始看,如果自己要写一个负载均衡模块,应该设置哪些回调方法
-  ngx_http_upstream_init_main_conf
+TODO 明天
+  看一个负责均衡具体实现?
+    ngx_http_upstream_init_main_conf
 	ngx_http_upstream_init_round_robin
-
-  需要看ngx是如何选择upstream,以及如何选择upstream中的server的
   
+  去掉upstream配置块,直接使用proxy_pass指令,看这种形式下upstream是什么样的逻辑路径?
 
 
+  看是如何均衡upstream下的server的?
+    (http://nginx.org/en/docs/dev/development_guide.html#http_load_balancing)
 
+  看是什么情况下启动nextngx_http_upstream_next方法的?
 
-
-
-看是如何均衡upstream下的server的?
- (http://nginx.org/en/docs/dev/development_guide.html#http_load_balancing)
-
-看是什么情况下启动nextngx_http_upstream_next方法的?
-
-ngx_url_t->naddrs 字段作用
-
+  ngx_url_t->naddrs字段作用?
 
 
 
@@ -45,7 +41,6 @@ ngx_url_t->naddrs 字段作用
 
 
 
- balance
  日志
  共享内存
  http请求过程
