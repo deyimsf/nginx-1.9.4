@@ -211,7 +211,7 @@
  * 4.当请求过来的时候会找到对应的location,然后通过调用ngx_http_upstream_init()方法来启动upstream,启动的过程中会
  *   回调u->create_request(r)方法并设置一些其他参数
  *
- *   当确定找到对应的upstream配置信息后开始回调ngx_http_upstream_srv_conf_t->peer.init(r, uscf)方法
+ *   开始回调ngx_http_upstream_srv_conf_t->peer.init(r, uscf)方法
  *
  * *5.peer.init()方法的潜规则是设置一些回调方法,比如在ngx_http_upstream_init_round_robin_peer()方法中有如下设置
  *	     r->upstream->peer.get = ngx_http_upstream_get_round_robin_peer; 【*】
@@ -6457,8 +6457,17 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     uscf->default_port = u->default_port;
     uscf->no_port = u->no_port;
 
-    // u->naddrs是什么意思？在ngx_parse_unix_domain_url()方法中设置这个值
+    /*
+     * TODO u->naddrs是什么意思？
+     * proxy_pass http:127.0.0.1:8080
+     */
     if (u->naddrs == 1 && (u->port || u->family == AF_UNIX)) {
+
+    	/*
+    	 * 将proxy_pass指令指定的地址放到uscf->servers[]数组中
+    	 * 这里其实是在模拟upstream配置块
+    	 */
+
         uscf->servers = ngx_array_create(cf->pool, 1,
                                          sizeof(ngx_http_upstream_server_t));
         if (uscf->servers == NULL) {
@@ -6473,7 +6482,18 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
         ngx_memzero(us, sizeof(ngx_http_upstream_server_t));
 
         us->addrs = u->addrs;
-        us->naddrs = 1; // ?没有地址?
+        us->naddrs = 1;
+
+        /*
+         * 下面是解析upstream中server指令是用到的代码
+         * us->name = u.url;
+    	 * us->addrs = u.addrs;
+    	 * us->naddrs = u.naddrs;//?
+    	 * us->weight = weight;
+    	 * us->max_fails = max_fails;
+    	 * us->fail_timeout = fail_timeout;
+         */
+
     }
 
     // 新增一个upstream

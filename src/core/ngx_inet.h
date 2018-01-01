@@ -86,6 +86,14 @@ typedef struct {
 	 * 		proxy_pass http://127.0.0.1:8080
 	 * 		proxy_pass http://tomcat;
 	 * 去掉http://
+	 *
+	 * 可以是listen指令指定的,比如
+	 * 		listen 127.0.0.1:8000;
+	 * 		listen 127.0.0.1;
+	 *		listen 8000;
+	 * 		listen *:8000;
+	 *		listen localhost:8000
+	 * 这个时候该结构体的listen字段值为1
 	 */
     ngx_str_t                 url;
 
@@ -119,12 +127,17 @@ typedef struct {
     in_port_t                 default_port;
     int                       family;
 
+    /*
+     * 是否是一个监听地址
+     */
     unsigned                  listen:1;
     unsigned                  uri_part:1;
     unsigned                  no_resolve:1;
     unsigned                  one_addr:1;  /* compatibility */
 
-    /* 表示这个url没有指明端口号 */
+    /*
+     * 表示这个url没有指明端口号
+     */
     unsigned                  no_port:1;
     unsigned                  wildcard:1;
 

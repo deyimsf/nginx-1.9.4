@@ -101,17 +101,54 @@ typedef ngx_int_t (*ngx_http_upstream_init_peer_pt)(ngx_http_request_t *r,
     ngx_http_upstream_srv_conf_t *us);
 
 
+/*
+ * A module that implements a load-balancing algorithm must set these methods and initialize private data.
+ * If init_upstream was not initialized during configuration parsing, ngx_http_upstream_module sets it to
+ * the default ngx_http_upstream_init_round_robin algorithm.
+ *
+ * 如果第三方模块需要实现一个负载均衡算法,那么他必须设置这个结构体中的方法和data字段
+ *
+ */
 typedef struct {
 	/*
+	 * Configuration-time method responsible for initializing a group of servers and initializing the init()
+	 * method in case of success. A typical load-balancing module uses a list of servers in the upstream block
+	 * to create an efficient data structure that it uses and saves its own configuration to the data field.
+	 *
 	 * 第三方模块可以通过设置这个字段来定义自己的负载均衡策略,目前ngx官方用的这个的模块有:
 	 *		ngx_http_upstream_ip_hash_module.c/ngx_http_upstream_ip_hash()方法,该方法对应ip_hash指令
 	 *		ngx_http_upstream_hash_module.c/ngx_http_upstream_hash()方法,该方法对应upstream中的hash指令
 	 *		ngx_http_upstream_keepalive_module.c/ngx_http_upstream_keepalive()方法,对应keepalive指令
 	 *		ngx_http_upstream_least_conn_module.c/ngx_http_upstream_least_conn()方法,对应least_conn指令
+	 *
+	 * 第三方模块需要在这个方法中把ngx_http_upstream_srv_conf_t->servers中的server组装成一个特定容器(比如ngx_http_upstream_rr_peers_t)
+	 * 然后把这个容器(高效的数据结构)赋值给该结构体的data字段
+	 *
+	 * 第三方模块需要在这个方法中设置该结构体的init字段
+	 *
+	 * 这个方法在ngx配置文件解析过程中执行(ngx_http_upstream_init_main_conf()方法)
 	 */
     ngx_http_upstream_init_pt        init_upstream;
+
+    /*
+     * Initializes a per-request ngx_http_upstream_peer_t.peer structure that is used for load
+     * balancing (not to be confused with the ngx_http_upstream_srv_conf_t.peer described above which
+     * is per-upstream). It is passed as the data argument to all callbacks that deal with server selection.
+     *
+     * 这个方法在每次请求时执行
+     *
+     * 在这个方法中需要设置ngx_http_upstream_peer_t.peer结构体中的回调方法,这些回调方法用来实现真正的负债均衡,比如:
+     * 	     r->ngx_http_upstream_t->peer.get = ngx_http_upstream_get_round_robin_peer;
+     *       r->ngx_http_upstream_t->peer.free = ngx_http_upstream_free_round_robin_peer;
+     *       r->ngx_http_upstream_t->peer.tries = ngx_http_upstream_tries(rrp->peers);
+     * 其中peer是结构体ngx_peer_connection_s
+     *
+     */
     ngx_http_upstream_init_peer_pt   init;
-    // 有上面两个方法构造的peers (如，ngx_http_upstream_rr_peers_t)
+
+    /*
+     * 由init_upstream方法构造的特定容器(用来存储server的高效结构体,比如ngx_http_upstream_rr_peers_t)
+     */
     void                            *data;
 } ngx_http_upstream_peer_t;
 
@@ -166,11 +203,13 @@ struct ngx_http_upstream_srv_conf_s {
 	/*
 	 * object that holds generic methods for initializing upstream configuration
 	 *
-	 * 初始化upstram配置的一个对象
+	 * 初始化upstram配置的一个对象,如果第三方模块要实现一个负载算法就需要设置该字段中的一些值
 	 */
     ngx_http_upstream_peer_t         peer;
 
     /*
+     * Configuration context of upstream modules.
+     *
      * ngx_http_conf_ctx_t->srv_conf
      *
      * 用来存储所有http模块在srv_conf区域的配置信息结构体,当然这里包括ngx_http_upstream_srv_conf_t结构体
@@ -191,13 +230,19 @@ struct ngx_http_upstream_srv_conf_s {
      */
     void                           **srv_conf;
 
-    /* 该upstream下所有的server */
+    /*
+     * Array of ngx_http_upstream_server_t, the result of parsing a set of server directives in the upstream block.
+     *
+     * 该upstream下所有的server
+     */
     ngx_array_t                     *servers;  /* ngx_http_upstream_server_t */
 
     /*
      * NGX_HTTP_UPSTREAM_CREATE:
      * 		Distinguishes explicitly defined upstreams from those that are automatically created
      * 		by the proxy_pass directive and “friends” (FastCGI, SCGI, etc.)
+     *
+     * 		用来区分upstream配置信息是用upstream指令定义的还是其它类似proxy_pass指令定义的
      *
      * NGX_HTTP_UPSTREAM_WEIGHT:
      * 		The “weight” parameter is supported
@@ -219,15 +264,24 @@ struct ngx_http_upstream_srv_conf_s {
      */
     ngx_uint_t                       flags;
 
-    /* upstream的名字,比如上面的tomcat */
+    /*
+     * Name of the upstream
+     *
+     * upstream的名字,比如上面的tomcat
+     */
     ngx_str_t                        host;
 
     /*
+     * Name of the configuration file and the line where the upstream block is located
+     *
      * upstream块所在文件的名字和行号
      */
     u_char                          *file_name;
     ngx_uint_t                       line;
 
+    /*
+     * upstream配置块没有使用,但是proxy_pass等指令有使用
+     */
     in_port_t                        port;
     in_port_t                        default_port;
     ngx_uint_t                       no_port;  /* unsigned no_port:1 */
@@ -429,6 +483,16 @@ struct ngx_http_upstream_s {
     ngx_http_upstream_handler_pt     read_event_handler;
     ngx_http_upstream_handler_pt     write_event_handler;
 
+    /*
+     * When nginx has to pass a request to another host for processing, it uses the configured load-balancing
+     * method to obtain an address to connect to. The method is obtained from the ngx_http_upstream_t.peer
+     * object of type ngx_peer_connection_t
+     *
+     * 代表一个上游连接.
+     *
+     * 另一个作用,当ngx的一个请求需要另一个服务器来完成的时候,ngx需要通过配置好的负载均衡策略去选择一个上游服务器来连接,获取这个上游地址
+     * 的方法被负载均衡模块放在了peer.get中
+     */
     ngx_peer_connection_t            peer;
 
     ngx_event_pipe_t                *pipe;

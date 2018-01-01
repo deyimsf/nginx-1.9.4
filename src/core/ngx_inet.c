@@ -641,12 +641,16 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
 
     host = u->url.data;
 
+    /* 127.0.0.1:8080/abc?name=a 最后一个字符的下一个地址 */
     last = host + u->url.len;
 
+    /* :8080 */
     port = ngx_strlchr(host, last, ':');
 
+    /* /abc?name=a */
     uri = ngx_strlchr(host, last, '/');
 
+    /* ?name=a */
     args = ngx_strlchr(host, last, '?');
 
     if (args) {
@@ -676,6 +680,7 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
 
         len = last - port;
 
+        /* 字符端口8080 转换成数字端口 */
         n = ngx_atoi(port, len);
 
         if (n < 1 || n > 65535) {
@@ -684,17 +689,35 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
         }
 
         u->port = (in_port_t) n;
+        /* 本地端口转换成网络端口 */
         sin->sin_port = htons((in_port_t) n);
 
         u->port_text.len = len;
         u->port_text.data = port;
 
+        /* last从8080 变成:8080 */
         last = port - 1;
 
     } else {
+    	/*
+    	 * 走到这里说明这个u没有指明端口,比如
+    	 * 		127.0.0.1/abc
+    	 * 		8080
+    	 */
+
         if (uri == NULL) {
+        	/*
+        	 * 走到这里说明这个u没有指明端口,并且也没有指明uri,比如
+        	 * 		127.0.0.1
+        	 * 		8080
+        	 */
 
             if (u->listen) {
+            	/*
+            	 * 走到这里说明u表示的是一个监听地址,比如:
+				 *		listen 127.0.0.1;
+				 *		listen 8000;
+            	 */
 
                 /* test value as port only */
 
@@ -725,6 +748,11 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
         sin->sin_port = htons(u->default_port);
     }
 
+    /*
+     * 执行完毕后len变成ip长度,比如
+     * 		127.0.0.1:8080
+     * 中127.0.0.1的长度
+     */
     len = last - host;
 
     if (len == 0) {
@@ -736,6 +764,10 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
     u->host.data = host;
 
     if (u->listen && len == 1 && *host == '*') {
+    	/*
+    	 * listen *:8000;
+    	 */
+
         sin->sin_addr.s_addr = INADDR_ANY;
         u->wildcard = 1;
         return NGX_OK;
@@ -749,6 +781,10 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
             u->wildcard = 1;
         }
 
+        /*
+         * TODO
+         * 代表成功设置sin->sin_addr.s_addr?
+         */
         u->naddrs = 1;
 
         u->addrs = ngx_pcalloc(pool, sizeof(ngx_addr_t));

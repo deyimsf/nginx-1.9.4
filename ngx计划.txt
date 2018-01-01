@@ -11,23 +11,30 @@
 
 
 
-了解ngx是如何选择upstream块配置信息的
-了解upstream中实现负载均衡的步骤
 
 TODO 明天
   看一个负责均衡具体实现?
+    (http://nginx.org/en/docs/dev/development_guide.html#http_load_balancing)
+
+    一种是upstream tomcat {
+	server 127.0.0.1:8080;
+	server 127.0.0.1:9090:
+    }
+
+    一种是proxy_pass 127.0.0.1:8080;
+
     ngx_http_upstream_init_main_conf
 	ngx_http_upstream_init_round_robin
   
-  去掉upstream配置块,直接使用proxy_pass指令,看这种形式下upstream是什么样的逻辑路径?
 
-
-  看是如何均衡upstream下的server的?
-    (http://nginx.org/en/docs/dev/development_guide.html#http_load_balancing)
+  如果url是一个域名,那这个域名什么时候解析?
 
   看是什么情况下启动nextngx_http_upstream_next方法的?
 
   ngx_url_t->naddrs字段作用?
+
+
+ 
 
 
 
