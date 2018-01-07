@@ -782,8 +782,7 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
         }
 
         /*
-         * TODO
-         * 代表成功设置sin->sin_addr.s_addr?
+         * 代表当前u仅代表一个ip地址
          */
         u->naddrs = 1;
 
@@ -818,6 +817,9 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
         return NGX_OK;
     }
 
+    /*
+     * 解析域名,解析到的ip地址放入到u->addrs数组中
+     */
     if (ngx_inet_resolve_host(pool, u) != NGX_OK) {
         return NGX_ERROR;
     }
@@ -1151,6 +1153,16 @@ ngx_inet_resolve_host(ngx_pool_t *pool, ngx_url_t *u)
 
         (void) ngx_cpystrn(host, u->host.data, u->host.len + 1);
 
+        /*
+         * DNS条目结构
+		 * struct hostent{
+		 *      char *h_name;       //正式的域名
+		 *      char **h_aliases;   //别名？
+		 *      int  h_addrtype;    //主机的地址类型 AF_INET?
+		 *      int  h_length;      //这个地址的长度,比如ipv4是4,单位字节
+		 *      char **h_addr_list; //这个域名对应的所有ip地址(点分十进制),最后一个是NULL
+		 * }
+         */
         h = gethostbyname((char *) host);
 
         ngx_free(host);
@@ -1160,6 +1172,9 @@ ngx_inet_resolve_host(ngx_pool_t *pool, ngx_url_t *u)
             return NGX_ERROR;
         }
 
+        /*
+         * 计算出host域名后面对应了多少ip地址
+         */
         for (i = 0; h->h_addr_list[i] != NULL; i++) { /* void */ }
 
         /* MP: ngx_shared_palloc() */
@@ -1169,9 +1184,16 @@ ngx_inet_resolve_host(ngx_pool_t *pool, ngx_url_t *u)
             return NGX_ERROR;
         }
 
+        /*
+         * 设置host域名总共解析出多少个ip
+         */
         u->naddrs = i;
 
         for (i = 0; i < u->naddrs; i++) {
+
+        	/*
+        	 * 把从网络中解析出的地址转换成操作系统格式的地址
+        	 */
 
             sin = ngx_pcalloc(pool, sizeof(struct sockaddr_in));
             if (sin == NULL) {

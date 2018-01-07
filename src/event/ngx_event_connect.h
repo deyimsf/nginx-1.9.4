@@ -97,7 +97,8 @@ struct ngx_peer_connection_s {
     ngx_event_free_peer_pt           free;
 
     /*
-     * TODO 不是太明白
+     * 调用get方法时传入的第二个参数
+     *   get(pc, pc->data)
      *
      * The per-request data of a load-balancing method;
      * keeps the state of the selection algorithm and usually includes the link to the upstream configuration.
@@ -105,6 +106,7 @@ struct ngx_peer_connection_s {
      *
      * 如果是默认轮询负载就是 ngx_http_upstream_rr_peer_data_t
      * 在ngx_http_upstream_round_robin.c/ngx_http_upstream_init_round_robin_peer()方法中有设置
+     *
      */
     void                            *data;
 

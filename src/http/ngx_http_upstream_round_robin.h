@@ -56,7 +56,7 @@ struct ngx_http_upstream_rr_peer_s {
 typedef struct ngx_http_upstream_rr_peers_s  ngx_http_upstream_rr_peers_t;
 
 /*
- * upstream中的server采用轮训负载均衡时用到的结构体,假设有如下upstream配置块
+ * upstream中的server采用轮训负载均衡时用到的结构体(高效容器),假设有如下upstream配置块
  * 		upstream tomcat {
  * 			server 127.0.0.1:8080;
  * 			server 127.0.0.1:9090;
@@ -68,10 +68,7 @@ struct ngx_http_upstream_rr_peers_s {
 	/*
 	 * 在ngx_http_upstream_round_robin.c/ngx_http_upstream_init_round_robin()方法中设置
 	 *
-	 * TODO
-	 * 代表server的个数?
-	 * 	 n += server[i].naddrs;
-	 * 	 peers->number = n;
+	 * 代表ip地址个数
 	 */
     ngx_uint_t                      number;
 
@@ -84,7 +81,7 @@ struct ngx_http_upstream_rr_peers_s {
     /*
      * 在ngx_http_upstream_round_robin.c/ngx_http_upstream_init_round_robin()方法中设置
      *
-     * upstream块下的所有server的权重值
+     * upstream块下的所有server的权重值总和
      *   n += server[i].naddrs;
      *   w += server[i].naddrs * server[i].weight;
      *   peers->total_weight = w;
@@ -92,6 +89,9 @@ struct ngx_http_upstream_rr_peers_s {
      */
     ngx_uint_t                      total_weight;
 
+    /*
+     * upstream中只有一个server,并且这个server只对应一个ip地址
+     */
     unsigned                        single:1;
     unsigned                        weighted:1;
 
@@ -100,10 +100,15 @@ struct ngx_http_upstream_rr_peers_s {
      */
     ngx_str_t                      *name;
 
-    // upsteam中的另一组peer(比如所有的backup)
+    /*
+     * upsteam中的另一组peers(比如所有的backup)
+     * 目前ngx都是用这个字段来指定backup
+     */
     ngx_http_upstream_rr_peers_t   *next;
 
-    // 每组peer中的第一个peer,下一个是peer.next
+    /*
+     * 当前高效容器中第一个peer(一个IP地址),下一个是peer.next
+     */
     ngx_http_upstream_rr_peer_t    *peer;
 };
 
@@ -152,14 +157,22 @@ struct ngx_http_upstream_rr_peers_s {
 #endif
 
 
+/*
+ * ngx_http_upstream_init_round_robin_peer()方法中会用到这个结构体,
+ * 每次请求时都是执行这个方法
+ *
+ */
 typedef struct {
-	// upsteam中的一组server
+	/*
+	 * upstream中所有ip地址的一个高效结构体
+	 */
     ngx_http_upstream_rr_peers_t   *peers;
+
     // 当前使用的peer(upstream中的server)
     ngx_http_upstream_rr_peer_t    *current;
     // 当前server重试了几次
     uintptr_t                      *tried;
-    // ?
+    //
     uintptr_t                       data;
 } ngx_http_upstream_rr_peer_data_t;
 

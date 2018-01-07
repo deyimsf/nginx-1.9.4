@@ -37,13 +37,19 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
     ngx_http_upstream_rr_peer_t   *peer, **peerp;
     ngx_http_upstream_rr_peers_t  *peers, *backup;
 
+    /*
+     * 设置每请求要执行的方法,用来根据负载规则获取对应的server
+     */
     us->peer.init = ngx_http_upstream_init_round_robin_peer;
 
+    /*
+     * 通过upstream指令配置的upstream块配置信息走这个逻辑,遍历配置块下的所有server,包server转换成高效容器存储peers
+     */
     if (us->servers) {
         server = us->servers->elts;
 
-        n = 0;
-        w = 0;
+        n = 0; /* ip地址个数 */
+        w = 0; /* 权重数 */
 
         for (i = 0; i < us->servers->nelts; i++) {
             if (server[i].backup) {
@@ -61,18 +67,24 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
             return NGX_ERROR;
         }
 
+        /*
+         * 创建一个高效容器
+         */
         peers = ngx_pcalloc(cf->pool, sizeof(ngx_http_upstream_rr_peers_t));
         if (peers == NULL) {
             return NGX_ERROR;
         }
 
+        /*
+         * 一个peer代表一个ip地址,一个域名有可能解析出多个ip地址
+         */
         peer = ngx_pcalloc(cf->pool, sizeof(ngx_http_upstream_rr_peer_t) * n);
         if (peer == NULL) {
             return NGX_ERROR;
         }
 
         peers->single = (n == 1);
-        peers->number = n;
+        peers->number = n; /* ip地址个数 */
         peers->weighted = (w != n);
         peers->total_weight = w;
         peers->name = &us->host;
@@ -80,6 +92,10 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
         n = 0;
         peerp = &peers->peer;
 
+        /*
+         * 循环us->servers下所有的ip地址,然后把他们的地址信息赋值给对应的peer,然后把这些peer串成一个链表
+         * 放入到对应的高效结构体peers中
+         */
         for (i = 0; i < us->servers->nelts; i++) {
             if (server[i].backup) {
                 continue;
@@ -97,12 +113,31 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
                 peer[n].down = server[i].down;
                 peer[n].server = server[i].name;
 
+                /*
+                 * 把peers中的peer组成一个链
+                 */
                 *peerp = &peer[n];
                 peerp = &peer[n].next;
                 n++;
             }
         }
 
+        /*
+         * 循环完成之后peers的结构大概如下:
+         * 				    peers
+         * 				---------------
+         * 				| ... | *peer |
+         * 				---------------
+         * 						  \
+         * 						-------------------------------
+         * 						| ngx_http_upstream_rr_peer_t |
+         *						-------------------------------
+         *									\*next
+         *							-------------------------------
+         *							| ngx_http_upstream_rr_peer_t |
+         *							-------------------------------
+         * 其中每一个peer代表以ip地址
+         */
         us->peer.data = peers;
 
         /* backup servers */
@@ -119,6 +154,9 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
             w += server[i].naddrs * server[i].weight;
         }
 
+        /*
+         * 如果upstream配置信息中没有backup配置那么逻辑就到此为止了
+         */
         if (n == 0) {
             return NGX_OK;
         }
@@ -186,6 +224,9 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
     u.host = us->host;
     u.port = us->port;
 
+    /*
+     * 域名解析
+     */
     if (ngx_inet_resolve_host(cf->pool, &u) != NGX_OK) {
         if (u.err) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
@@ -237,6 +278,11 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
 }
 
 
+/*
+ * ngx_http_upstream_srv_conf_t->peer.init回调方法的一个实现
+ *
+ * 每次请求都会调用一次
+ */
 ngx_int_t
 ngx_http_upstream_init_round_robin_peer(ngx_http_request_t *r,
     ngx_http_upstream_srv_conf_t *us)
@@ -415,6 +461,9 @@ ngx_http_upstream_create_round_robin_peer(ngx_http_request_t *r,
 }
 
 
+/*
+ * 按照轮训负载策略获取一个peer
+ */
 ngx_int_t
 ngx_http_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
 {
@@ -435,6 +484,9 @@ ngx_http_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
     ngx_http_upstream_rr_peers_wlock(peers);
 
     if (peers->single) {
+    	/*
+    	 * 高效容器peers中只有一个ip
+    	 */
         peer = peers->peer;
 
         if (peer->down) {
@@ -446,6 +498,9 @@ ngx_http_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
     } else {
 
         /* there are several peers */
+    	/*
+    	 * 高效容器peers中有多个ip
+    	 */
 
         peer = ngx_http_upstream_get_peer(rrp);
 
@@ -508,6 +563,11 @@ failed:
 }
 
 
+/*
+ * 按照轮训负载策略获取一个peer
+ *
+ * 这个方法就是一个轮训的负载均衡算法
+ */
 static ngx_http_upstream_rr_peer_t *
 ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
 {
@@ -526,10 +586,7 @@ ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
     p = 0;
 #endif
 
-    for (peer = rrp->peers->peer, i = 0;
-         peer;
-         peer = peer->next, i++)
-    {
+    for (peer = rrp->peers->peer, i = 0; peer; peer = peer->next, i++) {
 
         n = i / (8 * sizeof(uintptr_t));
         m = (uintptr_t) 1 << i % (8 * sizeof(uintptr_t));
@@ -538,6 +595,9 @@ ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
             continue;
         }
 
+        /*
+         * 已经禁用的ip地址不参与本次轮训
+         */
         if (peer->down) {
             continue;
         }
@@ -557,6 +617,10 @@ ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
         }
 
         if (best == NULL || peer->current_weight > best->current_weight) {
+        	/*
+        	 * 当前peer是最好的
+        	 */
+
             best = peer;
             p = i;
         }

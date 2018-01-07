@@ -174,7 +174,10 @@ typedef struct {
     // 失败后多长时间不可用
     time_t                           fail_timeout;
 
-    // server是否可用
+    /*
+     * marks the server as permanently unavailable
+     * server是否可用
+     */
     unsigned                         down:1;
     // 是否是备份server
     unsigned                         backup:1;
@@ -204,6 +207,9 @@ struct ngx_http_upstream_srv_conf_s {
 	 * object that holds generic methods for initializing upstream configuration
 	 *
 	 * 初始化upstram配置的一个对象,如果第三方模块要实现一个负载算法就需要设置该字段中的一些值
+	 *
+	 * 比如peer.data:
+	 * 	  由init_upstream方法构造的特定容器(用来存储server的高效结构体,比如ngx_http_upstream_rr_peers_t)
 	 */
     ngx_http_upstream_peer_t         peer;
 

@@ -132,6 +132,10 @@ typedef struct {
      */
     unsigned                  listen:1;
     unsigned                  uri_part:1;
+    /*
+     * 是否需要域名解析:1不需要,0需要
+     * TODO  ?
+     */
     unsigned                  no_resolve:1;
     unsigned                  one_addr:1;  /* compatibility */
 
@@ -147,17 +151,20 @@ typedef struct {
     u_char                    sockaddr[NGX_SOCKADDRLEN];
 
     /*
-     * 套接字地址,包括端口
-     * addrs->sockaddr中的值和上面字段sockaddr值相同
+     * 套接字地址集合,包括端口,该集合中总共有naddrs个ip地址
+     * 比如一个域名可以解析出多个ip地址
+     *
+     * 如果url中的host只对应一个ip地址那么addrs->sockaddr中的值和上面字段sockaddr值相同
      * 		print *(struct sockaddr*)&u.sockaddr
      * 		print *u.addrs->sockaddr
      *
-     * addrs->socklen和socklen值相同
+     * 如果url中的host只对应一个ip地址那么addrs->socklen和socklen值相同
      *
      */
     ngx_addr_t               *addrs;
     /*
-     * TODO
+     * 当前u对应的地址个数,比如一个域名可能对应多个ip
+     *
      * 目前看到在以下方法中会设置这个值
      * 	 ngx_parse_unix_domain_url()
      * 	 ngx_parse_inet_url()

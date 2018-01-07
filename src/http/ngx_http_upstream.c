@@ -213,7 +213,7 @@
  *
  *   开始回调ngx_http_upstream_srv_conf_t->peer.init(r, uscf)方法
  *
- * *5.peer.init()方法的潜规则是设置一些回调方法,比如在ngx_http_upstream_init_round_robin_peer()方法中有如下设置
+ * *5.ngx_http_upstream_srv_conf_t->peer.init()方法的潜规则是设置一些回调方法,比如在ngx_http_upstream_init_round_robin_peer()方法中有如下设置
  *	     r->upstream->peer.get = ngx_http_upstream_get_round_robin_peer; 【*】
  *       r->upstream->peer.free = ngx_http_upstream_free_round_robin_peer; 【*】
  *       r->upstream->peer.tries = ngx_http_upstream_tries(rrp->peers);  【*】
@@ -222,7 +222,7 @@
  * 6.调用ngx_http_upstream_connect(r, u)方法去和上游服务器建立连接,其中u是r->upstream.
  *
  * *7.调动ngx_event_connect_peer(&u->peer)方法
- *    启动r->upstream->peer.get()【*】方法,这个get()方法根据自定义的负载均衡规则获取一个上游服务的sockaddr信息
+ *    启动r->upstream->peer.get(pc, pc->data)【*】方法,这个get()方法根据自定义的负载均衡规则获取一个上游服务的sockaddr信息
  *        ngx_peer_connection_t->sockaddr = peer->sockaddr;
  *        ngx_peer_connection_t->socklen = peer->socklen;
  *        ngx_peer_connection_t->name = &peer->name; <127.0.0.1:8080>
@@ -233,6 +233,37 @@
  *
  * 8.调用ngx_http_upstream_send_request(r, u, 1)方法向上游发送请求
  *
+ *
+ *
+ * -------------------------------负载均衡支持dns动态解析的一个思路---------------------------------
+ * 1.写一个类似ip_hash的指令,在这个指令方法中设置自己的init_upstream方法,比如
+ *   	ngx_http_upstream_srv_conf_t->peer.init_upstream = ngx_http_upstream_init_my
+ *
+ * 2.在ngx_http_upstream_init_my()方法中直接调用ngx_http_upstream_init_round_robin()方法就行
+ *
+ * 3.调用完ngx_http_upstream_init_round_robin()方法后设置us->peer.init方法,比如
+ *      ngx_http_upstream_srv_conf_t->peer.init = ngx_http_upstream_init_round_robin_peer_my;
+ *
+ * 4.ngx_http_upstream_init_round_robin_peer_my()方法是每次请求都会调用的,这个方法中的代码可以直接拷贝
+ *   ngx_http_upstream_init_round_robin_peer()方法中的,我们需要做的就是每次请求过来后判断是否需要重新解析
+ *   dns,如果需要重新解析,那就在这里重新组装peers这个高效结构体
+ *
+ * 5.组装之前需要遍历ngx_http_upstream_srv_conf_t->servers数组,对里面的域名进行重新解析(ngx_http_upstream_server_t.name)
+ *   主要是重新填充:
+ *   	ngx_http_upstream_server_t->addrs = u.addrs;
+ *    	ngx_http_upstream_server_t->naddrs = u.naddrs; // ip地址个数
+ *   组装过程可以参考ngx_http_upstream_init_round_robin()方法中的if逻辑块
+ *     	if (ngx_http_upstream_srv_conf_t->servers) {
+ *   组装完成后就可以将新的peers设置到对应的data中
+ *      ngx_http_upstream_srv_conf_t->peer.data
+ *
+ *   剩下的逻辑就直接照抄ngx_http_upstream_init_round_robin_peer()方法中的代码就可以了.
+ *
+ *
+ * 如果url是一个域名,那这个域名什么时候解析?
+ *   对于upstream配置块来说在解析server指令的时候通过ngx_parse_url()方法调用ngx_inet_resolve_host()方法解析
+ *
+ *   对于proxy模块来说当解析到proxy_pass指令的时候通过ngx_http_upstream_add()来触发ngx_parse_url()方法
  *
  */
 
@@ -1981,7 +2012,7 @@ done:
 /*
  * 回调reinit_request()方法
  *
- * 当在连接连接
+ * TODO 然后做什么?
  */
 static ngx_int_t
 ngx_http_upstream_reinit(ngx_http_request_t *r, ngx_http_upstream_t *u)
@@ -6227,7 +6258,7 @@ ngx_http_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     us->name = u.url;
     us->addrs = u.addrs;
-    us->naddrs = u.naddrs;//?
+    us->naddrs = u.naddrs; // ip地址个数
     us->weight = weight;
     us->max_fails = max_fails;
     us->fail_timeout = fail_timeout;
@@ -6458,7 +6489,6 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     uscf->no_port = u->no_port;
 
     /*
-     * TODO u->naddrs是什么意思？
      * proxy_pass http:127.0.0.1:8080
      */
     if (u->naddrs == 1 && (u->port || u->family == AF_UNIX)) {
@@ -6488,7 +6518,7 @@ ngx_http_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
          * 下面是解析upstream中server指令是用到的代码
          * us->name = u.url;
     	 * us->addrs = u.addrs;
-    	 * us->naddrs = u.naddrs;//?
+    	 * us->naddrs = u.naddrs;
     	 * us->weight = weight;
     	 * us->max_fails = max_fails;
     	 * us->fail_timeout = fail_timeout;
@@ -6833,9 +6863,13 @@ ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
 
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
-    	// 为每个upstream设置负载均衡方法? 可以在什么地方改动吗?
     	/*
+    	 * 为每个upstream设置负载均衡方法初始化方法
     	 *
+    	 * 第三方模块需要在这个方法中把ngx_http_upstream_srv_conf_t->servers中的server组装成一个特定容器(比如ngx_http_upstream_rr_peers_t)
+    	 * 然后把这个容器(高效的数据结构)赋值给该结构体的data字段
+    	 *
+    	 * 第三方模块需要在这个方法中设置该结构体的init字段(每次请求都执行,需要在里面定义一些其它负载方法,详情看ngx_http_upstream_peer_t结构体)
     	 */
         init = uscfp[i]->peer.init_upstream ? uscfp[i]->peer.init_upstream:
                                             ngx_http_upstream_init_round_robin;
