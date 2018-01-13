@@ -72,6 +72,11 @@ struct ngx_event_s {
     unsigned         error:1;
 
     unsigned         timedout:1;
+    /*
+     * 该事件是否设置了定时器
+     * 	0:没有
+     * 	1:有
+     */
     unsigned         timer_set:1;
 
     unsigned         delayed:1;

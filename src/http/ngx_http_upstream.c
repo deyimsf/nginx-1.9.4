@@ -1716,7 +1716,7 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     if (u->request_sent) {
 
-    	/* TODO 什么情况下会进到这里, 重新发送链接? */
+    	/* TODO 什么情况下会进到这里,同一个链接第二次发送请求? */
 
         if (ngx_http_upstream_reinit(r, u) != NGX_OK) {
             ngx_http_upstream_finalize_request(r, u,
@@ -2152,6 +2152,10 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
     /* rc == NGX_OK */
 
     if (c->write->timer_set) {
+    	/*
+    	 * 如果这个事件设置过定时器,那么这里要把定时器删除到,因为在未触发定时器的时候事件已经过来了
+    	 */
+
         ngx_del_timer(c->write);
     }
 
@@ -2175,6 +2179,9 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
         return;
     }
 
+    /*
+     * 基本上每调用一次相关的事件注册方法(注册读写事件)都会为该事件设置一个超时时间
+     */
     ngx_add_timer(c->read, u->conf->read_timeout);
 
     if (c->read->ready) {
@@ -4332,6 +4339,9 @@ ngx_http_upstream_dummy_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 }
 
 
+/*
+ * 去选择下一个upstream
+ */
 static void
 ngx_http_upstream_next(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_uint_t ft_type)
@@ -4342,6 +4352,12 @@ ngx_http_upstream_next(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http next upstream, %xi", ft_type);
 
+    /*
+     * 走到这里说明在当前sockaddr上发送请求已经不可能了(有可能连接建立失败、请求超时等),所以这里要把该地址置空,
+     * 防止其他逻辑继续使用这个错误的sockaddr
+     *
+     * TODO ? 后面有逻辑使用u->peer.sockaddr = NULL这个特性吗 ?
+     */
     if (u->peer.sockaddr) {
 
         if (ft_type == NGX_HTTP_UPSTREAM_FT_HTTP_403
@@ -4439,6 +4455,11 @@ ngx_http_upstream_next(ngx_http_request_t *r, ngx_http_upstream_t *u,
         }
     }
 
+    /*
+     * 这块逻辑类似上面的
+     *  	if (u->peer.sockaddr) {
+     * 回收这个不可用的连接
+     */
     if (u->peer.connection) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                        "close http upstream connection: %d",
@@ -4461,6 +4482,9 @@ ngx_http_upstream_next(ngx_http_request_t *r, ngx_http_upstream_t *u,
         u->peer.connection = NULL;
     }
 
+    /*
+     * 重新连接一个新的上游服务器
+     */
     ngx_http_upstream_connect(r, u);
 }
 

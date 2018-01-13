@@ -1,16 +1,18 @@
 
 
 
-TODO 下周
-  看是什么情况下启动ngx_http_upstream_next方法的?
-       ngx使用ngx_http_upstream_connect()方法连接上游服务器在这个方法中有触发ngx_http_upstream_next()方法
-       和ngx_http_upstream_reinit()方法
+TODO 明天看ngx_http_upstream_next()方法
 
-       调用ngx_http_upstream_send_request()方法发送请求的时候也会触发ngx_http_upstream_next()方法
-  
-  看ngx_http_upstream_next()方法都做了什么事?
-  
- 
+
+
+
+
+
+
+
+
+
+
 
 
 

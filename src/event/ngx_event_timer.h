@@ -49,12 +49,17 @@ ngx_event_del_timer(ngx_event_t *ev)
     ev->timer.parent = NULL;
 #endif
 
+    /*
+     * 清除该事件的定时器设置标记,表示该事件没有设置定时器
+     */
     ev->timer_set = 0;
 }
 
 
 /**
  * 添加一个时间事件
+ *
+ * 基本上每调用一次相关的事件注册方法(注册读写事件)都会为该事件设置一个超时时间
  *
  *  *ev: 要添加的事件
  *  timer: 超时时间

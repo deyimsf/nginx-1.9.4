@@ -18,8 +18,14 @@ typedef struct ngx_http_upstream_rr_peer_s   ngx_http_upstream_rr_peer_t;
 
 /**
  * 一个peer,代表一个上游地址
+ *
+ * 因为一个server可以表示多个ip地址,比如一个server配置的是一个域名,而这个域名后面挂载了好几个IP地址
+ * 所以多个peer可以属于同一个server
  */
 struct ngx_http_upstream_rr_peer_s {
+	/*
+	 * 一个ip地址的本地表示(不关连接有没有真实的建立)
+	 */
     struct sockaddr                *sockaddr;
     socklen_t                       socklen;
     ngx_str_t                       name;
@@ -31,11 +37,49 @@ struct ngx_http_upstream_rr_peer_s {
 
     ngx_uint_t                      conns;
 
+    /*
+     * 用来记录当前peer失败次数,每次使用当前peer做事时失败一次该字段就加一
+     *
+     * 当所有的peer都失效后会在ngx_http_upstream_get_round_robin_peer()方法中重置这个字段,
+     * 重置后,当再来请求的时候所有的peer都将参与负载算法
+     *
+     */
     ngx_uint_t                      fails;
+
+    /*
+     * 默认轮训中该字段的值和下面的checked是同时更新的,都是在失败的时候
+     * 在ngx_http_upstream_free_round_robin_peer()方法的如下
+     * 		if (state & NGX_PEER_FAILED) {
+     * 逻辑判断中设置的,意思是如果当前peer结束时发生了错误,那么就更新accessed和checked这两个字段
+     *
+     * 其它负载方法中是如果使用这个字段的?(抽时间看)
+     */
     time_t                          accessed;
+
+    /*
+     * 记录最近一次失败的时间
+     * 当前时间减去该字段的值就是当前peer自动上次失败后的闲置时间,如果这个闲置时间超过fail_timeout字段
+     * 设置的值,那么当前peer仍然会参与本次负载算法,此时会忽略fails大于等于max_fails的限制
+     */
     time_t                          checked;
 
+    /*
+     * upstream tomcat {
+     * 		server 127.0.0.1 max_fails=1;
+     * }
+     *
+     * 用来指定当前peer(server)的最大失败次数,当上面的字段fails大于等于max_fails的值后一般就不会让当前peer参与负载算法了
+     *
+     * 但是当当前时间减去checked字段的值后,大于fail_timeout的值,那么当前peer将忽略fails大于等于max_fails的限制
+     */
     ngx_uint_t                      max_fails;
+
+    /*
+     * 失败次数的超时时间
+     *
+     * 意思是当fails大于等于max_fails值并禁用当前peer参与负载算法后,再经过fail_timeout时间后当前peer就又可以参与负载算法了,
+     * 但是此时fails并不会设置为零,也就是说后续如果该peer又失败了一次,那么fails会继续加一并且在fail_timeout时间内该peer是被禁用的
+     */
     time_t                          fail_timeout;
 
     ngx_uint_t                      down;          /* unsigned  down:1; */

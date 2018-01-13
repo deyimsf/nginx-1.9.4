@@ -505,6 +505,16 @@ ngx_http_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
         peer = ngx_http_upstream_get_peer(rrp);
 
         if (peer == NULL) {
+
+        	/*
+        	 * 如果从现有的peers中获取不到一个可用的peer,那么就走failed逻辑
+        	 *
+        	 * failed逻辑会从备用的peers(peers->next)中选择一个可用的peer
+        	 * 然后恢复所有peers中的peer,也就是把所有peers中的peer.fails置为0
+        	 *
+        	 * 也就是说只有当前peers中所有的peer都不可用的时候才会复活其它的peer
+        	 */
+
             goto failed;
         }
 
@@ -606,6 +616,12 @@ ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
             && peer->fails >= peer->max_fails
             && now - peer->checked <= peer->fail_timeout)
         {
+        	/*
+        	 * 这一步用来检查当,peer的失败次数超过定义的最大失败次数后是否还可以使用这个peer,该判断
+        	 * 通过peer->fail_timeout来确定,当前时间减去上次peer的检查时间就是peer的闲置时间,如果它的闲置时间
+        	 * 超过了定义的时间(fail_timeout)那么这个peer就可以使用,否则就跳过这个peer
+        	 *
+        	 */
             continue;
         }
 

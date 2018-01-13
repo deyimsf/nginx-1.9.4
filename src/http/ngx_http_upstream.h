@@ -346,6 +346,32 @@ typedef struct {
     ngx_bufs_t                       bufs;
 
     ngx_uint_t                       ignore_headers;
+    /*
+     * 一个掩码值,用来判定是否走upstream_next逻辑,如果要走的话就会重新调用ngx_http_upstream_connect()
+     * 方法去选择一个上游服务器进行连接
+     *
+     * 在ngx_http_upstream_next()方法中会用到,该方法通过判断当前配置的掩码中(ngx_http_upstream_t->conf->next_upstream)
+     * 是否存在当前要检查的值,如果存在就可以重新调用ngx_http_upstream_connect()方法,不存在则调用
+     * ngx_http_upstream_finalize_request()方法结束请求
+     *
+     * 在ngx_http_upstream_test_next()方法中通过判断掩码来调用ngx_http_upstream_next()方法
+     *
+     * 掩码值可以是如下:
+     * 	NGX_HTTP_UPSTREAM_FT_ERROR           0x00000002
+	 *	NGX_HTTP_UPSTREAM_FT_TIMEOUT         0x00000004
+	 *	NGX_HTTP_UPSTREAM_FT_INVALID_HEADER  0x00000008
+	 *	NGX_HTTP_UPSTREAM_FT_HTTP_500        0x00000010
+	 *	NGX_HTTP_UPSTREAM_FT_HTTP_502        0x00000020
+	 *	NGX_HTTP_UPSTREAM_FT_HTTP_503        0x00000040
+	 *	NGX_HTTP_UPSTREAM_FT_HTTP_504        0x00000080
+	 *	NGX_HTTP_UPSTREAM_FT_HTTP_403        0x00000100
+	 *	NGX_HTTP_UPSTREAM_FT_HTTP_404        0x00000200
+	 *	NGX_HTTP_UPSTREAM_FT_UPDATING        0x00000400
+	 *	NGX_HTTP_UPSTREAM_FT_BUSY_LOCK       0x00000800
+	 *	NGX_HTTP_UPSTREAM_FT_MAX_WAITING     0x00001000
+	 *	NGX_HTTP_UPSTREAM_FT_NOLIVE          0x40000000
+	 *	NGX_HTTP_UPSTREAM_FT_OFF             0x80000000
+     */
     ngx_uint_t                       next_upstream;
     ngx_uint_t                       store_access;
     ngx_uint_t                       next_upstream_tries;
