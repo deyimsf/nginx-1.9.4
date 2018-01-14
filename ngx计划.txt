@@ -8,7 +8,12 @@ TODO
    目前在看ngx_log_error宏在linux中对应ngx_log_error_core()方法
 
 
-   看到了ngx_log.c/ngx_log_error_core()方法的234行,下周继续
+   看到了ngx_log.c/ngx_log_error_core()方法的234行,目前看到的逻辑都是在内存
+   中拼字符串
+
+   下周看
+      什么时候把这些内存中的字符串打印出去?
+    
 
 
 
