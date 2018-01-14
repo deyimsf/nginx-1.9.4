@@ -12,7 +12,27 @@
 
 
 /*
- * 根据负载均衡规则连接上游服务器
+ * 根据负载均衡规则连接上游服务器所有数据准备好之后调用系统函数
+ * 	 rc = connect(s, pc->sockaddr, pc->socklen);
+ * 来和上游真正建立连接
+ *
+ * 步骤如下:
+ * 1.通过调用pc->get()方法执行负载均衡算法,获取一个上游地址信息(pc->sockaddr、pc->socklen和pc->name)
+ *
+ * 2.通过ngx_socket()方法间接调用系统方法socket()获取一个socket文件描述符
+ *
+ * 3.通过ngx_get_connection(s, pc->log)方法获取一个ngx_connection_t对象,用来和socket描述符对应
+ *
+ * 4.调用系统函数setsockopt(s, SOL_SOCKET, SO_RCVBUF, //...)方法为该socket设置一些参数
+ *
+ * 5.调用ngx_nonblocking(s)方法设置socket描述为非阻塞的
+ *
+ * 6.为ngx_connection_t设置一些参数,比如c->recv、c->recv_chain、c->send = ngx_send等
+ *
+ * 7.调用ngx_add_conn(c)方法把c的读写事件注册到epoll中
+ *
+ * 8.调用系统方法connect(s, pc->sockaddr, pc->socklen)和上游服务真正建立连接
+ *
  */
 ngx_int_t
 ngx_event_connect_peer(ngx_peer_connection_t *pc)

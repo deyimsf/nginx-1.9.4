@@ -1617,7 +1617,7 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
 
 
 /*
- * 连接上游服务器
+ * 连接上游服务器,通过ngx_event_connect_peer()方法真正建立连接
  */
 static void
 ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
@@ -1645,7 +1645,9 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     u->state->header_time = (ngx_msec_t) -1;
 
     /*
-     * 根据负载均衡规则连接上游服务器
+     * 根据负载均衡规则连接上游服务器,所有数据准备好之后调用系统函数
+     * 	 rc = connect(s, pc->sockaddr, pc->socklen);
+     * 来和上游真正建立连接
      */
     rc = ngx_event_connect_peer(&u->peer);
 
@@ -1716,8 +1718,11 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     if (u->request_sent) {
 
-    	/* TODO 什么情况下会进到这里,同一个链接第二次发送请求? */
-
+    	/*
+    	 * 当请求头已经发送过之后又发生了其它错误后会走这里
+    	 *
+    	 * 发生的错误可能是错误的响应码,比如500、502、404等(例如proxy_next_upstream指令中的一些响应码)
+    	 */
         if (ngx_http_upstream_reinit(r, u) != NGX_OK) {
             ngx_http_upstream_finalize_request(r, u,
                                                NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -2112,6 +2117,7 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u,
         u->state->connect_time = ngx_current_msec - u->state->response_time;
     }
 
+    /* 检查一下上游连接是否可用 */
     if (!u->request_sent && ngx_http_upstream_test_connect(c) != NGX_OK) {
         ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);
         return;
@@ -2542,6 +2548,10 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     if (u->headers_in.status_n >= NGX_HTTP_SPECIAL_RESPONSE) {
 
+    	/*
+    	 * 走到这里表示响应码大于等于300,调用下面的方法去确定要不要走next_upstream逻辑
+    	 */
+
         if (ngx_http_upstream_test_next(r, u) == NGX_OK) {
             return;
         }
@@ -2618,6 +2628,12 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 }
 
 
+/*
+ * 当上游服务器返回的响应码大于等于300时调用这个方法,根据响应码来确定是否走next_upstream逻辑
+ * 可比较的响应码在ngx_http_upstream_next_errors[]数组中
+ *
+ * 该方法在src/http/ngx_http_upstream.c/ngx_http_upstream_process_header()方法中被调用
+ */
 static ngx_int_t
 ngx_http_upstream_test_next(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
@@ -4340,7 +4356,14 @@ ngx_http_upstream_dummy_handler(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
 
 /*
- * 去选择下一个upstream
+ * 清空当前连接的信息,比如
+ * 	 u->peer.sockaddr = NULL
+ *   u->peer.connection = NULL
+ * 然后调用ngx_http_upstream_connect()方法重新走负载均衡方法去连接下一个上游服务器
+ *
+ * 如何保证负载均衡算法不会再次选择当前peer(一个上游服务器地址)?
+ * 	 对于目前轮训的负载算法来说,它的实现方式会自动跳过当前peer
+ * 	 第三方模块实现自己的负载算法时需要考虑到这种情况,避免每次都选同一个peer
  */
 static void
 ngx_http_upstream_next(ngx_http_request_t *r, ngx_http_upstream_t *u,
@@ -4355,8 +4378,6 @@ ngx_http_upstream_next(ngx_http_request_t *r, ngx_http_upstream_t *u,
     /*
      * 走到这里说明在当前sockaddr上发送请求已经不可能了(有可能连接建立失败、请求超时等),所以这里要把该地址置空,
      * 防止其他逻辑继续使用这个错误的sockaddr
-     *
-     * TODO ? 后面有逻辑使用u->peer.sockaddr = NULL这个特性吗 ?
      */
     if (u->peer.sockaddr) {
 

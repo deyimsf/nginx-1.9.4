@@ -655,6 +655,7 @@ struct ngx_http_upstream_s {
 #if (NGX_HTTP_CACHE)
     ngx_int_t                      (*create_key)(ngx_http_request_t *r);
 #endif
+
     /*
      * 必须设置
      *
@@ -665,6 +666,7 @@ struct ngx_http_upstream_s {
      *
      */
     ngx_int_t                      (*create_request)(ngx_http_request_t *r);
+
     /*
      * 必须设置
      *
@@ -675,8 +677,12 @@ struct ngx_http_upstream_s {
      *
      * 一个请求可能被多次调用
      *
+     * 对于proxy模块,当发生proxy_next_upstream指令指定的错误后(比如http_500、http_502等),并且已经发送过请求头了(u->request_sent==1)
+     * 会回调这个方法,当然在这之前已经确定好是哪个上游并且试图和上游建立连接了.
+     *
      */
     ngx_int_t                      (*reinit_request)(ngx_http_request_t *r);
+
     /*
      * 必须设置
      *
@@ -688,8 +694,10 @@ struct ngx_http_upstream_s {
      *
      */
     ngx_int_t                      (*process_header)(ngx_http_request_t *r);
+
     /* 目前没用到 */
     void                           (*abort_request)(ngx_http_request_t *r);
+
     /*
      * 必须设置
      *

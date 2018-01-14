@@ -463,6 +463,10 @@ ngx_http_upstream_create_round_robin_peer(ngx_http_request_t *r,
 
 /*
  * 按照轮训负载策略获取一个peer
+ * 主要获取如下信息:
+ * 	   pc->sockaddr = peer->sockaddr;
+ *	   pc->socklen = peer->socklen;
+ *	   pc->name = &peer->name;
  */
 ngx_int_t
 ngx_http_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
