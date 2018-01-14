@@ -25,6 +25,10 @@ static ngx_atomic_t      ngx_time_lock;
 
 volatile ngx_msec_t      ngx_current_msec;
 volatile ngx_time_t     *ngx_cached_time;
+
+/*
+ * 下面5个时间格式在ngx_time_init()方法中初始化,ngx_time_update()方法中更新
+ */
 volatile ngx_str_t       ngx_cached_err_log_time;
 volatile ngx_str_t       ngx_cached_http_time;
 volatile ngx_str_t       ngx_cached_http_log_time;

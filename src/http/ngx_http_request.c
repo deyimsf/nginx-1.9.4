@@ -3948,6 +3948,9 @@ ngx_http_close_connection(ngx_connection_t *c)
 }
 
 
+/*
+ * 日志回调方法,打印log->action中的信息到buf中,并把客户端和端地址打印到buf中
+ */
 static u_char *
 ngx_http_log_error(ngx_log_t *log, u_char *buf, size_t len)
 {
@@ -3969,6 +3972,9 @@ ngx_http_log_error(ngx_log_t *log, u_char *buf, size_t len)
     r = ctx->request;
 
     if (r) {
+    	/*
+    	 * ngx_http_log_error_handler
+    	 */
         return r->log_handler(r, ctx->current_request, p, len);
 
     } else {

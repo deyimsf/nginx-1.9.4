@@ -98,6 +98,7 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
 
 #else
 
+/* linux */
 void
 ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     const char *fmt, va_list args)
@@ -110,26 +111,91 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     u_char      *p, *last, *msg;
     ssize_t      n;
     ngx_uint_t   wrote_stderr, debug_connection;
+
+    /* 暂时用来存放日志信息的内存空间,局部变量所以是栈上分配 */
     u_char       errstr[NGX_MAX_ERROR_STR];
 
+    /*
+     * 暂时用来缓存日志信息的内存的最后边界地址
+     */
     last = errstr + NGX_MAX_ERROR_STR;
 
+    /*
+     * 把代表当前时间的字符串拷贝到errstr中,然后返回这个时间串在errstr内存中最后一个字符的后面的地址
+     * 假设ngx_cached_err_log_time的值是:
+     *		2018/01/14 08:36:47
+     * 执行完下面的拷贝后errstr的内存结构如下
+     * 		 errstr
+     * 		 -----
+     * 		 | * |
+     * 		 -----
+     *			\			11	    18
+     *			------------------------------
+     *			|2018/01/14 08:36:47 |
+     *			------------------------------
+     * 日期最后一个字符的地址是17,那么p就是18
+     *
+     */
     p = ngx_cpymem(errstr, ngx_cached_err_log_time.data,
                    ngx_cached_err_log_time.len);
 
+    /*
+     * 把错误级别对应的字符串拷贝给errstr中,从p这个位置开始拷贝,拷贝后内存结构如下,假设错误级别是error
+     * 		errstr
+     * 		-----
+     * 		| * |
+     * 		-----
+     * 		   \				   18
+     * 		   ----------------------------------
+     * 		   |2018/01/14 08:36:47 [error]
+     * 		   ----------------------------------
+     *
+     */
     p = ngx_slprintf(p, last, " [%V] ", &err_levels[level]);
 
-    /* pid#tid */
+    /*
+     * 拷贝进程号和线程好,如果没有用线程则线程号用0代替,拷贝后内存结构如下
+     *      errstr
+     * 		-----
+     * 		| * |
+     * 		-----
+     * 		   \				   18
+     * 		   ----------------------------------------
+     * 		   |2018/01/14 08:36:47 [error] 2074#0:
+     * 		   ----------------------------------------
+     *
+     */
     p = ngx_slprintf(p, last, "%P#" NGX_TID_T_FMT ": ",
                     ngx_log_pid, ngx_log_tid);
 
     if (log->connection) {
+    	/*
+    	 * 这个号是干嘛滴,拷贝后如下:
+    	 * 		------------------------------------------
+    	 * 		|2018/01/14 08:36:47 [error] 2074#0: *98
+    	 *		------------------------------------------
+    	 *
+    	 */
+
         p = ngx_slprintf(p, last, "*%uA ", log->connection);
     }
 
     msg = p;
 
 #if (NGX_HAVE_VARIADIC_MACROS)
+
+    /*
+     * 下面开始真正处理用户穿过来的格式化字符串,比如:
+     *		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "no live upstreams");
+     * 那么此时fmt就是"no live upstreams"
+     *
+     * 可以看到这个字符串并没有一个百分号,所以下面的方法执行完毕后结果如下:
+     *    	-----------------------------------------------------------------
+     *    	|2018/01/14 08:36:47 [error] 2074#0: *98 no live upstreams
+     *    	-----------------------------------------------------------------
+     *
+     *
+     */
 
     va_start(args, fmt);
     p = ngx_vslprintf(p, last, fmt, args);
@@ -146,8 +212,27 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     }
 
     if (level != NGX_LOG_DEBUG && log->handler) {
+    	/*
+    	 * 回到handler方法,对于http模块来说,这个handler就是ngx_http_log_error()方法
+    	 * 该方法的作用是向p这个指针地址中拷贝不大于last-p个字节的字符
+    	 *
+    	 * 比如在ngx_http_log_error()方法中当log->action中有值的时候,会把log中的值拷贝到p中
+    	 * 假设log->action = "connecting to upstream",那么执行过程会把log->action 中的值打印到p中:
+    	 *    -------------------------------------------------------------------------------------------
+    	 *    |2018/01/14 08:36:47 [error] 2074#0: *98 no live upstreams  while connecting to upstream
+    	 *    -------------------------------------------------------------------------------------------
+    	 * 然后还会打印客户端ip和server端ip(ngx本地ip)
+    	 *  , client: 127.0.0.1 , server: localhost,
+    	 *
+    	 * 其它信息等
+    	 * 	, request: "GET /init HTTP/1.1", upstream: "http://tomcat1/init", host: "127.0.0.1"
+    	 *
+    	 */
+
         p = log->handler(log, p, last - p);
     }
+
+    /*   看到这里 TODO 下周看  */
 
     if (p > last - NGX_LINEFEED_SIZE) {
         p = last - NGX_LINEFEED_SIZE;

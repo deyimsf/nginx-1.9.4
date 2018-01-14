@@ -49,13 +49,52 @@ typedef void (*ngx_log_writer_pt) (ngx_log_t *log, ngx_uint_t level,
 
 
 struct ngx_log_s {
+	/*
+	 * 日志级别,有如下八中:
+	 * 	 NGX_LOG_STDERR            0
+	 *	 NGX_LOG_EMERG             1
+	 *	 NGX_LOG_ALERT             2
+	 *	 NGX_LOG_CRIT              3
+	 *	 NGX_LOG_ERR               4
+	 *	 NGX_LOG_WARN              5
+	 *	 NGX_LOG_NOTICE            6
+	 *	 NGX_LOG_INFO              7
+	 *	 NGX_LOG_DEBUG             8
+	 */
     ngx_uint_t           log_level;
+    /*
+     * 日志打印到磁盘的文件,一般有error_log指令指定
+     */
     ngx_open_file_t     *file;
 
+    /*
+     * TODO
+     */
     ngx_atomic_uint_t    connection;
 
     time_t               disk_full_time;
 
+    /*
+     *
+     */
+    /*
+     * 日志的一个回调方法,在ngx_log_error_core()方法中调用
+     *
+	 * 对于http模块来说,这个handler就是ngx_http_request.c/ngx_http_log_error()方法
+	 * 该方法的作用是向p这个指针地址中拷贝不大于last-p个字节的字符
+	 *
+	 * 比如在ngx_http_log_error()方法中当log->action中有值的时候,会把log中的值拷贝到p中
+	 * 假设log->action = "connecting to upstream",那么执行过程会把log->action 中的值打印到p中:
+	 *    -------------------------------------------------------------------------------------------
+	 *    |2018/01/14 08:36:47 [error] 2074#0: *98 no live upstreams  while connecting to upstream
+	 *    -------------------------------------------------------------------------------------------
+	 * 然后还会打印客户端ip和server端ip(ngx本地ip)
+	 *  , client: 127.0.0.1 , server: localhost,
+	 *
+	 * 其它信息等
+	 * 	, request: "GET /init HTTP/1.1", upstream: "http://tomcat1/init", host: "127.0.0.1"
+	 *
+	 */
     ngx_log_handler_pt   handler;
     void                *data;
 
