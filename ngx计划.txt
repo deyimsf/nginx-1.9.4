@@ -1,21 +1,10 @@
 
 
-TODO 
-   日志由两种宏定义
-	ngx_log_error()
-	ngx_log_debugX()
-   
-   目前在看ngx_log_error宏在linux中对应ngx_log_error_core()方法
+看完常规日志打印和debug日志打印规则
 
-
-   看到了ngx_log.c/ngx_log_error_core()方法的234行,目前看到的逻辑都是在内存
-   中拼字符串
-
-   下周看
-      什么时候把这些内存中的字符串打印出去?
-    
-
-
+TODO 下周看
+  http请求过程?
+    一个完整的过程
 
 
 
@@ -32,7 +21,9 @@ TODO
 
 
  共享内存
- http请求过程
+ hash结构模糊查询 
+
+
 
 
 
@@ -40,6 +31,9 @@ TODO
   http://nginx.org/en/docs/dev/development_guide.html#http_variables
   http://nginx.org/en/docs/dev/development_guide.html#http_complex_values
   变量脚本引擎
+
+ 
+
  
 
 

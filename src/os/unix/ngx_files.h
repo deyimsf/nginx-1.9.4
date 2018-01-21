@@ -153,6 +153,7 @@ ngx_write_fd(ngx_fd_t fd, void *buf, size_t n)
 #define ngx_write_console        ngx_write_fd
 
 
+/* 为字符串p加一个换行符 */
 #define ngx_linefeed(p)          *p++ = LF;
 #define NGX_LINEFEED_SIZE        1
 #define NGX_LINEFEED             "\x0a"

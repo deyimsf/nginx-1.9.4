@@ -115,6 +115,9 @@ ngx_sprintf(u_char *buf, const char *fmt, ...)
     va_list   args;
 
     va_start(args, fmt);
+    /*
+     * -1在内存中所有的位都是1,强转成指针后这个地址就变成当前最大的地址了
+     */
     p = ngx_vslprintf(buf, (void *) -1, fmt, args);
     va_end(args);
 

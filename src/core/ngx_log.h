@@ -50,7 +50,7 @@ typedef void (*ngx_log_writer_pt) (ngx_log_t *log, ngx_uint_t level,
 
 struct ngx_log_s {
 	/*
-	 * 日志级别,有如下八中:
+	 * 日志打印级别,有如下八中:
 	 * 	 NGX_LOG_STDERR            0
 	 *	 NGX_LOG_EMERG             1
 	 *	 NGX_LOG_ALERT             2
@@ -60,8 +60,11 @@ struct ngx_log_s {
 	 *	 NGX_LOG_NOTICE            6
 	 *	 NGX_LOG_INFO              7
 	 *	 NGX_LOG_DEBUG             8
+	 *
+	 * 如果日志打印级别小于调用日志方法时指定的级别,那么就不会打印日志
 	 */
     ngx_uint_t           log_level;
+
     /*
      * 日志打印到磁盘的文件,一般有error_log指令指定
      */
@@ -74,9 +77,6 @@ struct ngx_log_s {
 
     time_t               disk_full_time;
 
-    /*
-     *
-     */
     /*
      * 日志的一个回调方法,在ngx_log_error_core()方法中调用
      *
@@ -93,6 +93,8 @@ struct ngx_log_s {
 	 *
 	 * 其它信息等
 	 * 	, request: "GET /init HTTP/1.1", upstream: "http://tomcat1/init", host: "127.0.0.1"
+	 *
+	 * 如果日志级别是DEBUG的时候就不会回调该方法了
 	 *
 	 */
     ngx_log_handler_pt   handler;
@@ -125,6 +127,14 @@ struct ngx_log_s {
 #define ngx_log_error(level, log, ...)                                        \
     if ((log)->log_level >= level) ngx_log_error_core(level, log, __VA_ARGS__)
 
+/*
+ * 打印日志的方法
+ *
+ * level: 当前日志的级别(如果当前日志级别是info,但是打印级别(log->log_level)是err,则当前方法就不会打印日志)
+ * log: 日志对象
+ * err: 是否要执行ngx_log_errno()方法
+ *
+ */
 void ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     const char *fmt, ...);
 

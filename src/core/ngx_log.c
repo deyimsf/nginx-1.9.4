@@ -4,6 +4,45 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/*
+ * 日志的打印级别使用error_log指令设置,如:
+ * 	  error_log logs/error.log info;
+ *
+ * 日志由两种宏定义
+ *	 ngx_log_error(level,log,args, ...)
+ *	 ngx_log_debugX(level,log,args, ...)
+ *
+ * 当log->log_level >= level时ngx_log_error()宏才会生效
+ *    if ((log)->log_level >= level) ngx_log_error_core(level, log, args)
+ *
+ * 当log->log_level & level为true时ngx_log_debugX()宏才会生效
+ * 	  if ((log)->log_level & level) ngx_log_error_core(NGX_LOG_DEBUG, log, args)
+ *
+ *
+ * 为什么针对ngx_log_debugX()宏是否生效要用与操作呢?
+ * 目前在ngx中有八种类型的debug信息,分别是:
+ * 	 NGX_LOG_DEBUG_CORE        0x010    debug_core
+ *	 NGX_LOG_DEBUG_ALLOC       0x020    debug_alloc
+ *   NGX_LOG_DEBUG_MUTEX       0x040    debug_mutex
+ *   NGX_LOG_DEBUG_EVENT       0x080    debug_event
+ *   NGX_LOG_DEBUG_HTTP        0x100    debug_http
+ *   NGX_LOG_DEBUG_MAIL        0x200    debug_mail
+ *   NGX_LOG_DEBUG_MYSQL       0x400    debug_mysql
+ *   NGX_LOG_DEBUG_STREAM      0x800    debug_stream
+ * 调问题的时候可能不需要看所有的debug信息,比如只想看事件模块相关的debug信息,做如下配置
+ *		error_log logs/error.log debug_event;
+ * 此时用与操作来生效特定的debug信息
+ *
+ * 当把error_log指令的日志打印级别设置为debug时会打印所有debug信息,但是这里又有一个问题,ngx中debug对应的宏是
+ * 	  NGX_LOG_DEBUG		8
+ * 很明显,数字8个目前和任何一种特定debug信息做与操作都是假,那为什么这个宏又能起作用呢?
+ * 实际上是error_log指令对参数是debug时做了一个特殊处理,处理过程如下:
+ * 	  if (log->log_level == NGX_LOG_DEBUG) {
+ *        log->log_level = NGX_LOG_DEBUG_ALL;
+ *    }
+ * 而NGX_LOG_DEBUG_ALL对应值 0x7ffffff0,他包含了所有特定debug值
+ *
+ */
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -72,6 +111,10 @@ static ngx_open_file_t  ngx_log_file;
 ngx_uint_t              ngx_use_stderr = 1;
 
 
+/*
+ * 日志级别对应的串,比如
+ * 	 error_log logs/error.log warn;
+ */
 static ngx_str_t err_levels[] = {
     ngx_null_string,
     ngx_string("emerg"),
@@ -84,6 +127,13 @@ static ngx_str_t err_levels[] = {
     ngx_string("debug")
 };
 
+/*
+ * 同err_levels[],专门为debug准备的日志级别,比如
+ * 	  error_log logs/error.log debug_core;
+ * 上面的配置表示只打印dubug_core级别的debug日志,也就是如下级别的debug日志
+ * 	  ngx_log_debugX(NGX_LOG_DEBUG_CORE, c->log, ...);
+ * 其它级别的debug日志是不会打印的
+ */
 static const char *debug_levels[] = {
     "debug_core", "debug_alloc", "debug_mutex", "debug_event",
     "debug_http", "debug_mail", "debug_mysql", "debug_stream"
@@ -98,7 +148,10 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
 
 #else
 
-/* linux */
+/*
+ * linux
+ *
+ */
 void
 ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     const char *fmt, va_list args)
@@ -213,7 +266,7 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
 
     if (level != NGX_LOG_DEBUG && log->handler) {
     	/*
-    	 * 回到handler方法,对于http模块来说,这个handler就是ngx_http_log_error()方法
+    	 * 回调handler方法,对于http模块来说,这个handler就是ngx_http_log_error()方法
     	 * 该方法的作用是向p这个指针地址中拷贝不大于last-p个字节的字符
     	 *
     	 * 比如在ngx_http_log_error()方法中当log->action中有值的时候,会把log中的值拷贝到p中
@@ -227,22 +280,30 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     	 * 其它信息等
     	 * 	, request: "GET /init HTTP/1.1", upstream: "http://tomcat1/init", host: "127.0.0.1"
     	 *
+    	 * 如果日志级别是DEBUG的时候就不会回调该方法了
     	 */
 
         p = log->handler(log, p, last - p);
     }
 
-    /*   看到这里 TODO 下周看  */
-
     if (p > last - NGX_LINEFEED_SIZE) {
+    	/*
+    	 * 最终要输出的字符串长度不能大于last加一个换行的长度
+    	 */
         p = last - NGX_LINEFEED_SIZE;
     }
 
+    /*
+     * 增加一个换行符
+     */
     ngx_linefeed(p);
 
     wrote_stderr = 0;
     debug_connection = (log->log_level & NGX_LOG_DEBUG_CONNECTION) != 0;
 
+    /*
+     * 将收集好的日志信息通过log链表打印出去
+     */
     while (log) {
 
         if (log->log_level < level && !debug_connection) {
@@ -268,6 +329,12 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
         n = ngx_write_fd(log->file->fd, errstr, p - errstr);
 
         if (n == -1 && ngx_errno == NGX_ENOSPC) {
+        	/*
+        	 * write()函数返回-1表示发生错误
+        	 * errno为ENOSPC表示磁盘满了
+        	 *
+        	 * TODO 一个疑问,如果一次输出不完errstr中的数据怎么办?就不输出了?还是说根本不会发生这种情况?
+        	 */
             log->disk_full_time = ngx_time();
         }
 
@@ -286,6 +353,10 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     {
         return;
     }
+
+    /*
+     * 出错了,或者当前要打印的日志错误级别严重于WARN(比如ERR),则追加一些信息,并把追加的错误信息打印到控制台
+     */
 
     msg -= (7 + err_levels[level].len + 3);
 
