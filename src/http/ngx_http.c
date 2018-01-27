@@ -128,7 +128,7 @@
  *
  *
  *
- * 一个主请求的开始:
+ * 一个主请求的开始: 无限循环执行ngx_process_events_and_timers()方法
  *  1.当请求过来的时候先执行ngx_http_init_connection()方法获取tcp连接
  *
  *  2.然后设置c->read->handler = ngx_http_wait_request_handler

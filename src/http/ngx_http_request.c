@@ -20,10 +20,28 @@
  *
  *
  *
+ * -------------------------------------------一个http请求的基本流程-----------------------------------------
+ * 1.ngx_process_events_and_timers方法在循环中执行
+ *
+ * 2.事件来了之后调用ngx_process_events()宏,该宏在epoll中对应ngx_epoll_process_events()方法
+ *
+ * 3.从epoll中获取对应请求的事件,这个时候因为要建立连接,对于监听端口来说就是读事件,执行读handler()
+ *  rev->handler(rev)回调方法,该方法对于监听连接来说就是ngx_event_accept()方法
+ *
+ * 4.调用accept4()获取请求对应的连接,然后回调监听handler()方法
+ * 	  	ls->handler(c);
+ * 	 对于http模块来说该handler()对应ngx_http_init_connection()方法,入参c就是客户端请求的连接
+ *
+ * 5.设置请求连接的读事件方法为ngx_http_wait_request_handler()
+ * 		rev->handler = ngx_http_wait_request_handler;
+ *
+ * 6.在ngx_http_wait_request_handler()方法中接收请求数据,创建请求对象(ngx_http_request_t),然后
+ *   把读事件设置为ngx_http_process_request_line(),这个方法用来处理请求行,把请求行中的数据解析到请求
+ *   对象中,比如设置r->method、r->uri_start、r->args_start等指针
+ *
  *
  *
  */
-
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -1013,6 +1031,9 @@ ngx_http_process_request_line(ngx_event_t *rev)
     for ( ;; ) {
 
         if (rc == NGX_AGAIN) {
+        	/*
+        	 * 当r->header_in中没有可用的数据时从当前请求对应的连接中读数据
+        	 */
             n = ngx_http_read_request_header(r);
 
             if (n == NGX_AGAIN || n == NGX_ERROR) {
@@ -1020,11 +1041,19 @@ ngx_http_process_request_line(ngx_event_t *rev)
             }
         }
 
+        /*
+         * 解析请求行,实际操作是设置r中的指针,让他们指向合适的位置(在r->header_in中的位置)
+         */
         rc = ngx_http_parse_request_line(r, r->header_in);
 
         if (rc == NGX_OK) {
 
             /* the request line has been parsed successfully */
+        	/*
+        	 * 请求行解析成功
+        	 *
+        	 * TODO 明天从这里看
+        	 */
 
             r->request_line.len = r->request_end - r->request_start;
             r->request_line.data = r->request_start;
@@ -1449,6 +1478,9 @@ ngx_http_process_request_headers(ngx_event_t *rev)
 }
 
 
+/*
+ * 从客户端连接中读取请求
+ */
 static ssize_t
 ngx_http_read_request_header(ngx_http_request_t *r)
 {

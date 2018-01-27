@@ -34,6 +34,13 @@ static uint32_t  usual[] = {
 
 
 #if (NGX_HAVE_LITTLE_ENDIAN && NGX_HAVE_NONALIGNED)
+/*
+ * 如果本地系统是小端表示法就把要比较的字符先倒过来,把m强转成数字然后再比较值
+ *
+ * 小端:低地址存放最低字节
+ *
+ * TODO 一个问题,大端和小端使用了不同的方式进行比较,目的是啥?
+ */
 
 #define ngx_str3_cmp(m, c0, c1, c2, c3)                                       \
     *(uint32_t *) m == ((c3 << 24) | (c2 << 16) | (c1 << 8) | c0)
@@ -66,6 +73,11 @@ static uint32_t  usual[] = {
         && m[8] == c8
 
 #else /* !(NGX_HAVE_LITTLE_ENDIAN && NGX_HAVE_NONALIGNED) */
+/*
+ * 下面是大端表示法,一个字符一个字符比较就好
+ *
+ * 大端: 低地址存放高字节
+ */
 
 #define ngx_str3_cmp(m, c0, c1, c2, c3)                                       \
     m[0] == c0 && m[1] == c1 && m[2] == c2
@@ -100,6 +112,11 @@ static uint32_t  usual[] = {
 
 /* gcc, icc, msvc and others compile these switches as an jump table */
 
+/*
+ * 解析请求行
+ *
+ * b: 对应读取到的请求r->header_in
+ */
 ngx_int_t
 ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
 {
@@ -139,10 +156,19 @@ ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
     for (p = b->pos; p < b->last; p++) {
         ch = *p;
 
+        /*
+         * 状态机,从上面的状态定义可以看到,http协议请求行也可以这样
+         * 	  GET http://www.jd.com/lua HTTP/1.1
+         * 方法之后的资源写的是url
+         */
         switch (state) {
 
         /* HTTP methods: GET, HEAD, POST */
         case sw_start:
+        	/*
+        	 * 开始状态,主要检查协议方法字符是否合法
+        	 */
+
             r->request_start = p;
 
             if (ch == CR || ch == LF) {
@@ -150,6 +176,10 @@ ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
             }
 
             if ((ch < 'A' || ch > 'Z') && ch != '_') {
+            	/*
+            	 * 从这里可以看出HTTP方法只能是大写字母或者下划线'_'
+            	 */
+
                 return NGX_HTTP_PARSE_INVALID_METHOD;
             }
 
@@ -157,11 +187,25 @@ ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
             break;
 
         case sw_method:
+        	/*
+        	 * 解析方法状态  GET / HTTP/1.1
+        	 */
+
             if (ch == ' ') {
+            	/*
+            	 * 解析到空格表示方法已经解析出,下面就看解析出的是哪个方法
+            	 */
+
                 r->method_end = p - 1;
                 m = r->request_start;
 
                 switch (p - m) {
+                /*
+                 * p是解析到的方法名的最后一个字符后面的地址
+                 * m是读取到的请求的数据的开始地址
+                 *
+                 * 所以p-m就是当前请求方法的字符长度
+                 */
 
                 case 3:
                     if (ngx_str3_cmp(m, 'G', 'E', 'T', ' ')) {
@@ -266,6 +310,9 @@ ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
                     break;
                 }
 
+                /*
+                 * 解析玩方法后设置下一个状态
+                 */
                 state = sw_spaces_before_uri;
                 break;
             }
@@ -278,13 +325,26 @@ ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
 
         /* space* before URI */
         case sw_spaces_before_uri:
+        	/*
+        	 * uri之前的空格状态
+        	 *
+        	 * GET /lua HTTP/1.1
+        	 */
 
             if (ch == '/') {
+            	/*
+            	 * 如果以'/'开头说明他就是一个uri中的斜线
+            	 */
+
                 r->uri_start = p;
                 state = sw_after_slash_in_uri;
                 break;
             }
 
+            /*
+             * 如果不是以斜线开头,而是一个小写字母开头,那么表明请求行是如下形式的:
+             *	  GET file://www.jd.com/lua HTTP/1.1
+             */
             c = (u_char) (ch | 0x20);
             if (c >= 'a' && c <= 'z') {
                 r->schema_start = p;
@@ -799,6 +859,9 @@ ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
         }
     }
 
+    /*
+     * 因为请求行的数据还没有读完,所以没法解析完整个请求行,标记当前解析位置和当前解析状态
+     */
     b->pos = p;
     r->state = state;
 

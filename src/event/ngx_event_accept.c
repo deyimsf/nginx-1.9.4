@@ -54,10 +54,17 @@ ngx_event_accept(ngx_event_t *ev)
         ev->available = ecf->multi_accept;
     }
 
-    // 获取连接对象
+    /*
+     * 获取连接对象
+     * 连接对象中的listening字段就是监听对象
+     */
     lc = ev->data;
-    // 获取监听连接对象
+    /*
+     * 获取监听连接对象
+     * ls->connection就是上面的lc
+     */
     ls = lc->listening;
+
     // TODO 在这里置0是什么意思
     ev->ready = 0;
 
@@ -69,6 +76,10 @@ ngx_event_accept(ngx_event_t *ev)
 
 #if (NGX_HAVE_ACCEPT4)
         if (use_accept4) {
+        	/*
+        	 * 从监听连接lc->fd中建立一个连接
+        	 *
+        	 */
             s = accept4(lc->fd, (struct sockaddr *) sa, &socklen,
                         SOCK_NONBLOCK);
         } else {

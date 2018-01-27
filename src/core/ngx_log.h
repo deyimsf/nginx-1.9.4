@@ -71,7 +71,8 @@ struct ngx_log_s {
     ngx_open_file_t     *file;
 
     /*
-     * TODO
+     * 对应当前连接编号在ngx_http_request.c/ngx_http_init_connection()方法中设置
+     * 	c->log->connection = c->number;
      */
     ngx_atomic_uint_t    connection;
 

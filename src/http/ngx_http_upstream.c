@@ -1555,6 +1555,11 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
 
 #endif
 
+    /*
+     * MSG_PEEK: This flag causes the receive operation to returen data from the beginning of the
+     * 			receive queue without removing that data from the queue. Thus, a subsequent receive
+     * 			call will return the same data.
+     */
     n = recv(c->fd, buf, 1, MSG_PEEK);
 
     err = ngx_socket_errno;

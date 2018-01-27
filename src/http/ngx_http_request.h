@@ -503,7 +503,9 @@ struct ngx_http_request_s {
     ngx_pool_t                       *pool;
 
     /*
-     * 读取到的http请求头(字符串)
+     * 用来存储读取到的http请求头(字符串)的buf
+     *
+     * 大小有client_header_buffer_size指令设置,默认1k
      */
     ngx_buf_t                        *header_in;
 
@@ -843,17 +845,18 @@ struct ngx_http_request_s {
 
     /*
      * 下面这八个字段在解析HTTP头的时候用到,比如目前用到这些字段的方法
-     *  ngx_http_parse_request_line()解析请求行
-     *  ngx_http_parse_status_line()解析响应状态行
-     * 	ngx_http_parse_header_line()解析请求头
+     *   ngx_http_parse_request_line()解析请求行
+     *   ngx_http_parse_status_line()解析响应状态行
+     * 	 ngx_http_parse_header_line()解析请求头
      * 用下面的响应数据解析这些字段的意义
-     *  HTTP/1.1 200 OK
-	 *	Server: MyNgx
-	 *	Date: Sun, 26 Nov 2017 06:36:44 GMT
-	 *	Content-Type: image/jpeg
-	 *	Content-Length: 7092
-	 *	Connection: keep-alive
+     *   HTTP/1.1 200 OK
+	 *	 Server: MyNgx
+	 *	 Date: Sun, 26 Nov 2017 06:36:44 GMT
+	 *	 Content-Type: image/jpeg
+	 *	 Content-Length: 7092
+	 *	 Connection: keep-alive
      */
+
 
     /* 当前解析的状态,上面三个_line()方法呢都有一个state枚举(enum),用来表示当前解析时的状 */
     ngx_uint_t                        state;
@@ -879,12 +882,33 @@ struct ngx_http_request_s {
      * via ngx_http_ephemeral_t
      */
 
+    /*
+     * uri开始地址
+     * 	   GET /lua HTTP/1.1
+     * 指向/
+     */
     u_char                           *uri_start;
+    /*
+     * uri的结束地址,uri的最后一个字符的后面,比如
+     * 		GET /get?name=age
+     * 该字段指向最后一个字符e的后面,也就是一个空格' '
+     */
     u_char                           *uri_end;
     u_char                           *uri_ext;
+    /*
+     * 查询参数开始位置,不包括问号
+     *
+     * uri_end - args_start 就是所有的查询参数
+     */
     u_char                           *args_start;
+    /*
+     * 请求的开始指针,比如请求是 GET / HTTP/1.1,那么该指针值就是G这个字符的地址
+     */
     u_char                           *request_start;
     u_char                           *request_end;
+    /*
+     * 方法的最后一个字母,比如方法是GET,那么该指针指向的就是T这个字符
+     */
     u_char                           *method_end;
     u_char                           *schema_start;
     u_char                           *schema_end;
