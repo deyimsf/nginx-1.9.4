@@ -1,25 +1,15 @@
 
+ 
+TODO 下周
 
- http请求过程?
- TODO 明天
-   看到ngx_http_request.c/ngx_http_process_request_line()方法1037行
+ hash结构模糊查询 ?
+ ngx_http_log_module ?
+ 共享内存 ?
  
 
 
 
 
-
-
-
- 
-
-
-
-
- hash结构模糊查询 
- ngx_http_log_module
- 共享内存
- 
 
 
 

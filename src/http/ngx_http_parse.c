@@ -1316,6 +1316,11 @@ ngx_http_parse_uri(ngx_http_request_t *r)
 }
 
 
+/*
+ * 解析复杂uri,这个方法会解码百分号编码
+ *
+ * merge_slashes:是否merge多余的斜线,比如 /a///b 是否merge成 /a/b
+ */
 ngx_int_t
 ngx_http_parse_complex_uri(ngx_http_request_t *r, ngx_uint_t merge_slashes)
 {
@@ -1336,6 +1341,7 @@ ngx_http_parse_complex_uri(ngx_http_request_t *r, ngx_uint_t merge_slashes)
 
     state = sw_usual;
     p = r->uri_start;
+    /* 存放解析好的uri 比如去掉多去的斜线 */
     u = r->uri.data;
     r->uri_ext = NULL;
     r->args_start = NULL;
@@ -1558,6 +1564,18 @@ ngx_http_parse_complex_uri(ngx_http_request_t *r, ngx_uint_t merge_slashes)
         case sw_quoted:
             r->quoted_uri = 1;
 
+            /*
+             * 百分号解码,把对应的字符转换成16进制表示的数字,比如
+             * 		%A8
+             * 字符'A'在16进制中表示数字10
+             * 字符'8'在16进制中表示数字8
+             */
+
+            /*
+             * 如果第一位字符是数字,则把字符转换成16进制表示的数字,比如
+             * 	  %20
+             * 字符'2'在16进制中表示数字2,下面的操作就是转化的过程
+             */
             if (ch >= '0' && ch <= '9') {
                 decoded = (u_char) (ch - '0');
                 state = sw_quoted_second;
@@ -1565,6 +1583,12 @@ ngx_http_parse_complex_uri(ngx_http_request_t *r, ngx_uint_t merge_slashes)
                 break;
             }
 
+            /*
+             * 如果第一位字符是A-F,则把对应的字符转换成16进制表示的数字,比如
+             * 		%B0
+             * 字符'B'在16进制中表示数字11,下面的操作就是转化的过程
+             *
+             */
             c = (u_char) (ch | 0x20);
             if (c >= 'a' && c <= 'f') {
                 decoded = (u_char) (c - 'a' + 10);
@@ -1576,6 +1600,15 @@ ngx_http_parse_complex_uri(ngx_http_request_t *r, ngx_uint_t merge_slashes)
             return NGX_HTTP_PARSE_INVALID_REQUEST;
 
         case sw_quoted_second:
+
+        	/*
+        	 * 这里的操作和sw_quoted状态时类似,只不过多了一个字符合并的过程,比如
+        	 * 		%2A
+        	 * 这里要做的是把decoded(在sw_quoted状态时解析的字符'2'对应的16进制数字2)和当前ch合并成一个字符,
+        	 * 合并的过程是把2看做一个字节的高四位,10(字符'A'的16机制数字)看做字节的低四位,然后合成一个8位的字节,
+        	 * 合成后的字节就是解码后的字节
+        	 */
+
             if (ch >= '0' && ch <= '9') {
                 ch = (u_char) ((decoded << 4) + ch - '0');
 

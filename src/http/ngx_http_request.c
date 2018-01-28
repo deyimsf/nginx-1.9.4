@@ -39,6 +39,21 @@
  *   把读事件设置为ngx_http_process_request_line(),这个方法用来处理请求行,把请求行中的数据解析到请求
  *   对象中,比如设置r->method、r->uri_start、r->args_start等指针
  *
+ *   在这一步uri也会被解析并解码,至于会不会合并多个斜线,则有merge_slashes指令决定,默认是合并
+ *
+ *  如果uri部分包含了host,那么在这一步就可以开始匹配server了,比如
+ *  	GET http://www.jd.com/lua HTTP/1.0
+ *
+ * 7.初始化r->headers_in.headers集合用来存放后续解析到的请求头
+ *
+ * 8.读事件方法设置为ngx_http_process_request_headers(),然后执行这个方法
+ *   该方法用来解析所有的请求头,当解析到host请求投后会回调在ngx_http_headers_in[]数组中设置的handler()方法,
+ *   对应ngx_http_process_host()方法,这个方法里会匹配对应的server块
+ *
+ * 9.请求头解析完毕后调用ngx_http_process_request()方法,该方法更改后续读写事件到来要要执行的方法
+ *
+ * 10.调用ngx_http_handler()方法被请求的写事件设置成ngx_http_core_run_phases()方法,该方法就是阶段执行的启动方法
+ *
  *
  *
  */
@@ -1051,10 +1066,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
             /* the request line has been parsed successfully */
         	/*
         	 * 请求行解析成功
-        	 *
-        	 * TODO 明天从这里看
         	 */
-
             r->request_line.len = r->request_end - r->request_start;
             r->request_line.data = r->request_start;
             r->request_length = r->header_in->pos - r->request_start;
@@ -1062,17 +1074,30 @@ ngx_http_process_request_line(ngx_event_t *rev)
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
                            "http request line: \"%V\"", &r->request_line);
 
+            /*
+             * 设置方法名字,可以看到全是指针
+             */
             r->method_name.len = r->method_end - r->request_start + 1;
             r->method_name.data = r->request_line.data;
 
             if (r->http_protocol.data) {
+            	/*
+            	 * 设置协议长度
+            	 */
                 r->http_protocol.len = r->request_end - r->http_protocol.data;
             }
 
+            /*
+             * uri解析,不包括查询参数
+             */
             if (ngx_http_process_request_uri(r) != NGX_OK) {
                 return;
             }
 
+            /*
+             * 如果host在uri中会走下面的逻辑,比如
+             * 		GET http://www.jd.com/lua HTTP/1.1
+             */
             if (r->host_start && r->host_end) {
 
                 host.len = r->host_end - r->host_start;
@@ -1126,7 +1151,11 @@ ngx_http_process_request_line(ngx_event_t *rev)
 
             c->log->action = "reading client request headers";
 
-            // 找到server后才会继续向下走
+            /*
+             * 请求行解析完毕后,后续的动作交给下面的方法来处理
+             *
+             * 解析客户端请求头
+             */
             rev->handler = ngx_http_process_request_headers;
             ngx_http_process_request_headers(rev);
 
@@ -1147,6 +1176,9 @@ ngx_http_process_request_line(ngx_event_t *rev)
 
         if (r->header_in->pos == r->header_in->end) {
 
+        	/*
+        	 * 当前配置的r->header_in缓存块无法存放整个请求行,那么就启动large_client_header_buffers指令块的配置
+        	 */
             rv = ngx_http_alloc_large_header_buffer(r, 1);
 
             if (rv == NGX_ERROR) {
@@ -1168,11 +1200,17 @@ ngx_http_process_request_line(ngx_event_t *rev)
 }
 
 
+/*
+ * uri解析,不包括查询参数
+ */
 ngx_int_t
 ngx_http_process_request_uri(ngx_http_request_t *r)
 {
     ngx_http_core_srv_conf_t  *cscf;
 
+    /*
+     * 设置uri长度,不包括查询参数
+     */
     if (r->args_start) {
         r->uri.len = r->args_start - 1 - r->uri_start;
     } else {
@@ -1180,6 +1218,10 @@ ngx_http_process_request_uri(ngx_http_request_t *r)
     }
 
     if (r->complex_uri || r->quoted_uri) {
+    	/*
+    	 * 解析特殊uri值,比如过个斜线,和百分号解码
+    	 * 		//////abc/d%2A
+    	 */
 
         r->uri.data = ngx_pnalloc(r->pool, r->uri.len + 1);
         if (r->uri.data == NULL) {
@@ -1202,6 +1244,9 @@ ngx_http_process_request_uri(ngx_http_request_t *r)
         r->uri.data = r->uri_start;
     }
 
+    /*
+     * 设置未解析的uri
+     */
     r->unparsed_uri.len = r->uri_end - r->uri_start;
     r->unparsed_uri.data = r->uri_start;
 
@@ -1325,6 +1370,14 @@ ngx_http_process_request_headers(ngx_event_t *rev)
 
             if (r->header_in->pos == r->header_in->end) {
 
+            	/*
+            	 * 当一个r->header_in缓存块都用完了时没能解析出一个完整的请求头行,则走下面的逻辑,比如
+            	 * 		GET /lua HTTP/1.1\r\n
+            	 *		User-Agen: masf
+            	 * 假设r->header_in缓存块大小是28个字节,那么刚好只能读到User-Agen请求头的名字,这个时候就需要启动
+            	 * 另一组内存块large_client_header_buffers
+            	 *
+            	 */
                 rv = ngx_http_alloc_large_header_buffer(r, 0);
 
                 if (rv == NGX_ERROR) {
@@ -1425,6 +1478,11 @@ ngx_http_process_request_headers(ngx_event_t *rev)
             hh = ngx_hash_find(&cmcf->headers_in_hash, h->hash,
                                h->lowcase_key, h->key.len);
 
+            /*
+             * 解析到请求头之后会执行对应的handler,有handler的请求头在ngx_http_headers_in[]数组中定义
+             *
+             * 比如解析到host头则执行ngx_http_process_host()方法从而选择匹配的server
+             */
             if (hh && hh->handler(r, h, hh->offset) != NGX_OK) {
                 return;
             }
@@ -1454,12 +1512,16 @@ ngx_http_process_request_headers(ngx_event_t *rev)
                 return;
             }
 
+            /*
+             * 开始阶段处理
+             */
             ngx_http_process_request(r);
 
             return;
         }
 
         if (rc == NGX_AGAIN) {
+        	/* 没能完整解析完一个头行 */
 
             /* a header line parsing is still not complete */
 
@@ -1538,6 +1600,11 @@ ngx_http_read_request_header(ngx_http_request_t *r)
 }
 
 
+/*
+ * 根据large_client_header_buffers指令创建缓存块,并把创建好的缓存块放到hc->busy数组中
+ *
+ * 该方法还会把不完整的数据拷贝到新分配的buf中
+ */
 static ngx_int_t
 ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
     ngx_uint_t request_line)
@@ -1553,6 +1620,7 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
     if (request_line && r->state == 0) {
 
         /* the client fills up the buffer with "\r\n" */
+    	/* 正好填充完一个请求头行 */
 
         r->header_in->pos = r->header_in->start;
         r->header_in->last = r->header_in->start;
@@ -1585,6 +1653,18 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
     } else if (hc->nbusy < cscf->large_client_header_buffers.num) {
 
         if (hc->busy == NULL) {
+        	/*
+        	 * 分配large_client_header_buffers.num个buf对象,分配完毕后内存结构如下
+        	 * 			hc->busy
+        	 * 			 -----
+        	 * 			 | * |
+        	 * 			 -----
+        	 * 			 	\
+        	 * 			 	-------------
+        	 * 			 	| * | * |  large_client_header_buffers.num个
+        	 * 			 	-------------
+        	 *
+        	 */
             hc->busy = ngx_palloc(r->connection->pool,
                   cscf->large_client_header_buffers.num * sizeof(ngx_buf_t *));
             if (hc->busy == NULL) {
@@ -1606,7 +1686,9 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
         return NGX_DECLINED;
     }
 
-    // 假设large_client_header_buffers.num值等于4,那么最终hc->nbusy会等于4,但是第四个位置没有值
+    /*
+     * 新分配的缓存块放到该数组中
+     */
     hc->busy[hc->nbusy++] = b;
 
     if (r->state == 0) {
@@ -1626,6 +1708,9 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
 
     new = b->start;
 
+    /*
+     * 把解析到的不完整的请求头行数据拷贝到新的缓存块中
+     */
     ngx_memcpy(new, old, r->header_in->pos - old);
 
     b->pos = new + (r->header_in->pos - old);
@@ -1673,7 +1758,10 @@ ngx_http_alloc_large_header_buffer(ngx_http_request_t *r,
         }
 
     } else {
-    	// 解析请求头时创建的lager buffer,重新设置未成功解析完的头指针位置
+    	/*
+    	 * 解析请求头时创建的lager buffer,重新设置未成功解析完的头指针位置
+    	 * 老的还在用,之前被完整解析的请求行和请求头行都在老的上面
+    	 */
         r->header_name_start = new;
         r->header_name_end = new + (r->header_name_end - old);
         r->header_start = new + (r->header_start - old);
@@ -3123,9 +3211,6 @@ ngx_http_block_reading(ngx_http_request_t *r)
         }
     }
 
-    /*
-     * 如果epoll使用的是边沿触发,那就不用把读事件删除掉,因为只触发一次
-     */
 }
 
 

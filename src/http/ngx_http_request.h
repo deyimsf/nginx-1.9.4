@@ -343,7 +343,21 @@ typedef struct {
 #endif
 #endif
 
+    /*
+     * 用来存放cscf->large_client_header_buffers指令配置的内存块,结构如下
+     * 			busy
+     * 			-----
+     * 			| * |
+     *			-----
+     *			   \
+     *			  --------------------
+     *			  | * | * | 共large_client_header_buffers.num个
+     *			  --------------------
+     */
     ngx_buf_t                       **busy;
+    /*
+     * 目前已经使用的busy的个数,该值不会大于large_client_header_buffers.num
+     */
     ngx_int_t                         nbusy;
 
     ngx_buf_t                       **free;
@@ -506,6 +520,8 @@ struct ngx_http_request_s {
      * 用来存储读取到的http请求头(字符串)的buf
      *
      * 大小有client_header_buffer_size指令设置,默认1k
+     *
+     * 如果超过则使用large_client_header_buffers指令的设置,默认是4个8k缓存块
      */
     ngx_buf_t                        *header_in;
 
@@ -541,23 +557,27 @@ struct ngx_http_request_s {
 
     /*
      * http请求行,未做百分号解码,比如请求行:
-     * 	GET /add/%28%28%28 HTTP/1.1
+     * 	 GET /add/%28%28%28 HTTP/1.1
+     * 注意这里的请求行不带后面的换行符
      */
     ngx_str_t                         request_line;
 
     /*
      * http请求行,做过百分号解码,比如对于请求:
-     * 	/add/%28%28%28
+     * 	  /add/%28%28%28?a=b
      * 那么该字段值为:
-     * 	/add/(((
+     * 	  /add/(((
+     * 不包括查询参数
+     *
+     * 这个字段的值就不是单纯指向headers_in的指针了,因为它涉及到对原数据的修改,所以会单独拷贝一份
      */
     ngx_str_t                         uri;
 
     /*
      * 原生请求参数,比如请求:
-     * 	/add?name=%28%28%28
+     * 	 /add?name=%28%28%28
      * 那么该值为:
-     * 	name=%28%28%28
+     * 	 name=%28%28%28
      */
     ngx_str_t                         args;
 
@@ -571,8 +591,8 @@ struct ngx_http_request_s {
 
     /*
      * 未解析的请求uri,比如请求:
-     * 	/add/%28%28%28.htm%28l?name=%28%28%28
-     * 那么该值就是原始请求值
+     * 	  ///add/%28%28%28.htm%28l?name=%28%28%28
+     * 那么该值就是原始请求值,包括查询参数
      */
     ngx_str_t                         unparsed_uri;
 
@@ -667,6 +687,11 @@ struct ngx_http_request_s {
     /* used to learn the Apache compatible response length without a header */
     size_t                            header_size;
 
+    /*
+     * 记录真个请求的长度,比如
+     * 		GET /add/%28%28%28 HTTP/1.1
+     * 它会把协议后面的回车换行符也计算在内
+     */
     off_t                             request_length;
 
     ngx_uint_t                        err_status;
@@ -868,7 +893,10 @@ struct ngx_http_request_s {
     /* 解析到的小写形式的HTTP头,比如"server" */
     u_char                            lowcase_header[NGX_HTTP_LC_HEADER_LEN];
 
-    /* 解析到的一个HTTP头的开始地址,比如HTTP头"Server"在内存中的开始地址 */
+    /*
+     * 解析到的一个HTTP头的开始地址,比如HTTP头"Server"在内存中的开始地址
+     * 一个动态值,没开始解析一个请求头时他都会指向当前解析头的开始地址,
+     */
     u_char                           *header_name_start;
     /* "Server"这个HTTP头在内存中的结束地址 */
     u_char                           *header_name_end;
@@ -902,9 +930,16 @@ struct ngx_http_request_s {
      */
     u_char                           *args_start;
     /*
-     * 请求的开始指针,比如请求是 GET / HTTP/1.1,那么该指针值就是G这个字符的地址
+     * 请求行的开始指针,比如请求是:
+     * 		GET /lua HTTP/1.1
+     * 那么该指针值就是G这个字符的地址
      */
     u_char                           *request_start;
+    /*
+     * 请求行的结束指针,比如请求的是:
+     * 		GET /lua HTTP/1.1\r\n
+     * 那么该指针指向最后一个字符'1'的后面的字符'\r'
+     */
     u_char                           *request_end;
     /*
      * 方法的最后一个字母,比如方法是GET,那么该指针指向的就是T这个字符
