@@ -842,8 +842,13 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
 
     cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
 
-    // handlers是一个数组，该数组按阶段顺序的保存了所有http模块的所有checker和handler方法
-    // 其中cheker方法是http核心模块定义的方法，用来检查并调用各http模块自定义的handler方法
+    /*
+     * handlers是一个数组，该数组按阶段顺序的保存了所有http模块的所有checker和handler方法
+     * 其中cheker方法是http核心模块定义的方法,用来检查并调用各http模块自定义的handler方法
+     *
+     * 通过ngx_http_init_phase_handlers()方法来设置该数组,另外每个数组项中的checker也有该方法来设置
+     * ngx使用对应的checker来约束对应的执行阶段
+     */
     ph = cmcf->phase_engine.handlers;
 
     // 循环调用当前请求上的所有阶段的handler回调方法
@@ -932,7 +937,7 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
 
 /**
- * 下面连个阶段执行该方法
+ * 下面两个阶段执行该方法
  * 	NGX_HTTP_SERVER_REWRITE_PHASE
  * 	NGX_HTTP_REWRITE_PHASE
  * 这两个阶段都会执行ngx_http_rewrite_handler()方法来启动脚本引擎

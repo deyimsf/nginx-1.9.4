@@ -27,7 +27,7 @@ ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
     ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0, "hf:\"%*s\"", len, name);
 #endif
 
-    // 计算所在桶的其实地址
+    // 计算所在桶的起始地址
     elt = hash->buckets[key % hash->size];
 
     if (elt == NULL) {

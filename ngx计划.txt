@@ -1,20 +1,46 @@
 
- 
-TODO 下周
 
- hash结构模糊查询 ?
- ngx_http_log_module ?
+hash结构模糊查询 ?
+
+TODO 明天,主要看通配符的支持,带*号为明天要看的重点
+
+ ngx_http_server_names()方法中使用了
+	ngx_hash_keys_array_init()方法初始化ngx_hash_keys_arrays_t结构体
+	*ngx_hash_add_key()向ngx_hash_keys_arrays_t中添加键值对数据
+
+        上面两个步骤费了那么大的力气只是为了准备数据
+
+        然后调用下面的方法创建对应的hash结构
+	1.用ngx_hash_init(ha.keys)方法创建不太通配符基本hash结构
+        *2.用ngx_hash_wildcard_init(ha.dns_wc_head)方法创建存放前置通配符的hash结构体
+        *3.用ngx_hash_wildcard_init(ha.dns_wc_tail)方法创建存放后置通配符的hash结构体
+
+
+        *从前置通配符散列表中查找元素ngx_hash_find_wc_head()
+        *从后置通配符散列表中查找元素ngx_hash_find_wc_tail()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
  共享内存 ?
- 
-
-
-
-
-
-
-
-
-
  以后需要细看的
   http://nginx.org/en/docs/dev/development_guide.html#http_variables
   http://nginx.org/en/docs/dev/development_guide.html#http_complex_values

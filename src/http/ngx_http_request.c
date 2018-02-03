@@ -2712,8 +2712,8 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 
         if (r == c->data) {
         	/*
-        	 * 能走到这里说明该子请求就是当前向客户端输出数据的请求,并且它已经把数据输出完毕(完全输出到浏览器了)
-        	 * 就想图1和图2展示的那样
+        	 * 能走到这里说明该子请求就是当前向客户端输出数据的请求,并且它已经把数据输出完毕(ngx把所有数据都交给了操作系统)
+        	 * 就像图1和图2展示的那样
         	 *
         	 * 此时如果是图1,则r == sub1->request, c->data == sub1->request
         	 *
@@ -2729,6 +2729,10 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
                 clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
                 if (clcf->log_subrequest) {
+                	/*
+                	 * 执行该子请求在NGX_HTTP_LOG_PHASE阶段绑定的所有方法
+                	 * 	 cmcf->phases[NGX_HTTP_LOG_PHASE].handlers
+                	 */
                     ngx_http_log_request(r);
                 }
 
@@ -3974,6 +3978,9 @@ ngx_http_free_request(ngx_http_request_t *r, ngx_int_t rc)
 
     log->action = "logging request";
 
+    /*
+     * 执行NGX_HTTP_LOG_PHASE阶段
+     */
     ngx_http_log_request(r);
 
     log->action = "closing request";
@@ -4014,6 +4021,10 @@ ngx_http_free_request(ngx_http_request_t *r, ngx_int_t rc)
 }
 
 
+/*
+ * 请求结束的时候用该方法来调用NGX_HTTP_LOG_PHASE阶段的handler
+ * 结束的意思是数据已经输出完毕了,ngx已经把所有要输出的数据交给操作系统了
+ */
 static void
 ngx_http_log_request(ngx_http_request_t *r)
 {

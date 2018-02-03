@@ -223,10 +223,10 @@ typedef enum {
 
 	/*
 	 * 不对应任何checker方法,该阶段不在阶段引擎中执行
-	 * 在/src/http/ngx_http_request.c/ngx_http_log_request()方法中会用到
+	 * 当请求真正结束的时候会调用/src/http/ngx_http_request.c/ngx_http_log_request()方法
 	 *
-	 * 用到该阶段的模块有:
-	 *		/src/http/modules/ngx_http_log_module.c
+	 * 目前用到该阶段的模块有:
+	 *	  /src/http/modules/ngx_http_log_module.c
 	 */
     NGX_HTTP_LOG_PHASE
 } ngx_http_phases;

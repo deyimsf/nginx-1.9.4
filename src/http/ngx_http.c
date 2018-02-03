@@ -25,7 +25,7 @@
  *
  *
  * 第三方模块如要要介入到http的执行阶段中,需要在ngx_http_module_t.postconfiguration()方法中将自己的handler注册到
- * 对应的阶段数组中.不能再ngx_http_module_t.preconfiguration()方法中注册,因为preconfiguration()方法执行时各个阶段
+ * 对应的阶段数组中.不能在ngx_http_module_t.preconfiguration()方法中注册,因为preconfiguration()方法执行时各个阶段
  * 的数组还没有被初始化。
  *
  *
