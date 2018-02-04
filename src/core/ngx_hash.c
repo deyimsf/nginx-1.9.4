@@ -281,7 +281,13 @@ ngx_hash_find_combined(ngx_hash_combined_t *hash, ngx_uint_t key, u_char *name,
 
 /**
  *
- * 计算实际用于存储hash元素的ngx_hash_elt_t结构体所需字节个数。
+ * 计算实际用于存储hash元素的ngx_hash_elt_t结构体所需字节个数
+ *
+ * typedef struct {
+ *   void             *value;
+ *   u_short           len;
+ *   u_char            name[1];
+ * } ngx_hash_elt_t;
  *
  * name: ngx_hash_key_t结构指针
  * 		入参是ngx_hash_key_t结构体而不是ngx_hash_elt_t,是因为刚开始的时候,数据信息都存放
@@ -303,7 +309,11 @@ ngx_hash_find_combined(ngx_hash_combined_t *hash, ngx_uint_t key, u_char *name,
     (sizeof(void *) + ngx_align((name)->key.len + 2, sizeof(void *)))
 
 /**
- * 初始化散列表,创建散列表并将names的数据赋值给散列表
+ * 初始化散列表,创建散列表并将names的数据赋值给散列表,最后实际的数据并没有发生拷贝
+ * names中的对应的hash值有使用方提供,该方法中不会默认hash值
+ *
+ * 这个方法并没考虑names数组中的重复键(key),后添加的键值对会覆盖前面添加的,所以在使用这个方法时,应该有使用方来控制names中的
+ * 重复值,比如ngx_hash_add_key()方法
  *
  * *hinit: 用于构造hash结构的临时结构体
  * *names: hash机构中要存入的键值对,该入参是个键值对数组
@@ -318,7 +328,9 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
     ngx_uint_t       i, n, key, size, start, bucket_size;
     ngx_hash_elt_t  *elt, **buckets;
 
-    // 如果指定的桶数为0则直接返回错误,桶个数为0则根本无法保存数据
+    /*
+     * 如果指定的桶数为0则直接返回错误,桶个数为0则根本无法保存数据
+     */
     if (hinit->max_size == 0) {
         ngx_log_error(NGX_LOG_EMERG, hinit->pool->log, 0,
                       "could not build %s, you should "
@@ -327,8 +339,10 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         return NGX_ERROR;
     }
 
-    // 遍历所有要放入散列表的元素大小(近似于键的大小),对于给定的桶的大小(bucket_size),如果小于某一个要加入的元素大小,
-    // 那么说明分配的通的容量无法满足元素的存储,则返回错误(NGX_ERROR)
+    /*
+     * 遍历所有要放入散列表的元素大小,对于给定的桶的大小(bucket_size),如果小于某一个要加入的元素大小,
+     * 那么说明分配的通的容量无法满足元素的存储,则返回错误(NGX_ERROR)
+     */
     for (n = 0; n < nelts; n++) {
         if (hinit->bucket_size < NGX_HASH_ELT_SIZE(&names[n]) + sizeof(void *))
         {
@@ -340,14 +354,29 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         }
     }
 
-    // 分配一个u_short数组,数组个数为桶的最大个数
+    /*
+     * 所以每个桶里面最多可以放u_short表示的最大数字
+     *       test
+     *       -----
+     *       | * |
+     *       -----
+     *         \
+     *         ------------------------------
+     *         | u_short | u_short | 共hinit->max_size个
+     *         -------------------------------
+     * 这里的test是为了临时计算出对于给定的数据(names)每个桶应该容纳的字节数量(肯定是要放入的元素的倍数)
+     * 以便在后续分配合适的内存
+     */
     test = ngx_alloc(hinit->max_size * sizeof(u_short), hinit->pool->log);
     if (test == NULL) {
         return NGX_ERROR;
     }
 
-    // 指定的桶的大小减去4
-    // TODO 桶的实际大小为什么要减去4 ?
+    /*
+     * 减去一个指针的大小是为了预留一个判断位?
+     *
+     * 根据后面的逻辑可以看出最后每个桶的大小肯定小于等于bucket_size值
+     */
     bucket_size = hinit->bucket_size - sizeof(void *);
 
     start = nelts / (bucket_size / (2 * sizeof(void *)));//好麻烦的算法
@@ -359,24 +388,56 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         start = hinit->max_size - 1000;
     }
 
-    // start在这里表示实际桶的个数,是一个尝试值
-    // 这个循环用于计算实际需要的桶的个数，结果肯定小于等于hinit->max_size
+    /*
+     * start在这里表示实际桶的个数,是一个尝试值
+     * 最终size值必须不大于hinit->max_size,否则就使用我们指定的桶个数
+     *
+     * 下面这个循环目的是,根据实际的要放入的元素的个数,计算出合适的桶个数,以及每个桶的合适大小
+     * 计算的合适的桶的个数放在size中
+     * 每个桶的大小放在test数组中
+     *           test
+     *           -----
+     *           | * |
+     *           -----
+     *             \
+     *             ---------------
+     *             | 20 | 28 |  总共size个
+     *             --------------
+     * 其中4代表第一个桶大小是20个字节,28代表第二个桶大小是28个字节
+     *
+     * 从size等于start开始尝试计算
+     */
     for (size = start; size <= hinit->max_size; size++) {
 
-    	// 初始化数组test前size个元素值为零
+    	/*
+    	 * 初始化数组test前size个元素值为零
+    	 *
+    	 * 前面用ngx_alloc()方法为test分配了hinit->max_size个sizeof(u_short)大小的空间,但是这里只初始化
+    	 * 了size个,因为很有可能根本就不需要max_size个u_short大小的空间,所以这里能省就省了
+    	 */
         ngx_memzero(test, size * sizeof(u_short));
 
-        // 计算每个元素应该放在哪个桶中
-        // test数组中存放的是每个桶的实际大小
+        /*
+         * 开始遍历所有的键值对数据
+         */
         for (n = 0; n < nelts; n++) {
             if (names[n].key.data == NULL) {
+            	/*
+            	 * key不能为空
+            	 */
                 continue;
             }
 
-            // 计算该元素可能所在桶的位置
+            /*
+             * 计算该元素桶的所在下标
+             */
             key = names[n].key_hash % size;
-            // 如果把该元素放入桶中,则该桶此时的大小
-            // 之前元素的大小加上该元素的大小,这个元素的大小不包括元素键值对中的value值的大小
+
+            /*
+             * 将该元素所占的字节个数累加到所对应的桶中
+             *
+             * 之前元素的大小加上该元素的大小,这个元素的大小不包括元素键值对中的value值的大小
+             */
             test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
 
 #if 0
@@ -385,13 +446,29 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
                           size, key, test[key], &names[n].key);
 #endif
 
-            // 如果第key个桶的大小，已经无法满足再放一个该元素,则说明桶的数量分少了,在下一个大循环中多增加一个桶
+            /*
+             * 对于当前尝试的桶个数size,如果有一个桶的大小超过了我们设置的桶的大小bucket_size(指定的值减去一个指针大小),
+             * 那就说明当前尝试的size不合适,需要把size放大然后再次尝试
+             */
             if (test[key] > (u_short) bucket_size) {
                 goto next;
             }
         }
 
-        // 计算出了实际需要分配的桶的个数(小于等于指定的桶的数量)
+        /*
+         * 计算出了实际需要分配的桶的个数(小于等于指定的桶的数量)
+         * 比如实际的计算结果如下:
+         * 			test
+         * 			-----
+         * 			| * |
+         * 			-----
+         * 			  \
+         * 			  ---------------------
+         * 			  | 20 | 40 | 40 | 30 |
+         * 			  ---------------------
+         * 从上图可以看出size是4,每个桶的大小也不一样,总共需要130个字节来存储数据
+         *
+         */
         goto found;
 
     next:
@@ -399,8 +476,10 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         continue;
     }
 
-    // 走到这里说明用户指定的桶的个数也不够大(不够优)
-    // 也就是说，按照ngx的意思，每个桶里面放的元素个数太多了
+    /*
+     * 走到这里说明用户指定的桶的个数也不够大(不够优)
+     * 按照ngx的意思,每个桶里面放的元素个数太多了,所以它在这里打出一个警告信息
+     */
     size = hinit->max_size;
 
     ngx_log_error(NGX_LOG_WARN, hinit->pool->log, 0,
@@ -412,37 +491,82 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
 
 found:
 
-	// size为计算出的实际的桶的个数
+	/* size为计算出的实际的桶的个数 */
     for (i = 0; i < size; i++) {
-    	// 全部初始化为4
-    	// 因为在302行的时候桶的大小减掉一个4,这里再加上来
+    	/*
+    	 * 全部初始化为一个指针大小,对于64为系统来说就是8
+    	 *
+    	 * 因为前面在计算桶大小的时候减掉一个指针大小,所以这里再加上来
+    	 *		bucket_size = hinit->bucket_size - sizeof(void *);
+    	 */
         test[i] = sizeof(void *);
     }
 
+    /*
+     * 下面这个循环的目的是把之前算好的test的每个桶的大小都再加上一个指针大小
+     *
+     * 一个问题:
+     * 	 为啥不直接加,而是要重新计算一次啊,cpu计算不要钱吗?
+     */
     for (n = 0; n < nelts; n++) {
         if (names[n].key.data == NULL) {
             continue;
         }
 
-        // 再次计算第key个桶的大小
+        /* 计算数据names[n]所在桶的下标 */
         key = names[n].key_hash % size;
-        // 之前元素的大小加上该元素的大小,这个元素的大小不包括元素键值对中的value值的大小
+        /*
+         * 数据names[n]需要站的字节大小累加到对应的桶中
+         */
         test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
     }
 
     len = 0;
 
-    // 这个循环下来就会计算出,用于存放所有元素的散列表的大小,后续按这个大小来分配内存
+    /*
+     * 这个循环下来就会计算出,按ngx_cacheline_size个字节大小对齐后每个桶的实际大小,所以只有到这里才能正真
+     * 计算出每个桶的大小,后续按这个大小来分配内存
+     */
     for (i = 0; i < size; i++) {
-    	// 相等则说明这个位置没有放置任何元素
+    	/*
+    	 * 对于64系统sizeof(void *)值是8,这里用这个值判断每个桶的结尾,问题是万一有一个桶的大小正好是8,那
+    	 * 岂不是会出错?
+    	 *
+    	 * 其实这里有一个潜规则,我们知道ngx的hash结果存放的是ngx_hash_elt_t结构体对象,由这个结构体的定义:
+    	 * 	typedef struct {
+		 *		void             *value;
+		 *		u_short           len;
+		 *		u_char            name[1];
+		 *	} ngx_hash_elt_t;
+		 * 和NGX_HASH_ELT_SIZE宏的计算方式可以看出,每个桶的大小根本不会小于11个字节,所以这里用上面预留的
+		 * 一个指针大小的判断位就可以判断每个桶的结尾
+		 *
+		 * 所以下面的判断实际上是在过滤掉那些空桶,比如实际上test可能是这样的
+		 * 			test
+		 * 			-----
+		 * 			| * |
+		 * 			-----
+		 * 			  \
+		 * 			  ------------------------
+		 * 			  | 8 | 30 | 45 | 8 | 64 |
+		 * 			  ------------------------
+		 * 数字是8就代表是个空桶
+    	 */
         if (test[i] == sizeof(void *)) {
             continue;
         }
 
-        // 把第i个桶的实际大小,按照ngx_cacheline_size对齐
+        /*
+         * 把第i个桶的实际大小按照ngx_cacheline_size对齐,这次计算的值才是桶的真正大小
+         *
+         * ?会和NGX_HASH_ELT_SIZE(&names[n])计算的值不一样吗?
+         * NGX_HASH_ELT_SIZE是计算单个元素的,而ngx_align()方法是在计算某个桶对齐后的大小,也就说整个桶作为一个整体也要对齐
+         */
         test[i] = (u_short) (ngx_align(test[i], ngx_cacheline_size));
 
-        // 累加各个桶的大小
+        /*
+         * 累加各个桶的大小,后面就用这个值来分配内存
+         */
         len += test[i];
     }
 
@@ -461,8 +585,17 @@ found:
                       ((u_char *) hinit->hash + sizeof(ngx_hash_wildcard_t));
 
     } else {
-    	// 为桶分配内存
-    	// size为桶的个数
+    	/*
+    	 * 分配size个桶
+    	 *      buckets
+    	 *       -----
+    	 *       | * |
+    	 *       -----
+    	 *         \
+    	 *         -------------
+    	 *         | * | * | size个桶
+    	 *         ---------------
+    	 */
         buckets = ngx_pcalloc(hinit->pool, size * sizeof(ngx_hash_elt_t *));
         if (buckets == NULL) {
             ngx_free(test);
@@ -470,8 +603,10 @@ found:
         }
     }
 
-    // 为实际存储元素(ngx_hash_elt_t)的散列表分配内存
-    // len为之前计算出的字节个数
+    /*
+     * 为实际存储元素(ngx_hash_elt_t)的散列表分配内存
+     * len为之前计算出的字节个数
+     */
     elts = ngx_palloc(hinit->pool, len + ngx_cacheline_size);
     if (elts == NULL) {
         ngx_free(test);
@@ -482,63 +617,120 @@ found:
     // 所以内存对齐后散列表的实际大小不会小于len
     elts = ngx_align_ptr(elts, ngx_cacheline_size);
 
-    // 将每个桶的起始地址，赋值给每个桶的指针变量
+    /*
+     * 将每个桶的起始地址,赋值给每个桶的指针变量,下面的代码执行完毕后可能是如下的结构:
+     * 			buckets
+     * 			 -----
+     * 			 | * |
+     * 			 -----
+     * 			   \
+     * 			   -----------------------
+     * 			   | * | * | * | * | * |     size个桶
+     * 			   -----------------------
+     *              /       /   /      \
+     *             ----------------------------------
+     * 	           |       len个字节的elts            |
+     *	           ----------------------------------
+     * 可以看到第二桶没有指向elts这个内存块,所以他是空桶,其它不是空桶
+     */
     for (i = 0; i < size; i++) {
         if (test[i] == sizeof(void *)) {
             continue;
         }
 
-        // 为第i个桶指针变量赋值起始地址
+        /* 为第i个桶指针变量赋值起始地址 */
         buckets[i] = (ngx_hash_elt_t *) elts;
         elts += test[i];
 
     }
 
-    // 重置test的所有值为0
+    /*
+     * 重置test,为跟每个桶赋值做准备,因为前面只是为桶分配内存空间
+     */
     for (i = 0; i < size; i++) {
         test[i] = 0;
     }
 
-    // 为所有桶中的元素(ngx_hash_elt_t)赋值
+    /*
+     * 为桶中的所有元素(ngx_hash_elt_t)赋值
+     */
     for (n = 0; n < nelts; n++) {
         if (names[n].key.data == NULL) {
+        	/*
+        	 * 过滤掉空桶
+        	 */
             continue;
         }
 
-        // 计算第n个元素应该放入第几个桶中
+        /*
+         * 计算第n元素对应的桶所在的下标
+         */
         key = names[n].key_hash % size;
-        // 该元素应该存放的起始地址
+        /*
+         * 该元素应该存放的起始位置
+         */
         elt = (ngx_hash_elt_t *) ((u_char *) buckets[key] + test[key]);
 
-        // 元素值
+        /*
+         * 键值对(key-value)对应的值(value)
+         *
+         * 这里不知道值具体是什么以及到底多大,只有创造这个hash结构的用户知道
+         */
         elt->value = names[n].value;
-        // 元素key的长度
-        elt->len = (u_short) names[n].key.len;
 
-        // 将元素的键以小写的形式存放到散列表中
+        /*
+         * 键值对(key-value)对应的键(key)的长度
+         */
+        elt->len = (u_short) names[n].key.len;
+        /*
+         * 将键值对的键以小写的形式存放到散列表中
+         */
         ngx_strlow(elt->name, names[n].key.data, names[n].key.len);
 
-        // 在第key桶中放入该元素后，第key个桶的实际大小
+        /*
+         * 会和下面的代码计算的值不一样吗?
+         * 	  test[i] = (u_short) (ngx_align(test[i], ngx_cacheline_size));
+         * ngx_align()方法是在计算整个桶对齐后的大小,而NGX_HASH_ELT_SIZE是计算桶中每个元素的大小
+         *
+         * 在第key桶中放入该元素后,第key个桶的实际大小,用test临时存储,作用是为下一个元素赋值
+         */
         test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
     }
 
-    // 如果散列表中存在没有存储任何元素的桶,那么将这些桶中的每个ngx_hash_elt_t结构体的value赋值为NULL
-    // 这样在查找的时候就不会出现脏数据了
+    /*
+     * 前面在计算桶大小和为桶分配内存的时候,为每个桶的最后面预留了一个8字节(64位系统)空间,这里我们把这个值设置为NULL
+     * 这样以后再查找的时候,可以根据这个特性做一些逻辑判断
+     */
     for (i = 0; i < size; i++) {
         if (buckets[i] == NULL) {
+        	/*
+        	 * 空桶不做处理
+        	 */
             continue;
         }
 
+        /*
+         * 之前说每个桶最后预留了一个8字节(64位系统)的空间,但是下面的代码且把这8个字节强转成ngx_hash_elt_t结构体,
+         * 原因是这个结构体的一个字段value正好是一个指针变量,在这里我们只操作value这个指针变量,所以正好和预留的8字节
+         * 空间对上.
+         *
+         * 注意,这里是不能操作elt对象其它字段的,因为其它字段是从别处"借来"的
+         */
         elt = (ngx_hash_elt_t *) ((u_char *) buckets[i] + test[i]);
 
         elt->value = NULL;
     }
 
+    /* 至此,test数组就算是用完了 */
     ngx_free(test);
 
-    // 桶起始地址
+    /*
+     * 把桶赋值给下面的hash结构传递出去
+     */
     hinit->hash->buckets = buckets;
-    // 桶的个数
+    /*
+     * 桶的实际个数
+     */
     hinit->hash->size = size;
 
 #if 0
@@ -872,20 +1064,20 @@ ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
         return NGX_ERROR;
     }
 
-    // 为散列表中的桶分配内存,共ha->hsize个桶
+    // 为基本散列表中的桶分配内存,共ha->hsize个桶
     ha->keys_hash = ngx_pcalloc(ha->temp_pool, sizeof(ngx_array_t) * ha->hsize);
     if (ha->keys_hash == NULL) {
         return NGX_ERROR;
     }
 
-    // 为散列表中的桶分配内存,共ha->hsize个桶
+    // 为前置通配符散列表中的桶分配内存,共ha->hsize个桶
     ha->dns_wc_head_hash = ngx_pcalloc(ha->temp_pool,
                                        sizeof(ngx_array_t) * ha->hsize);
     if (ha->dns_wc_head_hash == NULL) {
         return NGX_ERROR;
     }
 
-    // 为散列表中的桶分配内存,共ha->hsize个桶
+    // 为后置通配符散列表中的桶分配内存,共ha->hsize个桶
     ha->dns_wc_tail_hash = ngx_pcalloc(ha->temp_pool,
                                        sizeof(ngx_array_t) * ha->hsize);
     if (ha->dns_wc_tail_hash == NULL) {
@@ -902,14 +1094,14 @@ ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
  * *ha: ngx_hash_keys_arrays_t
  * *key: 用户key,比如“www.jd.com”、“.jd.com”、"*.jd.com"、“www.jd.*”
  * 		 如果key是带通配符的,则在添加的时候会把通配符去掉
- * *value: 用户值,比如“198.168.12.32”
+ * *value: 用户值,比如“198.168.12.32”或一个结构体
  * flags: 一个位掩码
  * 		NGX_HASH_WILDCARD_KEY: 处理通配符
  * 		NGX_HASH_READONLY_KEY: 不把key转换为小写
  *
  * 不允许存在相同的元素,如果存在返回NGX_BUSY
  *
- * (只为域名key服务,也就是说key不能是其它数据; 也可以是变量;)
+ * (只为域名key服务,也就是说key不能是其它数据; 也可以是变量;?)
  *
  */
 ngx_int_t
@@ -923,7 +1115,7 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
     ngx_array_t     *keys, *hwc;
     ngx_hash_key_t  *hk;
 
-    // 要添加的key的长度
+    /* 要添加的key的长度 */
     last = key->len;
 
     if (flags & NGX_HASH_WILDCARD_KEY) {//支持通配符
@@ -931,28 +1123,48 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
         /*
          * supported wildcards:
          *     "*.example.com", ".example.com", and "www.example.*"
+         * 以上是ngx中支持的通配符的格式
+         *
          */
 
-    	// 是否有通配符*
+    	/*
+    	 * 是否有通配符,0代表没有
+    	 */
         n = 0;
 
         for (i = 0; i < key->len; i++) {
 
             if (key->data[i] == '*') {
                 if (++n > 1) {
-                	// 只支持一个通配符,如果有多个则返回NGX_DECLINED,比如 **.jd.com
+                	/*
+                	 * 只支持一个通配符,如果有多个则返回NGX_DECLINED,比如
+                	 *    **.jd.com
+                	 *    www.jd.**com
+                	 *    *w*.jd.com
+                	 */
                     return NGX_DECLINED;
                 }
             }
 
             if (key->data[i] == '.' && key->data[i + 1] == '.') {
-            	// key不能有连续两个符号“.”,比如 www..jd.com
+            	/*
+            	 * key不能有连续两个符号“.”,比如
+            	 *    www..jd.com
+            	 *    ..jd.com
+            	 *    www.jd.c..
+            	 *
+            	 */
                 return NGX_DECLINED;
             }
         }
 
         if (key->len > 1 && key->data[0] == '.') {
-        	//以点开头的域名,如 .jd.com
+
+        	/*
+        	 * 以点开头的域名,如
+        	 * 	  .jd.com
+        	 * 	  .c
+        	 */
             skip = 1;
             goto wildcard;
         }
@@ -960,32 +1172,56 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
         if (key->len > 2) {
 
             if (key->data[0] == '*' && key->data[1] == '.') {
-            	// 前置通配符,以 *. 开头
+
+            	/*
+            	 * 前置通配符,以 "*." 开头,比如
+            	 *   *.jd.com
+            	 */
                 skip = 2;
                 goto wildcard;
             }
 
             if (key->data[i - 2] == '.' && key->data[i - 1] == '*') {
-            	// 后置通配符,以 .* 结尾
+            	/*
+            	 * 后置通配符,以".*"结尾,比如
+            	 *     www.jd.*
+            	 */
                 skip = 0;
-                // key的长度减去 .* 这两字符的长度
+
+                /*
+                 * key的长度减去 .* 这两字符的长度
+                 */
                 last -= 2;
                 goto wildcard;
             }
         }
 
+        /*
+         * 从上面得出的结论
+         * skip = 0,是以".*"结尾,比如
+         * 	  www.jd.*
+         * skip = 1,以点开头的,比如
+         * 	  .jd.com
+         * skip = 2,以"*."开头,比如
+         *    *.jd.com
+         */
+
         if (n) {
-            // 有通配符,但是又不符合通配符的规则
+            /*
+             * 有通配符,但是又不符合通配符的规则,比如
+             * 	  w*w.jd.c*m
+             * 	  *.jd.com.*
+             */
             return NGX_DECLINED;
         }
 
-        // 没有通配符
+        /* 没有通配符 */
     }
 
     /* exact hash */
-    // 走到这里说明key不带通配符(如.和*)
+    /*************************** 走到这里说明key不带通配符 ******************************/
 
-    // 此时代表key的hash值
+    /* 此时代表key的hash值 */
     k = 0;
 
     for (i = 0; i < last; i++) {
@@ -996,29 +1232,45 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
         k = ngx_hash(k, key->data[i]);
     }
 
-    // 此时代表key在简易散列表中的第k个桶
+    /*
+     * 此时代表key在简易散列表中的第k个桶
+     */
     k %= ha->hsize;
 
     /* check conflicts in exact hash */
 
     name = ha->keys_hash[k].elts;
 
-    if (name) {// 桶已经存在
-    	// 检查桶中是否有相同的元素
+    /*
+     * name代表桶中的第一个元素,如果第一个元素都不存在那么说明桶为空
+     */
+    if (name) {
+
+    	/*
+    	 * 检查桶中是否有相同的元素,如果有返回NGX_BUSY
+    	 */
         for (i = 0; i < ha->keys_hash[k].nelts; i++) {
             if (last != name[i].len) {
+            	/*
+            	 * 桶中的元素name[i]的长度都和当前要添加的key不一样,那么肯定就不一样,去匹配下一个
+            	 */
                 continue;
             }
 
             if (ngx_strncmp(key->data, name[i].data, last) == 0) {
 
-            	// 存在相同元素，则返回
+            	/*
+            	 * 存在相同元素,则返回
+            	 */
                 return NGX_BUSY;
             }
         }
 
-    } else { // 桶还不存在
-    	// 初始化桶,初始化大小为4
+    } else {
+    	/*
+    	 * 用于检查是否有key冲突的桶还不存在,那就创建一个,然后把当前要添加的key放入这个桶中
+    	 * 新创建的桶初始化大小为4个字节
+    	 */
         if (ngx_array_init(&ha->keys_hash[k], ha->temp_pool, 4,
                            sizeof(ngx_str_t))
             != NGX_OK)
@@ -1027,7 +1279,9 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
         }
     }
 
-    // 将key添加到简易散列表的第k个桶中
+    /*
+     * 将要添加的key存放到对应的k桶中
+     */
     name = ngx_array_push(&ha->keys_hash[k]);
     if (name == NULL) {
         return NGX_ERROR;
@@ -1035,7 +1289,9 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
 
     *name = *key;
 
-    // 将用户的key和value组装成ngx_hash_key_t,放入到数组中
+    /*
+     * 确定要添加的key没有冲突之后将key放入到ha->keys数组中,为后续调用ngx_hash_init()生成hash结构做准备
+     */
     hk = ngx_array_push(&ha->keys);
     if (hk == NULL) {
         return NGX_ERROR;
@@ -1045,31 +1301,50 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
     hk->key_hash = ngx_hash_key(key->data, last);
     hk->value = value;
 
-    // 以上是处理key不太通配符的代码
+    /*
+     * 以上是处理key不带通配符的代码
+     *
+     * 作用就是排除相同的key,然后组装ngx_hash_key_t数组
+     */
     return NGX_OK;
 
 
-// 处理key中带通配符的代码
+/*********************************** 处理key中带通配符的逻辑 ************************************/
 wildcard:
 
     /* wildcard hash */
 
-	// skip = 1,表示以点开头的域名,如 .jd.com
-	// skip = 2,表示以*.开头的域名,如 *.jd.com
-	// skip = 0,表示以.*结尾的域名,如 www.jd.*
+	/*
+     * skip = 0,表示以.*结尾的域名,如 www.jd.*
+     * skip = 1,表示以点开头,如 .jd.com
+     * skip = 2,表示以*.开头,如 *.jd.com
+     */
 
-	// key转换为小写并计算key的hash值,计算时会去掉通配符
+	/*
+	 * key转换为小写并计算key的hash值,计算时会去掉通配符,通过skip的值来去掉通配符
+	 * skip = 0意思是不用去掉,因为这种类型的通配符已经在前面的逻辑中给去掉了(last -= 2)
+	 * skip = 1表示去掉前面一个字符(".")
+	 * skip = 2表示去掉前面两个字符("*.")
+	 */
     k = ngx_hash_strlow(&key->data[skip], &key->data[skip], last - skip);
 
     k %= ha->hsize;
 
     if (skip == 1) {
+    	/*
+    	 * 处理以点'.'开头的域名
+    	 */
 
         /* check conflicts in exact hash for ".example.com" */
 
-    	/* 检查名字是否冲突 比如jd.com 和 .jd.com视为相同 */
+    	/*
+    	 * 检查名字是否冲突,比如jd.com和.jd.com视为相同,因为.jd.com已经包含jd.com拉
+    	 */
         name = ha->keys_hash[k].elts;
 
+        /*
+         * 下面这块逻辑和上面检查无通配符冲突的逻辑基本一样,只不过这里的名字是拷贝过来的,并且这个key没有放到ha->keys数组中
+         */
         if (name) { // 桶已经存在
         	// 检查桶中是否有相同的元素
 
@@ -1108,30 +1383,42 @@ wildcard:
             return NGX_ERROR;
         }
 
-        // 将key的名字拷贝过来
+        /*
+         * 将key的名字拷贝过来
+         *
+         * 但是这里并没有把key放入到ha->keys数组中,因为他不是精确匹配而是通配符匹配
+         * 因为.jd.com已经包含jd.com了,所以这两个只留一个就可以了
+         */
         ngx_memcpy(name->data, &key->data[1], name->len);
     }
 
-
-    if (skip) { //处理前置通配符
+    /*
+     * 处理前置通配符
+     */
+    if (skip) {
 
         /*
          * convert "*.example.com" to "com.example.\0"
          *      and ".example.com" to "com.example\0"
          */
 
-    	// 此时last包含了通配符的长度
+    	/*
+    	 * 此时last包含了通配符的长度
+    	 */
         p = ngx_pnalloc(ha->temp_pool, last);
         if (p == NULL) {
             return NGX_ERROR;
         }
 
+        /* 此时len代表一个单词长度 */
         len = 0;
         n = 0;
 
-        // last-1 代表去掉了通配符的长度
+        /*
+         * last-1代表去掉了"*.example.com"中的'*'或者".example.com"中的'.'后的长度
+         */
         for (i = last - 1; i; i--) {
-        	// 将 *.example.com 转换成 com.example.\0
+
             if (key->data[i] == '.') {
                 ngx_memcpy(&p[n], &key->data[i + 1], len);
                 n += len;
@@ -1143,7 +1430,14 @@ wildcard:
             len++;
         }
 
-    	// 将 .example.com 转换成 com.example\0
+        /*
+         * 如果走到这里len是有值的,那么代表此时key是一个".example.com"类型的字符,因为last-1后会去掉一个通配符
+         * 所以我们这里需要把最后一个单词example拷贝到p中,结果是
+         * 	  p = com.example
+         *
+         * 如果走到这里len的值是零,那么代表此时key是一个"*.example.com"类型的字符,那么最后p的结果是
+         * 	  p = com.example.
+         */
         if (len) {
             ngx_memcpy(&p[n], &key->data[1], len);
             n += len;
@@ -1174,7 +1468,19 @@ wildcard:
 
     /* check conflicts in wildcard hash */
 
-    /* 检查带统配符的key是否冲突 比如.jd.com 和 *.jd.com 视为冲突 */
+    /*
+     * 检查带统配符的key是否冲突 比如.jd.com 和 *.jd.com 视为冲突
+     * 		server{
+     * 			listen 80;
+     * 			server_name .jd.com;
+     * 		}
+     *
+     * 		server{
+     * 			listen 80;
+     * 			server_name *.jd.com;
+     * 		}
+     * 上面两种会忽略一种,目前的逻辑是忽略"*.jd.com"对应的server
+     */
     name = keys->elts;
 
     if (name) { // 第k个桶已经存在
@@ -1213,7 +1519,9 @@ wildcard:
 
     /* add to wildcard hash */
 
-    // 向hwc数组中放一个ngx_hash_key_t对象
+    /*
+     * 向hwc数组中放一个ngx_hash_key_t对象,为后续创建hash结构做准备
+     */
     hk = ngx_array_push(hwc);
     if (hk == NULL) {
         return NGX_ERROR;
@@ -1221,7 +1529,6 @@ wildcard:
 
     // 去掉通配符的长度
     hk->key.len = last - 1;
-    // 这里用指针是因为,key的值最终会拷贝到基本散列表中
     hk->key.data = p;
     hk->key_hash = 0;
     hk->value = value;

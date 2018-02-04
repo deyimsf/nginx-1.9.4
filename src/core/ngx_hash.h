@@ -60,9 +60,18 @@
 
 
 typedef struct { //ngx_hash_t结构中实际存放的元素
-    void             *value; // 键值对key对应的值
+	/*
+	 * 键值对key对应的值value
+	 */
+    void             *value;
+
     u_short           len; //name的长度
-    u_char            name[1];// 直接用指针会占用4个字节，用组数就占一个字节(其实用数组name[0]更好,占零个字节)
+
+    /*
+     * 键值对(key-value)对应的键(key)
+     * 直接用指针会占用4个字节，用组数就占一个字节(其实用数组name[0]更好,占零个字节)
+     */
+    u_char            name[1];
 } ngx_hash_elt_t;
 
 
@@ -71,14 +80,26 @@ typedef struct { //ngx_hash_t结构中实际存放的元素
  * 这个结构体才是真正意义上用来表示散列的结构体，其它都是对他的一个简单封装
  */
 typedef struct {
-	// size个hash桶
-	// 第一层指针(buckets)用来存放各个桶的起始位置
-	//		[**buckets] -->  [*bucket0 | *bucket1]
-	// 第二层指针(bucketX)用来存放桶中每个元素的起始位置
-	//		[*bucket0] --> [elt0 | elt1]
-	//  	[*bucket1] --> [elt0 | elt1]
+    /*
+     *      buckets
+     *       -----
+     *       | * |
+     *       -----
+     *         \
+     *         ---------------------
+     *         | * | * | * | * | size个桶
+     *         ---------------------
+     *          /        /    \
+     *         -----------------------------------------
+     *         |      好多个ngx_hash_elt_t              |
+     *         -----------------------------------------
+     * 可以看到第二个桶是空桶,其它桶不是空桶
+     */
     ngx_hash_elt_t  **buckets;
-    // hash桶个数
+
+    /*
+     * hash桶实际个数
+     */
     ngx_uint_t        size;
 } ngx_hash_t;
 
@@ -197,9 +218,24 @@ typedef struct {
      * 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
      * 这个桶用ngx_array_t结构体表示,桶里面存储了不含通配符的域名
      *
-     * 该字段的存在只是为了检查key值是否有冲突,最终会使用上面的keys字段来构造hash结构
-     * 所以该字段中只放key的名字,其中带点的通配符字符串会被视为非通配符字符串,比如 jd.com
+     * 该字段的存在只是为了检查key值是否有冲突在ngx_hash_add_key()方法中用到,最终会使用上面的keys字段
+     * 来构造hash结构,所以该字段中只放key的名字,其中带点的通配符字符串会被视为非通配符字符串,比如 jd.com
      * 和 .jd.com视为相同
+     *
+     * 这个机构类似于java中的HashMap,只不过是把链表换成数组
+     * 			keys_hash
+     * 			  -----
+     * 			  | * |
+     * 			  -----
+     * 			    \
+     * 			  ----------------------
+     * 			  | * | * | * | * |  HashMap中的数组
+     * 			  ----------------------
+     *              /            \
+     *    ----------------      ----------------
+     *    | 多个ngx_str_t |      | 多个ngx_str_t |
+     *    ----------------      ----------------
+     *
      */
     ngx_array_t      *keys_hash;
 
@@ -215,6 +251,8 @@ typedef struct {
     /*
      * 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
      * 这个桶用ngx_array_t结构体表示,桶里面存储了包含前置通配符的域名
+     *
+     * 用来检查前置通配符冲突
      */
     ngx_array_t      *dns_wc_head_hash;
 
@@ -228,6 +266,9 @@ typedef struct {
     ngx_array_t       dns_wc_tail;
     // 简易散列表,数组中每一个元素代表一个桶,总共hsize个桶
     // 这个桶用ngx_array_t结构体表示,桶里面存储了包含后置通配符的域名
+    /*
+     * 用来检查后置通配符冲突
+     */
     ngx_array_t      *dns_wc_tail_hash;
 } ngx_hash_keys_arrays_t;
 
