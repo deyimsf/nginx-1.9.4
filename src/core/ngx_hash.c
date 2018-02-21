@@ -1514,6 +1514,13 @@ wildcard:
         return NGX_ERROR;
     }
 
+    /*
+     * 这里拷贝完毕之后会去掉'.'和'*'两个符号,比如*.jd.com和.jd.com最终都会变成jd.com
+     * 也就是说在进行域名冲突检测时会把'.'和'*'两个符号都去掉然后在比较,但是最终存放到hash结构中的键只会去掉'*'符号,
+     * 比如*.jd.com,在检测冲突时用jd.com,放入hash(hwc变量)结构中时是com.jd.
+     * 比如.jd.com,在检测冲突时用jd.com,放入hash(hwc变量)结构中时是com.jd
+     *
+     */
     ngx_memcpy(name->data, key->data + skip, name->len);
 
 

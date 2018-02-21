@@ -34,21 +34,22 @@
  *
  * 5.设置请求连接的读事件方法为ngx_http_wait_request_handler()
  * 		rev->handler = ngx_http_wait_request_handler;
+ *   在ngx_http_wait_request_handler()方法中接收请求数据,创建请求对象(ngx_http_request_t),然后
+ *   把读事件设置为ngx_http_process_request_line()方法并调用
  *
- * 6.在ngx_http_wait_request_handler()方法中接收请求数据,创建请求对象(ngx_http_request_t),然后
- *   把读事件设置为ngx_http_process_request_line(),这个方法用来处理请求行,把请求行中的数据解析到请求
- *   对象中,比如设置r->method、r->uri_start、r->args_start等指针
+ * 6.ngx_http_process_request_line()这个方法用来处理请求行,把请求行中的数据解析到请求对象中,比如设置
+ *   r->method、r->uri_start、r->args_start等指针
  *
  *   在这一步uri也会被解析并解码,至于会不会合并多个斜线,则有merge_slashes指令决定,默认是合并
  *
- *  如果uri部分包含了host,那么在这一步就可以开始匹配server了,比如
- *  	GET http://www.jd.com/lua HTTP/1.0
+ *   如果uri部分包含了host,那么在就可以通过ngx_http_set_virtual_server()匹配server了,比如
+ *  	 GET http://www.jd.com/lua HTTP/1.0
  *
  * 7.初始化r->headers_in.headers集合用来存放后续解析到的请求头
  *
- * 8.读事件方法设置为ngx_http_process_request_headers(),然后执行这个方法
+ * 8.读事件方法设置为ngx_http_process_request_headers(),然后执行这个方法.
  *   该方法用来解析所有的请求头,当解析到host请求投后会回调在ngx_http_headers_in[]数组中设置的handler()方法,
- *   对应ngx_http_process_host()方法,这个方法里会匹配对应的server块
+ *   对应ngx_http_process_host()方法,这个方法里会调用ngx_http_set_virtual_server()匹配对应的server块
  *
  * 9.请求头解析完毕后调用ngx_http_process_request()方法,该方法更改后续读写事件到来要要执行的方法
  *
@@ -487,14 +488,16 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
         return;
     }
 
+    /*
+     * 此时还没有开始读取http数据,也就是还不知道是哪个域名,是无法确定是哪个server{}块,但是读取http数据时之前
+     * 又需要确定用于读取http协议头的数据buffer大小,所以取出ngx_http_core_module模块在http{}块中存放的
+     * 结构体ngx_http_core_srv_conf_t,这个位置的结构体中存放了一些默认或公共指令配置(server级别的)
+     *
+     * 如果指令是loc级别的就需要使用ngx_http_get_module_loc_conf()方法来获取ngx_http_core_loc_conf_t结构体
+     */
     hc = c->data;
     cscf = ngx_http_get_module_srv_conf(hc->conf_ctx, ngx_http_core_module);
 
-    /*
-     * TODO
-     * 此时还没有开始读取http数据,也就是还不知道是哪个域名,应该换无法确定是哪个server{}块,
-     * 也就时说无法确定是哪个ngx_http_core_srv_conf_t结构体,那么这里为什么就能确定呢?
-     */
     size = cscf->client_header_buffer_size;
 
     // printf("server_name=%s; client_header_buffer_size= %zu\n",cscf->server_name.data,size);
@@ -2231,6 +2234,9 @@ ngx_http_validate_host(ngx_str_t *host, ngx_pool_t *pool, ngx_uint_t alloc)
 }
 
 
+/*
+ * 通过host匹配server
+ */
 static ngx_int_t
 ngx_http_set_virtual_server(ngx_http_request_t *r, ngx_str_t *host)
 {

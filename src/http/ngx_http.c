@@ -128,6 +128,7 @@
  *
  *
  *
+ * ------------------------------------结合ngx_http_request.c文件中的注释看--------------------------------
  * 一个主请求的开始: 无限循环执行ngx_process_events_and_timers()方法
  *  1.当请求过来的时候先执行ngx_http_init_connection()方法获取tcp连接
  *
@@ -164,6 +165,7 @@
  *
  *
  *
+ * ------------------------------------------ngx_http_finalize_request()方法调用次数--------------------------------------
  * 对于一个http请求,在其整个生命周中一般回调用两次ngx_http_finalize_request()方法
  *   第一次:当请求的写事件方法还是ngx_http_core_run_phases()方法的时候,在最后一个阶段checker(ngx_http_core_content_phase)中会调用
  *   			ngx_http_finalize_request(r, r->content_handler(r))方法或者
@@ -2451,7 +2453,10 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 #endif
                )
             {
-            	// 为域名构造hash结构,每个地址可以包含多个域名
+            	/*
+            	 * 只有存在多个server{}块才会进到这里,因为如果只有一个server{}块的话就会变成默认server{}块,默认server{}块不需要
+            	 * 做域名匹配,因此也就不需要做构造通配符hash结构了
+            	 */
                 if (ngx_http_server_names(cf, cmcf, &addr[a]) != NGX_OK) {
                     return NGX_ERROR;
                 }

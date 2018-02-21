@@ -1,21 +1,19 @@
 
 
-hash结构模糊查询 ?
+hash结构模糊查询
+
 
 TODO 下周要看的
 
-ngx_http_server_names()
+ngx_http_optimize_servers
+ ngx_http_server_names()  2602行,可以先看ngx_qsort宏的作用
 
- 看完ngx_hash_add_key()方法,接下来要看ngx_hash_wildcard_init()方法
- 看是如何初始化前置通配符和后置通配符的
+  看完ngx_hash_add_key()方法,接下来要看ngx_hash_wildcard_init()方法
+  看是如何初始化前置通配符和后置通配符的
 
- ngx_http_server_names()方法中在调用ngx_hash_wildcard_init()方法时先把对应的数组
- 用ngx_qsort()宏排了一个顺序,看看目的是啥
+  ngx_http_server_names()方法中在调用ngx_hash_wildcard_init()方法时先把对应的数组
+  用ngx_qsort()宏排了一个顺序,看看目的是啥
  
-
-
-
-
 
 
 

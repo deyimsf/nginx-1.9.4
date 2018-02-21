@@ -175,7 +175,18 @@ typedef struct {
 
 
     /*
-     * 每遇见一个server{}块就会调用所有http模块的这个方法
+     * 每遇见一个server{}块都会通过ngx_http_core_server()方法来调用所有http模块的这个方法,因为
+     * ngx_http_core_module.c也是http模块,所以其对应的ngx_http_core_create_srv_conf()发就会调用,
+     * 从而产生一个代表server{}块的ngx_http_core_srv_conf_t结构体
+     *
+     * 另外在http{}块中为了存放server{}块的一些公共配置,在http{}块对应的方法ngx_http_block()中也会调用所有http模块
+     * 的create_srv_conf()方法,比如对于ngx_http_core_module.c这个http模块来说对应ngx_http_core_create_srv_conf()
+     * 方法,他对应的结构体是ngx_http_core_srv_conf_t. 这种形式可以理解为http_core模块在http{}块中放了一个结构体,而这个
+     * 结构体是通过create_srv_conf()方法产生的,当然其它模块也可以通过该方法在http{}块存放结构体.
+     *
+     * 实际上ngx为所有http模块预留了三个位置用来存放结构体,分别是http{}、server{}、location{}.每一个http模块又预留了三个
+     * 方法(create_main|srv|loc_conf)来创建不同位置的结构体,比如某个http模块的指令可以出现在任何位置中,那这个模块就可以实现
+     * create_main|srv|loc_conf()这三个方法,如果只能在其中一个位置出现,那就实现其中一个方法就可以了,同时上下级之间有继承关系
      */
     void       *(*create_srv_conf)(ngx_conf_t *cf);
     /*
