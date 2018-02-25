@@ -3,26 +3,44 @@
 hash结构模糊查询
 
 
-TODO 下周要看的
-
 ngx_http_optimize_servers
- ngx_http_server_names()  2602行,可以先看ngx_qsort宏的作用
+ ngx_http_server_names()  
+    ngx_hash_wildcard_init()
 
-  看完ngx_hash_add_key()方法,接下来要看ngx_hash_wildcard_init()方法
-  看是如何初始化前置通配符和后置通配符的
 
-  ngx_http_server_names()方法中在调用ngx_hash_wildcard_init()方法时先把对应的数组
-  用ngx_qsort()宏排了一个顺序,看看目的是啥
+ ngx_hash_wildcard_init()方法中关于前置通配符的逻辑基本了解
+ 比如了解了name->value中后两位掩码的作用
+ 但是产生了一个疑问,为什么区分01和00,感觉匹配的时候规则是一样的,只不过在配置文件的时候一个待星号一个不带
+
+ TODO ngx_hash_wildcard_init()方法
+   看为什么区分01和00
+   看前置通配符的查找规则是不是和自己分析的一直
+   看ngx_hash_wildcard_init()方法中关于后置通配符的规则
+   看后置通配符的查找规则是不是和自己分析的一直
+
  
 
 
 
 
 
+        /*
+         * the 2 low bits of value have the special meaning:
+         *     00 - value is data pointer for both "example.com"
+         *          and "*.example.com";
+         *     01 - value is data pointer for "*.example.com" only;
+         *     10 - value is pointer to wildcard hash allowing
+         *          both "example.com" and "*.example.com";
+         *     11 - value is pointer to wildcard hash allowing
+         *          "*.example.com" only.
+         */
 
 
-
-
+        /*
+         * the 2 low bits of value have the special meaning:
+         *     00 - value is data pointer;
+         *     11 - value is pointer to wildcard hash allowing "example.*".
+         */
 
 
 

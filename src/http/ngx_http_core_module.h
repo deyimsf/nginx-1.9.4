@@ -514,7 +514,20 @@ typedef struct {
  */
 typedef struct {
     ngx_int_t                  family;
+
+    /*
+     * 端口号
+     */
     in_port_t                  port;
+    /*
+     * 某个端口号下的地址,比如
+     * 	80:
+     * 		www.jd.com
+     * 		www.baidu.com
+     *  8080:
+     *		127.0.0.1
+     *		aaa.jd.com
+     */
     ngx_array_t                addrs;     /* array of ngx_http_conf_addr_t */
 } ngx_http_conf_port_t;
 
@@ -534,9 +547,11 @@ typedef struct {
  * 	 	listen		127.0.0.2:8080;
  * 	 	server_name host3 host4;
  * 	 }
- * 这样一个配置,对于8080端口会产生两个该结构体
- * 一个代表127.0.0.1这个地址;另一个代表127.0.0.2这个地址
- * 最终该结构体中的servers数组,会存放代表server1和server2的ngx_http_core_srv_conf_t结构体
+ * 这样一个配置,对于8080端口会产生两个该结构体,分别是:
+ *    代表127.0.0.1:8080地址的
+ *    代表127.0.0.2:8080地址的
+ *
+ * 该结构体中的servers数组,会存放代表server1和server2的ngx_http_core_srv_conf_t结构体
  *
  *
  * ngx_http_conf_addr_t --> 127.0.0.1

@@ -580,7 +580,9 @@ found:
             return NGX_ERROR;
         }
 
-        // 指定所有桶的起始地址
+        /*
+         * 指定所有桶的起始地址,所以这里要先排除掉ngx_hash_wildcard_t结构体所占的字节数
+         */
         buckets = (ngx_hash_elt_t **)
                       ((u_char *) hinit->hash + sizeof(ngx_hash_wildcard_t));
 
@@ -805,9 +807,16 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
         return NGX_ERROR;
     }
 
-    //用*names = com. (*.com) 举例
-    //用*names = com.jd. (*.jd.com) 举例
-    //用*names = com.jd.m. (*.m.jd.com) 举例
+    /*
+     * 假设names为:
+     * 	  com.baidu.
+     * 	  com.jd.
+     * 	  xxxx
+     * 这个是已经正常域名转换后的情况,他们实际在配置文件中对应的名字是:
+     * 	  *.baidu.com
+     * 	  *.jd.com
+     * 	  xxxx
+     */
     for (n = 0; n < nelts; n = i) {
     	// 这里的n代表第几个元素
 
@@ -816,12 +825,11 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
                       "wc0: \"%V\"", &names[n].key);
 #endif
 
-        // 0代表没有发现符号“.”, 1代表发现符号“.”
+        /*
+         * 0代表没有发现符号“.”, 1代表发现符号“.”
+         */
         dot = 0;
 
-        // 检查第n个元素的键值是否有符号“.”(比如 com. 中的符号“.”)
-        // 检查第n个元素的键值是否有符号“.”(比如 com.jd. 中的第一个符号“.”)
-        // 检查第n个元素的键值是否有符号“.”(比如 com.jd.m. 中的第一个符号“.”)
         for (len = 0; len < names[n].key.len; len++) {
             if (names[n].key.data[len] == '.') {
                 dot = 1;
@@ -832,55 +840,78 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
             }
         }
 
-        // 将字符 com.jd.m. 中的 com 放入curr_names数组中
+        /*
+         * 假设域名是com.baidu.
+         *
+         * 当前找到的dot代表第一个‘.’那么下面的代码执行完毕后,curr_names的值为:
+         * 	 curr_names:
+         * 	  	com
+         *
+         * 	 name = com
+         * 	 name.value = ngx_http_core_srv_conf_t结构体
+         *
+         *
+         */
         name = ngx_array_push(&curr_names);
         if (name == NULL) {
             return NGX_ERROR;
         }
 
-        // len = 3
         name->key.len = len;
-        // name->key.data = com
         name->key.data = names[n].key.data;
         name->key_hash = hinit->key(name->key.data, name->key.len);
-        // name->value = 1234
+        /*
+         * 对于ngx_http_server_names()方法中的使用来说就是ngx_http_core_srv_conf_t结构体
+         */
         name->value = names[n].value;
-
-        //com.jd.m.
-        //name->key.len = 3
-        //name->key.data = com
-        //name->value = 1234
 
 #if 0
         ngx_log_error(NGX_LOG_ALERT, hinit->pool->log, 0,
                       "wc1: \"%V\" %ui", &name->key, dot);
 #endif
 
-        // 找到的这个“.”在com.jd.中的位置
+        /*
+         * 找到的这个“.”在域名中的长度,比如对于com.baidu.
+         * dot_len可以是4(第一个点)或10(第二个点)
+         */
         dot_len = len + 1;
 
         if (dot) {
+        	/*
+        	 * 这里的逻辑主要是为了计算域名的实际长度
+        	 *
+        	 * len代表当前域名的长度,比如com.baidu.
+        	 * 在计算这个域名长度的过程中,len可以是4(第一个点)或10(第二个点)
+        	 */
             len++;
         }
 
-        // dot_len = 4     dot = 4
         next_names.nelts = 0;
 
-        // names[n].key.len = 9 (com.jd.m.);     len = 4
-        // 相等说明这个域名目前只有一个名字
         if (names[n].key.len != len) {
+        	/*
+        	 * 假设域名是com.baidu.
+        	 *
+        	 * 不相等说明还没有分析完整个域名,这时候names[n].key.len等于10,而len才等于4
+        	 */
+
             next_name = ngx_array_push(&next_names);
             if (next_name == NULL) {
                 return NGX_ERROR;
             }
 
+            /*
+             * 因为要分析的域名是com.baidu.并且这个时候len才等于4,所以下面的代码执行完毕后
+             *   next_names:
+             * 		baidu.
+             *
+             *   next_name = baidu.
+             *   next_name->value = ngx_http_core_srv_conf_t结构体
+             */
             next_name->key.len = names[n].key.len - len;
             next_name->key.data = names[n].key.data + len;
             next_name->key_hash = 0;
             next_name->value = names[n].value;
-            // next_name->key.len = 5
-            // next_name->key.data = jd.m.
-            // next_name->value = 1234
 
 #if 0
             ngx_log_error(NGX_LOG_ALERT, hinit->pool->log, 0,
@@ -888,9 +919,20 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 #endif
         }
 
-        // n = 0; i = 1; nelts = 1; 所以不走这段逻辑
+        /*
+         * 这个循环是用来把当前域名和names中的后续域名做对比,假设names的值如下:
+         * 	 names
+         * 		com.baidu.
+         * 		com.jd.
+         * 		com.jd.aa.
+         * 如果当前域名是com.baidu.那么n就是0,那么这个循环会和剩下的两个域名做比较
+         */
         for (i = n + 1; i < nelts; i++) {
             if (ngx_strncmp(names[n].key.data, names[i].key.data, len) != 0) {
+            	/*
+            	 * 比较com.baidu.和com.jd.在前len字符长度中的值是否相同,这个len值一般包括‘.’符号
+            	 * 如果相同就不走这个逻辑
+            	 */
                 break;
             }
 
@@ -898,9 +940,27 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
                 && names[i].key.len > len
                 && names[i].key.data[len] != '.')
             {
+            	/*
+            	 * 当要比较的两个域名是下面两种情况的时候会走这段逻辑
+            	 * 		com
+            	 * 		coma.jd
+            	 */
                 break;
             }
 
+            /*
+             * 此时next_names数组的值如下:
+             *   next_names:
+             * 		baidu.
+             * 当走到这里的时候可以明确出com.baidu.和com.jd.这两个域名的前半部分‘com.’是相同的,当下面代码执行完毕后,next_names值如下:
+             * 	 next_names:
+             * 	 	baidu.
+             * 	 	jd.
+             * 可以看到都去掉了域名的前半部分'com.'
+             *
+             * 此时next_name = jd.
+             * 此时next_name->value = ngx_http_core_srv_conf_t结构体
+             */
             next_name = ngx_array_push(&next_names);
             if (next_name == NULL) {
                 return NGX_ERROR;
@@ -917,11 +977,23 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 #endif
         }
 
-        // com.jd.m.  next_names.elts = jd.m.
+        /*
+         * next_names:
+         * 	  baidu.
+         * 	  jd.
+         */
         if (next_names.nelts) {
 
             h = *hinit;
-            // 这一步非常重要,如果一个域名有多个名字组成就会走这个逻辑
+
+            /*
+             * 将h.hash置成空,确保ngx_hash_wildcard_init()方法在间接调用ngx_hash_init()方法时
+             *    hinit->hash = ngx_pcalloc(hinit->pool, sizeof(ngx_hash_wildcard_t) + size * sizeof(ngx_hash_elt_t *));
+             * 最前面是一个ngx_hash_wildcard_t结构体大小的空间
+             * 注意上面的hinit就是下面的h地址,也就是传入ngx_hash_wildcard_init()方法的&hash
+             *
+             * 这一步置空很重要
+             */
             h.hash = NULL;
 
             if (ngx_hash_wildcard_init(&h, (ngx_hash_key_t *) next_names.elts,
@@ -933,18 +1005,72 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 
             wdc = (ngx_hash_wildcard_t *) h.hash;
 
-            if (names[n].key.len == len) {// 感觉永远不会走这段代码呢?
+            if (names[n].key.len == len) {// 感觉永远不会走这段代码呢? TODO
                 wdc->value = names[n].value;
             }
 
-            // 有点是11 没点是10(匹配没有 * 的通配符); 比如*.jd.com这种是11   .jd.com这种是10
+            /*
+             * 走到这里表示curr_names数组值是:
+             * 		curr_names:
+             * 		    com
+             * 而name的值是:
+             * 		name.key = {len = 3, data = 0x7246fe "com.baidu."}
+             * 		name->value = 指向ngx_hash_wildcard_t结构体
+             *
+             * 也就是说在最终的hash机构中有这样一个键值对,他的键名字是'com',他的值是指向ngx_hash_wildcard_t结构体的指针
+             *
+             * 另外可以看到name->value指针地址最后两位可以是11或10两个值
+             *   11: 表示name->value指向一个ngx_hash_wildcard_t结构体,需要一直匹配到底,并且不能回溯
+             *       并且当前name有对应的next_names,next_names中的值会再次组成一个hash结构并放到name->value指向的ngx_hash_wildcard_t结构体中
+             *       在ngx配置文件中可以是"*.jd.com"或".jd.com"这两种类型的域名,他们会被转换成"com.jd.或com.jd"
+             *       如果在ngx中配置的域名是"*.jd.com"的话因为com后面是一个"."符号,所以dot为1,所以name->value后两位是11
+             *       此时name->key只能是"com"
+             *       这个配置只能匹配xxx.jd.com域名
+             *       比如有yyy.com这样的域名,当匹配到com时需要继续向下匹配,但是yyy无法和后面的jd匹配,并且又不能回溯到第一次对com的匹配,所以匹配失败
+             *
+             *   10: 表示name->value指向一个ngx_hash_wildcard_t结构体,需要一直匹配到底,但是可以回溯
+             *       并且当前name有对应的next_names,next_names中的值会再次组成一个hash结构并放到name->value指向的ngx_hash_wildcard_t结构体中
+             *       当ngx配置文件中是".com"和"*.jd.com"(或".jd.com")时,他们会被转换成"com"和"com.jd."(或"com.jd")
+             *       此时被转换后的域名"com"后面没有".",所以dot为0,所以name->value后两位是10
+             *       此时name->key只能是"com"
+             *       这个配置配以匹配xxx.jd.com域名,也可以匹配xxx.com域名
+             *       比如有yyy.com这样的域名,当匹配到com时需要继续向下匹配,但此时yyy无法和jd匹配成功,那么可以回溯到上一个成功的匹配com,匹配成功
+             *
+             */
             name->value = (void *) ((uintptr_t) wdc | (dot ? 3 : 2));
 
         } else if (dot) {
-        	// 将键值对中,值的地址的最后一位设置成1,然后赋值给name->value这个指针变量
-        	// 为什么?
+        	/*
+        	 * 走到这里说明name是某个域名的最后一部分了(比如"com." 或 "com.jd."的后半部分"jd."),并且这个域名的最后一部分是以'.'结尾的
+        	 * 那么这时就不需要把name->value指向一个ngx_hash_wildcard_t结构体了,当前name已经是域名的最后一部分了.
+        	 * 这个时候把指向ngx_http_core_srv_conf_t这个结构体的指针的最后一位设置为1,后续查找的时候可以从这个指针地址中取出这个值然后做对比
+        	 *
+        	 * 在32位系统中,指针按4个字节对齐所以地址肯定是4的倍数,也就是说地址的最后两位肯定是00
+        	 * 在64位系统中,指针按8个字节对齐所以地址肯定是8的倍数,也就是说地址的最后三位肯定是000
+        	 *
+        	 * 走到这里表明当前域名在配置文件中是带‘*’号的前置通配符,比如
+        	 * 		*.com
+        	 * 		*.jd.com
+        	 *
+        	 * 走到这里可以看到name->value指针地址最后两位只能是01
+        	 *   01: 表示name->value指向一个数据结构体(构造server{}块对应域名时是ngx_http_core_srv_conf_t),直接匹配
+        	 *       并且当前name没有对应的next_names,就是说这是域名的最后一部分
+        	 *       在ngx配置文件中可以是"*.jd.com"或"*.com",他们会被转换成"com.jd.或com.",可以看到转换后的域名最后有一个"."符号
+        	 *       此时name->key只能是"jd"或"com",也就是域名的最后一部分
+        	 *       如果在ngx中配置的域名是"*.jd.com",因为最后一个部分"jd"后面是一个"."符号,所以dot为1,所以name->value后两位是01
+        	 *       这个配置配可以匹配xxx.jd.com域名
+        	 */
             name->value = (void *) ((uintptr_t) name->value | 1);
         }
+
+        /*
+         * 最后还有一种情况是00
+         *   00: 表示name->value指向一个数据结构体(构造server{}块对应域名时是ngx_http_core_srv_conf_t),直接匹配
+         *       当前name没有对应的next_names,并且后面也没有"."符号,所以不会为name->value的后两位设置值,所以他们默认是00
+         *       在ngx配置文件中可以是".jd.com"或".com",他们会被转换成"com.jd"或com"
+         *       此时name->key只能是"jd"或"com",也就是域名的最后一部分
+         *       如果在ngx中配置的域名是".jd.com",那么可以匹配"xxx.jd.com"域名
+         */
     }
 
     if (ngx_hash_init(hinit, (ngx_hash_key_t *) curr_names.elts,
@@ -1516,10 +1642,11 @@ wildcard:
 
     /*
      * 这里拷贝完毕之后会去掉'.'和'*'两个符号,比如*.jd.com和.jd.com最终都会变成jd.com
-     * 也就是说在进行域名冲突检测时会把'.'和'*'两个符号都去掉然后在比较,但是最终存放到hash结构中的键只会去掉'*'符号,
+     * 也就是说在进行域名冲突检测时会把'.'和'*'两个符号都去掉然后在比较
+     *
+     * 但是最终存放到hash结构中的键只会去掉'*'符号
      * 比如*.jd.com,在检测冲突时用jd.com,放入hash(hwc变量)结构中时是com.jd.
      * 比如.jd.com,在检测冲突时用jd.com,放入hash(hwc变量)结构中时是com.jd
-     *
      */
     ngx_memcpy(name->data, key->data + skip, name->len);
 

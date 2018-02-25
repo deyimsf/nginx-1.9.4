@@ -851,7 +851,10 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-    // 初始化存放http各个阶段的数组
+    /*
+     * 初始化存放http各个阶段方法的数组
+     * 这一步完成之后第三方模块才能把自己的方法注册到对应的阶段中
+     */
     if (ngx_http_init_phases(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -948,7 +951,7 @@ failed:
 
 
 /*
- * 初始化http模块的阶段,其实就是初始化每个阶段的数组
+ * 初始化http模块的阶段,其实就是初始化每个阶段的数组,只有初始化完毕后第三方模块才能将自己的方法注入到不同的阶段
  *
  * 只初试化了7个阶段,其它四个阶段是不可介入的
  */
@@ -2449,13 +2452,37 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 
             if (addr[a].servers.nelts > 1
 #if (NGX_PCRE)
+            		/* TODO 这个值在什么情况下是1 */
                 || addr[a].default_server->captures
 #endif
                )
             {
             	/*
-            	 * 只有存在多个server{}块才会进到这里,因为如果只有一个server{}块的话就会变成默认server{}块,默认server{}块不需要
-            	 * 做域名匹配,因此也就不需要做构造通配符hash结构了
+            	 * 只有同一个地址对应对个server{}的时候才会走到这里,比如:
+            	 * 		server {
+            	 *			listen 127.0.0.1:80;
+            	 *			server_name xxx;
+            	 * 		}
+            	 *
+            	 *		server {
+            	 *			listen 127.0.0.1:80;
+            	 *			server_name yyy;
+            	 *		}
+            	 * 这个时候相当于同一个地址(127.0.0.1:80)包含了两个server{}块,也就是addr[a].servers.nelts等于2,这个时候
+            	 * 就需要用域名来区分是哪一个server{}块,所以就需要构造用于匹配域名的hash结构体
+            	 *
+            	 * 但是当同一个地址只对应一个server{}块的时候,就不需要构造hash结构体了,因为就一个还匹配个屁呀,比如:
+            	 * 		server {
+            	 * 			listen 127.0.0.1:80;
+            	 * 			server_name xxx;
+            	 * 		}
+            	 *
+            	 * 		server {
+            	 * 			listen 127.0.0.1:8080;
+            	 * 			server_name yyy;
+            	 * 		}
+            	 * 这里虽然有两个server{}块,但是每个server{}块对应的地址是不相同的,所以就不需要为这两个server{}块中的域名构造hash结构
+            	 *
             	 */
                 if (ngx_http_server_names(cf, cmcf, &addr[a]) != NGX_OK) {
                     return NGX_ERROR;
@@ -2483,6 +2510,32 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
  * addr->wc_head: 存放带前置通配符的域名(如: *.jd.com)
  * addr->wc_tail: 存放带后置通配符的域名(如: www.jd.*)
  * addr->regex: 存放正则匹配的域名(如: www.\d.com)
+ *
+ *
+ * 只有同一个地址对应对个server{}的时候才会用到这个方法,比如:
+ * 		server {
+ *			listen 127.0.0.1:80;
+ *			server_name xxx;
+ * 		}
+ *
+ *		server {
+ *			listen 127.0.0.1:80;
+ *			server_name yyy;
+ *		}
+ * 这个时候相当于同一个地址(127.0.0.1:80)包含了两个server{}块,也就是addr[a].servers.nelts等于2,这个时候
+ * 就需要用域名来区分是哪一个server{}块,所以就需要构造用于匹配域名的hash结构体
+ *
+ * 但是当同一个地址只对应一个server{}块的时候,就不需要构造hash结构体了,因为就一个还匹配个屁呀,比如:
+ * 		server {
+ * 			listen 127.0.0.1:80;
+ * 			server_name xxx;
+ * 		}
+ *
+ * 		server {
+ * 			listen 127.0.0.1:8080;
+ * 			server_name yyy;
+ * 		}
+ * 这里虽然有两个server{}块,但是每个server{}块对应的地址是不相同的,所以就不需要为这两个server{}块中的域名构造hash结构
  *
  */
 static ngx_int_t
@@ -2534,6 +2587,9 @@ ngx_http_server_names(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
      */
     cscfp = addr->servers.elts;
 
+    /*
+     * 下面这个循环主要用来为后续创建域名匹配hash结构准备数据
+     */
     for (s = 0; s < addr->servers.nelts; s++) {
 
     	/*
@@ -2608,6 +2664,12 @@ ngx_http_server_names(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
         ngx_qsort(ha.dns_wc_head.elts, (size_t) ha.dns_wc_head.nelts,
                   sizeof(ngx_hash_key_t), ngx_http_cmp_dns_wildcards);
 
+        /*
+         * 将hash.hash置成空,确保ngx_hash_wildcard_init()方法在间接调用ngx_hash_init()方法时
+         *    hinit->hash = ngx_pcalloc(hinit->pool, sizeof(ngx_hash_wildcard_t) + size * sizeof(ngx_hash_elt_t *));
+         * 最前面是一个ngx_hash_wildcard_t结构体大小的空间
+         * 注意上面的hinit就是下面的hash地址,也就是传入ngx_hash_wildcard_init()方法的&hash
+         */
         hash.hash = NULL;
         hash.temp_pool = ha.temp_pool;
 
