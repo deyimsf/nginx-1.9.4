@@ -1,60 +1,10 @@
 
-
-hash结构模糊查询
-
-
-ngx_http_optimize_servers
- ngx_http_server_names()  
-    ngx_hash_wildcard_init()
-
-
- ngx_hash_wildcard_init()方法中关于前置通配符的逻辑基本了解
- 比如了解了name->value中后两位掩码的作用
- 但是产生了一个疑问,为什么区分01和00,感觉匹配的时候规则是一样的,只不过在配置文件的时候一个待星号一个不带
-
- TODO ngx_hash_wildcard_init()方法
-   看为什么区分01和00
-   看前置通配符的查找规则是不是和自己分析的一直
-   看ngx_hash_wildcard_init()方法中关于后置通配符的规则
-   看后置通配符的查找规则是不是和自己分析的一直
-
- 
+TODO 明天 
+  共享内存?
 
 
 
-
-
-        /*
-         * the 2 low bits of value have the special meaning:
-         *     00 - value is data pointer for both "example.com"
-         *          and "*.example.com";
-         *     01 - value is data pointer for "*.example.com" only;
-         *     10 - value is pointer to wildcard hash allowing
-         *          both "example.com" and "*.example.com";
-         *     11 - value is pointer to wildcard hash allowing
-         *          "*.example.com" only.
-         */
-
-
-        /*
-         * the 2 low bits of value have the special meaning:
-         *     00 - value is data pointer;
-         *     11 - value is pointer to wildcard hash allowing "example.*".
-         */
-
-
-
-
-
-
-
-
-
-
-
-
- 共享内存 ?
- 以后需要细看的
+以后需要细看的
   http://nginx.org/en/docs/dev/development_guide.html#http_variables
   http://nginx.org/en/docs/dev/development_guide.html#http_complex_values
   变量脚本引擎
@@ -62,6 +12,15 @@ ngx_http_optimize_servers
  
 
  
+
+
+
+
+
+
+
+
+
 
 
 
@@ -115,11 +74,6 @@ access_by_lua指令调用ngx.print()方法
 ngx.location.capture(“/uri”)这个方法会阻塞后面的代码
   无论这个方法用在什么阶段,当这个方法没有返回的时候,ngx不会走后面的阶段,过滤器也不会走
   这种逻辑适用于ngx_lua中的所有阻塞方法,包括cosocket、ngx.print等
-
-
-
-
-
 
 
 

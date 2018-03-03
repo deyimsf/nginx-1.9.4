@@ -82,7 +82,11 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 
     n = len;
 
-    // www.jd.com
+    /*
+     * www.jd.com
+     *
+     * 从域名的右边开始,先从hash结构体中找com
+     */
     while (n) {
         if (name[n - 1] == '.') {
             break;
@@ -101,6 +105,9 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
     ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0, "key:\"%ui\"", key);
 #endif
 
+    /*
+     * 从常规hash结构体中找
+     */
     value = ngx_hash_find(&hwc->hash, key, &name[n], len - n);
 
 #if 0
@@ -108,6 +115,9 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 #endif
 
     if (value) {
+    	/*
+    	 * 走到这里表示找到了
+    	 */
 
         /*
          * the 2 low bits of value have the special meaning:
@@ -121,43 +131,122 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
          */
 
         if ((uintptr_t) value & 2) {
+        	/*
+        	 * 处理位掩码是10或11的情况
+        	 */
 
             if (n == 0) {
+            	/*
+            	 * 表示请求的域名已经匹配完毕了
+            	 */
 
                 /* "example.com" */
 
                 if ((uintptr_t) value & 1) {
+                	/*
+                	 * 走到这里说明掩码是11
+                	 *
+                	 * 请求域名已经匹配完毕了仍然没有匹配到结果,比如请求域名是:
+                	 *     a.jd.com
+                	 * ngx中配置的通配符是:
+                	 *     *.m.a.jd.com
+                	 * 可以看到当请求域名匹配到字符"a"的时候仍然无法和ngx中配置的域名相匹配,所以这里直接返回NULL
+                	 */
                     return NULL;
                 }
+
+                /*
+                 * 走到这里说明掩码是10,并且请求域名已经匹配完毕了,那么就返回hwc->value中的值
+                 *
+                 * 比如请求域名是:
+                 *    a.jd.com
+                 * ngx中配置的通配符是:
+                 *    *.m.a.jd.com
+                 *    *.a.jd.com
+                 */
 
                 hwc = (ngx_hash_wildcard_t *)
                                           ((uintptr_t) value & (uintptr_t) ~3);
                 return hwc->value;
             }
 
+            /*
+             * n != 0 表示还没有匹配完请求域名,比如请求域名是:
+             *     a.jd.com
+             * ngx中配置的通配符是:
+             *     *.m.a.jd.com
+             *     *.com
+             * 这种情况就会走下面的逻辑
+             */
             hwc = (ngx_hash_wildcard_t *) ((uintptr_t) value & (uintptr_t) ~3);
 
             value = ngx_hash_find_wc_head(hwc, name, n - 1);
 
+            /*
+             * 假设ngx中配置的通配符是:
+             *    *.a.jd.com
+             *    *.com
+             * 如果请求域名是:
+             *    www.a.jd.com
+             * 则走下面的if逻辑块,如果请求的域名是:
+             *    www.com
+             * 则不走下面的if逻辑块,而是返回hwc->value中的值
+             *
+             */
             if (value) {
                 return value;
             }
 
+            /*
+             * 如果掩码是10,那么hwc->value是一个有效值(比如ngx_http_core_srv_conf_t结构体)
+             * 如果掩码是11,那么hwc->value是一个无效值(比如NULL)
+             */
             return hwc->value;
         }
 
+        /*
+         * 处理掩码是00和01的情况
+         */
         if ((uintptr_t) value & 1) {
+        	/*
+        	 * 掩码是01的情况
+        	 */
 
             if (n == 0) {
+            	/*
+            	 * 请求域名已经匹配完毕,但是仍然没有匹配成功
+            	 *
+            	 * 请求域名:
+            	 *     www.jd.com
+            	 * ngx配置是:
+            	 *     *.www.jd.com
+            	 * 也就是说模式
+            	 *     *.www.jd.com
+            	 * 匹配不了请求域名
+            	 *     www.jd.com
+            	 * 但是他可以匹配请求域名
+            	 *     .www.jd.com
+            	 *
+            	 * 掩码00和01的区分主要是为了这一步
+            	 */
 
                 /* "example.com" */
 
                 return NULL;
             }
 
+            /*
+             * 请求域名还没有匹配完毕就已经匹配成功了,比如请求域名是:
+             *     m.www.jd.com
+             * ngx配置的是:
+             *     *.ww.jd.com
+             */
             return (void *) ((uintptr_t) value & (uintptr_t) ~3);
         }
 
+        /*
+         * 位掩码是00的情况
+         */
         return value;
     }
 
@@ -165,6 +254,9 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 }
 
 
+/*
+ * 从后置通配符散列表中查找元素
+ */
 void *
 ngx_hash_find_wc_tail(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 {
@@ -770,15 +862,43 @@ found:
 
 
 /**
- * 初始化带统配符的散列表
+ * 将带通配符的域名放入到对应的散列表中
  *
  * *hinit: 用于构造hash结构的临时结构体
  * *names: hash机构中要存入的键值对,该入参是个键值对数组
  *		   全是已经去掉通配符的key,如 com.jd.(*.jd.com)、 com.jd(.jd.com)、 www.jd.(www.jd.*)
  * nelts: 键值对个数,也就是names的个数
  *
- * TODO : 大概意思明白了,但细节没看懂,以后再看吧
+ * 举个例子,ngx配置文件有如下两个域名
+ *   *.m.jd.com
+ *   *.com
+ * 调用该方法前会转换成如下形式
+ *   com.jd.m.
+ *   com.
+ * 用如下符号表示ngx_hash_wildcard_t对象指针地址的最后两位掩码
+ *   10 --> []
+ *   11 --> {}
+ * 用如下符号表示原始对象指针地址的后两位掩码
+ *   00 --> ()
+ *   01 --> <>
+ * 那么这两个域名会形成如下hash结构体,其中大写的value代表ngx_hash_t结构体中的key对应的value值,
+ * 而小写的value值则代表ngx_hash_wildcard_t结构体中的value值
  *
+ * typedef struct {
+ *   ngx_hash_t        hash;
+ *   void             *value;
+ * } ngx_hash_wildcard_t;
+ *
+ * key  :  VALUE
+ * com --> [        key  :  VALUE
+ *            hash: jd --> {        key : VALUE
+ *                            hash: m --> <ngx_http_core_srv_conf_t>
+ *
+ *                            value: NULL
+ *          		       }
+ *
+ *            value: ngx_http_core_srv_conf_t
+ *         ]
  */
 ngx_int_t
 ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
@@ -1005,7 +1125,16 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 
             wdc = (ngx_hash_wildcard_t *) h.hash;
 
-            if (names[n].key.len == len) {// 感觉永远不会走这段代码呢? TODO
+            if (names[n].key.len == len) {
+
+            	/*
+            	 * 当ngx配置文件中同时出现如下两个域名时会进入到这个逻辑
+            	 *     *.com
+            	 *     *.jd.com
+            	 * 此时的len等于4,names[n].key是".com",这个逻辑是为了和后面的位掩码"10"打配合的
+            	 * 因为掩码是"10"的时候需要存key".com" 对应的真正的值而不是ngx_hash_wildcard_t结构体
+            	 */
+
                 wdc->value = names[n].value;
             }
 
@@ -1028,7 +1157,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
              *       这个配置只能匹配xxx.jd.com域名
              *       比如有yyy.com这样的域名,当匹配到com时需要继续向下匹配,但是yyy无法和后面的jd匹配,并且又不能回溯到第一次对com的匹配,所以匹配失败
              *
-             *   10: 表示name->value指向一个ngx_hash_wildcard_t结构体,需要一直匹配到底,但是可以回溯
+             *   10: 表示name->value指向一个ngx_hash_wildcard_t结构体,需要一直匹配到底,但是可以回溯,回溯的意思是,这是一个成功的匹配,如果后续没有匹配成功则可以使用该值
              *       并且当前name有对应的next_names,next_names中的值会再次组成一个hash结构并放到name->value指向的ngx_hash_wildcard_t结构体中
              *       当ngx配置文件中是".com"和"*.jd.com"(或".jd.com")时,他们会被转换成"com"和"com.jd."(或"com.jd")
              *       此时被转换后的域名"com"后面没有".",所以dot为0,所以name->value后两位是10
@@ -1036,6 +1165,9 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
              *       这个配置配以匹配xxx.jd.com域名,也可以匹配xxx.com域名
              *       比如有yyy.com这样的域名,当匹配到com时需要继续向下匹配,但此时yyy无法和jd匹配成功,那么可以回溯到上一个成功的匹配com,匹配成功
              *
+             * 一个潜规则,wdc指向的数据地址对齐方式必须大于等于4,这样才能保证该地址的最后两位始终是0
+             * 确保wdc指向的数据地址大于等于4就是要确保ngx_hash_wildcard_t结构体的对齐方式大于等于4,那就是要确保该结构体中有一个4字节类型的数据就行,
+             * 比如指针(32位是4对齐,64位是8对齐)
              */
             name->value = (void *) ((uintptr_t) wdc | (dot ? 3 : 2));
 
@@ -1044,9 +1176,6 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
         	 * 走到这里说明name是某个域名的最后一部分了(比如"com." 或 "com.jd."的后半部分"jd."),并且这个域名的最后一部分是以'.'结尾的
         	 * 那么这时就不需要把name->value指向一个ngx_hash_wildcard_t结构体了,当前name已经是域名的最后一部分了.
         	 * 这个时候把指向ngx_http_core_srv_conf_t这个结构体的指针的最后一位设置为1,后续查找的时候可以从这个指针地址中取出这个值然后做对比
-        	 *
-        	 * 在32位系统中,指针按4个字节对齐所以地址肯定是4的倍数,也就是说地址的最后两位肯定是00
-        	 * 在64位系统中,指针按8个字节对齐所以地址肯定是8的倍数,也就是说地址的最后三位肯定是000
         	 *
         	 * 走到这里表明当前域名在配置文件中是带‘*’号的前置通配符,比如
         	 * 		*.com
@@ -1059,6 +1188,10 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
         	 *       此时name->key只能是"jd"或"com",也就是域名的最后一部分
         	 *       如果在ngx中配置的域名是"*.jd.com",因为最后一个部分"jd"后面是一个"."符号,所以dot为1,所以name->value后两位是01
         	 *       这个配置配可以匹配xxx.jd.com域名
+        	 *
+        	 * 一个潜规则,name->value指向的数据的地址对齐方式必须大于等于2,这样才能保证该地址的最后一位始终是0,但是这里有一个问题,如果这里
+        	 * 只保证地址最后一位是0,就无法跟上面的地址后两位是0的方式区分开来,所以为了保证一致,这里也需要保证name->value指向数据的地址必须
+        	 * 以大于等于4的方式对齐,这样后续在取这些标记的时候直接取后两位然后跟对应的数字做对比就可以了.
         	 */
             name->value = (void *) ((uintptr_t) name->value | 1);
         }
