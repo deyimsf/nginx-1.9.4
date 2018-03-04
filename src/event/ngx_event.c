@@ -56,9 +56,16 @@ static ngx_atomic_t   connection_counter = 1;
 ngx_atomic_t         *ngx_connection_counter = &connection_counter;
 
 // 映射的共享内存地址
+/*
+ *
+ */
 ngx_atomic_t         *ngx_accept_mutex_ptr;
-// 共享缓存锁
+
+/*
+ * 一个锁
+ */
 ngx_shmtx_t           ngx_accept_mutex;
+
 /*
  * 是否使用互斥锁(accept_mutex),1使用, 0不使用
  * 如果开启了accept_mutex锁,并且当前进程不是master进程,并且worker的个数大于1,才会使用这个锁
@@ -628,7 +635,10 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 #endif /* !(NGX_WIN32) */
 
 
-    // 如果没有开启master-worker模式,则不需要执行后续代码
+    /*
+     * 如果没有开启master-worker模式,则不需要执行后续代码
+     * 后续代码是为多worker准备的,使用共享缓存来统计ngx的运行情况
+     */
     if (ccf->master == 0) {
     	/*
     	 * 没有开启master-worker模块式,像ngx_stat_accepted、ngx_stat_handled等这样的指针变量,
@@ -696,7 +706,8 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
     /*
      * 共享缓存(ngx_accept_mutex)中的锁指针,指向分配好的共享缓存地址
-     * (&ngx_accept_mutex)->lock = &(shared->lock)
+     *    (&ngx_accept_mutex)->lock = &(shared->lock)
+     * 为ngx_accept_mutex锁分配内存
      */
     if (ngx_shmtx_create(&ngx_accept_mutex, (ngx_shmtx_sh_t *) shared,
                          cycle->lock_file.data)
@@ -707,7 +718,10 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
     /**下面的代码负责把共享内存的地址赋值给各个变量**/
 
-    // 用来记录总的连接使用数的内存
+    /*
+     * 用来记录总的连接使用数的内存
+     * 刨除第一个cl块,第一个cl块用来作为锁变量(ngx_shmtx_sh_t)使用了
+     */
     ngx_connection_counter = (ngx_atomic_t *) (shared + 1 * cl);
 
     (void) ngx_atomic_cmp_set(ngx_connection_counter, 0, 1);

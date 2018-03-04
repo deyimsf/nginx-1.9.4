@@ -1,17 +1,25 @@
 
-TODO 明天 
-  共享内存?
 
 
+TODO 开始看变量
+ 变量的实现方式
+ 变量脚本引擎
 
-以后需要细看的
+ 先看下面的文档
   http://nginx.org/en/docs/dev/development_guide.html#http_variables
   http://nginx.org/en/docs/dev/development_guide.html#http_complex_values
-  变量脚本引擎
 
  
 
  
+
+
+
+
+
+
+
+
 
 
 

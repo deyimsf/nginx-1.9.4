@@ -15,19 +15,32 @@
 static void ngx_shmtx_wakeup(ngx_shmtx_t *mtx);
 
 
+/*
+ * 创建锁
+ * 其实就是为锁ngx_shmtx_t分配地址
+ */
 ngx_int_t
 ngx_shmtx_create(ngx_shmtx_t *mtx, ngx_shmtx_sh_t *addr, u_char *name)
 {
+	/*
+	 * 通过设置这个lock变量来标记是否有锁
+	 */
     mtx->lock = &addr->lock;
 
     if (mtx->spin == (ngx_uint_t) -1) {
         return NGX_OK;
     }
 
+    /*
+     * 最多自旋2048次
+     */
     mtx->spin = 2048;
 
 #if (NGX_HAVE_POSIX_SEM)
 
+    /*
+     * 信号量实现锁
+     */
     mtx->wait = &addr->wait;
 
     if (sem_init(&mtx->sem, 1, 0) == -1) {

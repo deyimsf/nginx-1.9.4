@@ -583,7 +583,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
      * 创建共享变量,跟cycle->open_files链表相似,有其它模块向链表中添加ngx_shm_zone_t结构体,
      * 然后在这里统一创建。
      *
-     * 为了方便向shared_memeory中添加元素,ngx封装了一个ngx_shared_memory_add方法。
+     * 为了方便向shared_memeory中添加元素,ngx封装了一个ngx_shared_memory_add()方法。
      */
     part = &cycle->shared_memory.part;
     shm_zone = part->elts;
@@ -666,15 +666,27 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             break;
         }
 
-        // 创建共享内存
+        /*
+         * 创建共享内存
+         */
         if (ngx_shm_alloc(&shm_zone[i].shm) != NGX_OK) {
             goto failed;
         }
 
+        /*
+         * 将每个共享内存的开始一段内存初始化成ngx_slab_pool_t结构体
+         *    sp = (ngx_slab_pool_t *) zn->shm.addr;
+         * 并通过ngx_slab_init(sp)方法初始化sp对象中的值
+         * 所以这里有一个潜规则:
+         * 	 共享内存的大小不能小于ngx_slab_pool_t结构体的大小
+         */
         if (ngx_init_zone_pool(cycle, &shm_zone[i]) != NGX_OK) {
             goto failed;
         }
 
+        /*
+         * 创建好共享内存后回调init()方法
+         */
         if (shm_zone[i].init(&shm_zone[i], NULL) != NGX_OK) {
             goto failed;
         }
@@ -1128,6 +1140,15 @@ ngx_destroy_cycle_pools(ngx_conf_t *conf)
 }
 
 
+/*
+ * 将共享内存的开始一段内存初始化成ngx_slab_pool_t结构体
+ *    sp = (ngx_slab_pool_t *) zn->shm.addr;
+ * 并通过ngx_slab_init(sp)方法初始化sp对象中的值
+ *
+ * 所以这里有一个潜规则:
+ * 	 共享内存的大小不能小于ngx_slab_pool_t结构体的大小
+ * 	 大部分模块都要求共享内存不小于8个ngx_pagesize
+ */
 static ngx_int_t
 ngx_init_zone_pool(ngx_cycle_t *cycle, ngx_shm_zone_t *zn)
 {
@@ -1474,7 +1495,7 @@ ngx_reopen_files(ngx_cycle_t *cycle, ngx_uid_t user)
 
 
 /*
- * 向cycle->shared_memory中添加共享内存
+ * 向cycle->shared_memory中添加一个共享内存配置
  *
  */
 ngx_shm_zone_t *
@@ -1488,6 +1509,9 @@ ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)
     shm_zone = part->elts;
 
     for (i = 0; /* void */ ; i++) {
+    	/*
+    	 * 这个循环用来从cycle->shared_memory寻找和name相同的共享内存,如果找到则返回,找不到则跳过循环
+    	 */
 
         if (i >= part->nelts) {
             if (part->next == NULL) {

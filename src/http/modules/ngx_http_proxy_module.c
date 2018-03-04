@@ -4335,6 +4335,12 @@ ngx_http_proxy_cache(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_OK;
     }
 
+    /*
+     * 这里是故意把共享内存的大小设置为0的,用来保证proxy_cache指令使用的共享内存已经被proxy_cache_path指令设置了,
+     * 如果在cycle->shared_memory数组中不存在一个名字叫value[1]的共享内存,那ngx_shared_memory_add()方法返回NULL
+     *
+     * proxy_cache指令用到的共享内存是通过proxy_cache_path指令在ngx_http_file_cache.c/ngx_http_file_cache_set_slot()方法中设置的.
+     */
     plcf->upstream.cache_zone = ngx_shared_memory_add(cf, &value[1], 0,
                                                       &ngx_http_proxy_module);
     if (plcf->upstream.cache_zone == NULL) {
