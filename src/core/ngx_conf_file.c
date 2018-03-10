@@ -309,7 +309,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
          *
          * 目前使用的模块有:
          * /src/http/modules/ngx_http_charset_filter_module.c:1286:    cf->handler = ngx_http_charset_map;
-	     * /src/http/modules/ngx_http_geo_module.c:456:    cf->handler = ngx_http_geo;
+         * /src/http/modules/ngx_http_geo_module.c:456:    cf->handler = ngx_http_geo;
          * /src/http/modules/ngx_http_map_module.c:273:    cf->handler = ngx_http_map;
          * /src/http/modules/ngx_http_split_clients_module.c:168:    cf->handler = ngx_http_split_clients;
          * /src/http/ngx_http_core_module.c:3374:    cf->handler = ngx_http_core_type;
@@ -320,7 +320,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
              * the custom handler, i.e., that is used in the http's
              * "types { ... }" directive
              *
-             *	types {
+             *    types {
              *      {}; // 不允许出现这种情况
              *      text/html html; // 正常的情况
              *  }
@@ -336,11 +336,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
              *
              * 假设pfunc是一个指向函数的指针,*pfunc就是这个函数,按照这种解释,则我们在使用
              * 函数指针调用函数的时候应该使用 *pfunc 来调用函数,像这样
-             * 	    int c = (*pfunc)(5,6)
+             *     int c = (*pfunc)(5,6)
              * 历史上,贝尔实验室的C和Unix的开发者使用的就是这种观点,即
-             * 	    int c = (*pfunc)(5,6)
+             *     int c = (*pfunc)(5,6)
              * 而Berkeyly的Unix的扩展这采用函数指针的形式对其调用,即
-             *	    pfunc(5,6)
+             *     pfunc(5,6)
              * 标准C为了兼容性,两种方式都接受。
              */
             rv = (*cf->handler)(cf, NULL, cf->handler_conf);
@@ -534,16 +534,16 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  * 下面的操作取出的conf如下图:
                  *   cf->ctx|cycle->conf_ctx
                  *   -----
-                 *	 | * |
-                 *	 -----
-                 *	  \					   conf
-                 *	  ---------           -----
-                 *	  | * | ...           | * |
-                 *	  ---------           -----
-                 *	   \                 /
-                 *	    -----------------
-                 *	    |ngx_core_conf_t|
-                 *	    -----------------
+                 *   | * |
+                 *   -----
+                 *     \                  conf
+                 *    ---------           -----
+                 *    | * | ...           | * |
+                 *    ---------           -----
+                 *       \                 /
+                 *      -----------------
+                 *      |ngx_core_conf_t|
+                 *      -----------------
                  */
                 conf = ((void **) cf->ctx)[ngx_modules[i]->index];
 
@@ -553,8 +553,8 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  *
                  *
                  * 该指令类型是存放在配置文件的顶层区域的,比如:
-                 * 	核心事件模块(ngx_events_module)的"events {}"指令;
-                 * 	核心http模块(ngx_http_module)的"http {}"指令;
+                 *  核心事件模块(ngx_events_module)的"events {}"指令;
+                 *  核心http模块(ngx_http_module)的"http {}"指令;
                  *
                  * 没有使用NGX_DIRECT_CONF标记,则代表当前命令所在的模块使用到了cycle->conf_ctx的四层指针。
                  *
@@ -589,8 +589,8 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  *   | * |
                  *   -----
                  *     \                                            cf->ctx
-                 *	   --------------------------------------        -----
-                 *	   | * |  ...  |*ngx_events_module.index|        | * |
+                 *     --------------------------------------        -----
+                 *     | * |  ...  |*ngx_events_module.index|        | * |
                  *     --------------------------------------        -----
                  *                                       \            /
                  *                                       --------------
@@ -601,9 +601,9 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  *                                          | * | ... | * | 存放各个事件模块的配置结构体指针
                  *                                          ---------------
                  *                                            /         \
-                 *                              ------------------	  ------------------
-                 *                              |ngx_event_conf_t|	  |ngx_epoll_conf_t|
-                 *                              ------------------	  ------------------
+                 *                              ------------------    ------------------
+                 *                              |ngx_event_conf_t|    |ngx_epoll_conf_t|
+                 *                              ------------------    ------------------
                  *
                  * 另外,事件模块的cmd->conf都是零,貌似目前只有http模块使用了cmd->conf字段。
                  * 最终conf会指向具体的ngx_xxx_cont_t结构体。
@@ -613,26 +613,26 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  *  (所以,所有直接在http{}块下的指令,他们的第一个入参cf,都是下面的这种结构)
                  *  cycle->conf_ctx
                  *   -----
-                 *	 | * |
+                 *   | * |
                  *   -----
                  *    \        ngx_http_module.index                         cf->ctx
-                 *	   ---------------                                       ------
-                 *	   | * | ... | * | ngx_max_module个                       | * |
+                 *     ---------------                                       ------
+                 *     | * | ... | * | ngx_max_module个                       | * |
                  *     ---------------                                       ------
                  *                  \         ngx_http_conf_ctx_t               /
                  *                 -----------------------------------------------
                  *                 |  **main_conf  |  **srv_conf  |  **loc_conf  |
                  *                 -----------------------------------------------
-                 *                   /           	      /                      \
+                 *                   /                   /                      \
                  *          -------------          -------------               -------------
                  *          | * |...| * |          | * |...| * |               | * |...| * | 都是ngx_http_max_module个
                  *          -------------          -------------               -------------
-                 *            |  					 |                           |
-                 *  ---------------------------	  ---------------------------	--------------------------
-                 *	|ngx_http_core_main_conf_t|	  |ngx_http_core_main_conf_t|	|ngx_http_core_loc_conf_t|
-                 *	---------------------------	  ---------------------------	--------------------------
+                 *            |                      |                           |
+                 *  ---------------------------   ---------------------------   --------------------------
+                 *  |ngx_http_core_main_conf_t|   |ngx_http_core_main_conf_t|   |ngx_http_core_loc_conf_t|
+                 *  ---------------------------   ---------------------------   --------------------------
                  *
-                 *	server{}指令的ngx_http_core_server方法中不会用到conf这个入参,所以这里传递与否都无所谓。
+                 *  server{}指令的ngx_http_core_server方法中不会用到conf这个入参,所以这里传递与否都无所谓。
                  *
                  *
                  * 在http模块中:
@@ -644,7 +644,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  *  (所以,所有直接在server{}块下的指令,他们的第一个入参cf,都是下面的这种结构)
                  *  "+"边表示的图形代表是同一个结构体
                  *
-                 *	                                                                            cycle->conf_ctx
+                 *                                                                              cycle->conf_ctx
                  *                                                                                   -----
                  *                                                                                   | * |
                  *                                                                                   -----
@@ -652,7 +652,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  *                          -----                                                 ---------------------
                  *                          | * |                                                 | * | ... | * | ... | ngx_max_module个
                  *                          -----                                                 ---------------------
-                 *                            \	         ngx_http_conf_ctx_t                                   \         ngx_http_conf_ctx_t
+                 *                            \          ngx_http_conf_ctx_t                                   \         ngx_http_conf_ctx_t
                  *                          -----------------------------------------------------              -----------------------------------------------------
                  *                          |   **main_conf   |   **srv_conf   |   **loc_conf   |              |   **main_conf   |   **srv_conf   |   **loc_conf   |
                  *                          -----------------------------------------------------              -----------------------------------------------------
@@ -662,7 +662,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  *                  ---------------      ---------------            ---------------          +------------+   ---------------    ---------------
                  *                    |                   / ngx_http_core_srv_conf_t   \                                                   |                 |
                  *   +-------------------------+        ----------------------------    --------------------------       --------------------------     --------------------------
-                 *   |ngx_http_core_main_conf_t|        | * | *ctx |      ...  	   |    |ngx_http_core_loc_conf_t|       |ngx_http_core_srv_conf_t|     |ngx_http_core_loc_conf_t|
+                 *   |ngx_http_core_main_conf_t|        | * | *ctx |      ...      |    |ngx_http_core_loc_conf_t|       |ngx_http_core_srv_conf_t|     |ngx_http_core_loc_conf_t|
                  *   +-------------------------+        ----------------------------    --------------------------       --------------------------     --------------------------
                  *
                  */
@@ -719,8 +719,8 @@ invalid:
  * 比如worker算是一个单词, "abc 465 sfd"双引号中的内容也算一个单词
  *
  * 每成功解析出一个指令就会返回(一个指令会包含一个或多个单词):
- * 	1.对于普通指令,解析到“;”符号(如: use epoll;)
- * 	2.对于带花括号的,解析到"{"符号(如: events {}),剩下的花括号有events绑定发方法来完成
+ *  1.对于普通指令,解析到“;”符号(如: use epoll;)
+ *  2.对于带花括号的,解析到"{"符号(如: events {}),剩下的花括号有events绑定发方法来完成
  *
  */
 static ngx_int_t
@@ -769,9 +769,9 @@ ngx_conf_read_token(ngx_conf_t *cf)
 
     for ( ;; ) {
 
-    	/*
-    	 * 如果pos和last相等,则代表已经解析完缓冲区中的内容,需要从文件中读取新内容了
-    	 */
+        /*
+         * 如果pos和last相等,则代表已经解析完缓冲区中的内容,需要从文件中读取新内容了
+         */
         if (b->pos >= b->last) {
 
             if (cf->conf_file->file.offset >= file_size) {
@@ -804,7 +804,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
             len = b->pos - start;
 
             if (len == NGX_CONF_BUFFER) {
-            	// 一个单词不能大于缓冲区的大小
+                // 一个单词不能大于缓冲区的大小
                 cf->conf_file->line = start_line;
 
                 if (d_quoted) {
@@ -839,7 +839,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
             size = (ssize_t) (file_size - cf->conf_file->file.offset);
 
             if (size > b->end - (b->start + len)) {
-            	// 如果剩余文件的大小,大于缓冲区实际可以写入的大小,则使用缓冲区的大小
+                // 如果剩余文件的大小,大于缓冲区实际可以写入的大小,则使用缓冲区的大小
                 size = b->end - (b->start + len);
             }
 
@@ -873,7 +873,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
         ch = *b->pos++;
 
         if (ch == LF) {
-        	// 遇见换行符,则行数加一
+            // 遇见换行符,则行数加一
             cf->conf_file->line++;
 
             if (sharp_comment) {
@@ -888,7 +888,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
 
         // 当前正在解析转义字符
         if (quoted) {
-        	// 转义字符只有两个字符,如\t、\b等
+            // 转义字符只有两个字符,如\t、\b等
             quoted = 0;
             continue;
         }
@@ -936,10 +936,10 @@ ngx_conf_read_token(ngx_conf_t *cf)
 
             case ';':
             case '{':
-            	/*
-            	 * 如果单词的第一个字符是'{',那么前面一定要有一个指令名字
-            	 * 比如"events {",如果没有则肯定是错误的
-            	 */
+                /*
+                 * 如果单词的第一个字符是'{',那么前面一定要有一个指令名字
+                 * 比如"events {",如果没有则肯定是错误的
+                 */
                 if (cf->args->nelts == 0) {
                     ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                        "unexpected \"%c\"", ch);
@@ -947,10 +947,10 @@ ngx_conf_read_token(ngx_conf_t *cf)
                 }
 
                 if (ch == '{') {// 多此一举的判断?
-                	/*
-                	 * 如果单词的第一个字符是'{',则直接返回
-                	 * 花括号的解析交给 '{' 字符前面的指令去解析
-                	 */
+                    /*
+                     * 如果单词的第一个字符是'{',则直接返回
+                     * 花括号的解析交给 '{' 字符前面的指令去解析
+                     */
                     return NGX_CONF_BLOCK_START;
                 }
 
@@ -991,7 +991,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
             }
 
         } else {
-        	/*当前正在解析单词的过程中*/
+            /*当前正在解析单词的过程中*/
 
             if (ch == '{' && variable) {
                 continue;
@@ -1032,7 +1032,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
 
             // 解析出一个单词
             if (found) {
-            	// 将解析出的单词放入数组中
+                // 将解析出的单词放入数组中
                 word = ngx_array_push(cf->args);
                 if (word == NULL) {
                     return NGX_ERROR;
@@ -1055,19 +1055,19 @@ ngx_conf_read_token(ngx_conf_t *cf)
                         case '\'':
                         case '\\':
 
-        		    		/*
-        		    		 * 如果转义字符是这种形式
-        		    		 * name\"cdb  age\'person  cycle\\woker,则直接忽略这个'\'
-        		    		 * 不需要将字符'\'赋值到数组中
-        		    		 */
+                            /*
+                             * 如果转义字符是这种形式
+                             * name\"cdb  age\'person  cycle\\woker,则直接忽略这个'\'
+                             * 不需要将字符'\'赋值到数组中
+                             */
                             src++;
                             break;
 
                         case 't':
-        		   			/*
-        		   			 * 如果是转义"\t"
-        		   			 * 则将字符串形式的"\t",转换成计算语言的'\t'
-        		   			 */
+                            /*
+                             * 如果是转义"\t"
+                             * 则将字符串形式的"\t",转换成计算语言的'\t'
+                             */
                             *dst++ = '\t';
                             src += 2;
                             continue;
@@ -1092,12 +1092,12 @@ ngx_conf_read_token(ngx_conf_t *cf)
                 word->len = len;
 
                 if (ch == ';') {
-                	// 单词的下一个符号是';'则表示解析出一个完整指令
+                    // 单词的下一个符号是';'则表示解析出一个完整指令
                     return NGX_OK;
                 }
 
                 if (ch == '{') {
-                	// 单词的下一个字符是'{'则表示这是一个以花括号为入参的指令
+                    // 单词的下一个字符是'{'则表示这是一个以花括号为入参的指令
                     return NGX_CONF_BLOCK_START;
                 }
 
@@ -1223,7 +1223,7 @@ ngx_conf_open_file(ngx_cycle_t *cycle, ngx_str_t *name)
             }
 
             if (ngx_strcmp(full.data, file[i].name.data) == 0) {
-            	// 如果文件已经存在则直接返回
+                // 如果文件已经存在则直接返回
                 return &file[i];
             }
         }
