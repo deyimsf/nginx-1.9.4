@@ -18,17 +18,17 @@ typedef void *            ngx_buf_tag_t;
 typedef struct ngx_buf_s  ngx_buf_t;
 
 struct ngx_buf_s {
-	/*
-	 * pos和last代表实际使用的内存大小。
-	 *
-	 * pos >= start
-	 * last <= end
-	 *
-	 * 从缓存读内容,则增加pos值就可以,但是不能大于end
-	 * 向缓存写数据,则增加last值就可以,但是不能大于end
-	 *
-	 * 半开集的使用关系 [pos,last)
-	 */
+    /*
+     * pos和last代表实际使用的内存大小。
+     *
+     * pos >= start
+     * last <= end
+     *
+     * 从缓存读内容,则增加pos值就可以,但是不能大于end
+     * 向缓存写数据,则增加last值就可以,但是不能大于end
+     *
+     * 半开集的使用关系 [pos,last)
+     */
     u_char          *pos;
     u_char          *last;
     off_t            file_pos;
@@ -79,19 +79,19 @@ struct ngx_buf_s {
      *
      * 再比如addtion_filter中的add_after_body指令,他会用last_buf标记来确定是否要发送该指令,只有
      * 存在last_buf才会发送add_after_body指令,也就是说该指令只能在主请求中才能起作用:
-     * 		location /main {
-     * 			return 200 "main-->>> ";
-     * 			add_after_body /sub1;
-     * 		}
+     * 	    location /main {
+     * 	        return 200 "main-->>> ";
+     * 	        add_after_body /sub1;
+     * 	    }
      *
-     * 		location /sub1 {
-     * 			reutrn 200 "sub1-->>> "
-     * 			add_after_body /sub2;
-     * 		}
+     * 	    location /sub1 {
+     * 	        reutrn 200 "sub1-->>> "
+     * 	        add_after_body /sub2;
+     * 	    }
      *
-     * 		location /sub2 {
-     * 			reutrn 200 "sub2-->>> "
-     * 		}
+     * 	    location /sub2 {
+     * 	        reutrn 200 "sub2-->>> "
+     * 	    }
      * 当访问/main的时候,/sub1中的add_after_body指令是不起作用的,因为这个指令不能嵌套在子请求中
      * 当访问/sub1的时候,/sub1中的add_after_body指令是可以发出去的,因为他没有嵌套在子请求中
      *
@@ -99,11 +99,11 @@ struct ngx_buf_s {
      * 另行说明:
      * 	其实add_before_body指令也是不允许嵌套的,这个逻辑的限制是在ngx_http_addition_header_filter()
      * 	方法的下面的代码做限制的:
-     * 		if (r->headers_out.status != NGX_HTTP_OK || r != r->main) {
-	 *			return ngx_http_next_header_filter(r);
-	 *		}
+     * 	    if (r->headers_out.status != NGX_HTTP_OK || r != r->main) {
+	 *	        return ngx_http_next_header_filter(r);
+	 *       }
 	 *  当r != r->main的时候就不会走下面的逻辑:
-	 *  	ngx_http_set_ctx(r, ctx, ngx_http_addition_filter_module);
+	 *      ngx_http_set_ctx(r, ctx, ngx_http_addition_filter_module);
 	 *  这样在addition_body_filter方法中就不会发起任何子请求了
      *
      */
@@ -118,8 +118,8 @@ struct ngx_buf_s {
      * 所以last_buf一定是last_in_chain,但是last_in_chain不一定是last_buf.
      *
      * 基本上在请求第一次调用过滤器时,如果当前buf是最后一块buf,都会有如下的代码:
-     * 		b->last_buf = (r == r->main) ? 1 : 0;
-     *		b->last_in_chain = 1;
+     * 	    b->last_buf = (r == r->main) ? 1 : 0;
+     *	    b->last_in_chain = 1;
      * 可以看到只有主请求才会设置last_buf标记.
      */
     unsigned         last_in_chain:1;
@@ -178,28 +178,28 @@ struct ngx_output_chain_ctx_s {
     unsigned                     unaligned:1;
 #endif
     /*
-	 * 标记当前处理的数据是否需要在内存中,如果这个标记为1,那么即使支持sendfile,则当前数据也需要
-	 * 拷贝到内存中才能发送出去
-	 *
-	 * 比如/http/modules/ngx_http_gzip_filter_module.c过滤器,需要需要对输出的内容做压缩,
-	 * 所以需要把文件中的数据拷贝到内存中取处理(r->main_filter_need_in_memory)
-	 *
-	 * 比如/http/modules/ngx_http_gunzip_filter_module.c过滤器,因为要对输出的内容做解压,
-	 * 所以需要把文件中的数据拷贝到内存中取处理(r->filter_need_in_memory)
-	 *
-	 * 比如/http/modules/ngx_http_charset_filter_module.c过滤器,需要对输出的内容做编码
+     * 标记当前处理的数据是否需要在内存中,如果这个标记为1,那么即使支持sendfile,则当前数据也需要
+     * 拷贝到内存中才能发送出去
+     *
+     * 比如/http/modules/ngx_http_gzip_filter_module.c过滤器,需要需要对输出的内容做压缩,
+     * 所以需要把文件中的数据拷贝到内存中取处理(r->main_filter_need_in_memory)
+     *
+     * 比如/http/modules/ngx_http_gunzip_filter_module.c过滤器,因为要对输出的内容做解压,
+     * 所以需要把文件中的数据拷贝到内存中取处理(r->filter_need_in_memory)
+     *
+     * 比如/http/modules/ngx_http_charset_filter_module.c过滤器,需要对输出的内容做编码
      * 转换,所以需要把文件中的数据拷贝到内存中取处理(r->filter_need_in_memory)
-	 *
-	 * 所以开启gzip后sendfile就失效了
-	 */
+     *
+     * 所以开启gzip后sendfile就失效了
+     */
     unsigned                     need_in_memory:1;
 
    /*
-	* 类似ctx->need_in_memory,决定数据能否直接发送出去,不能的话就需要拷贝到内存中
-	*
-	* 模块/http/modules/ngx_http_charset_filter_module.c会用到这个标记,该过滤器用到了两个
-	* 标记r->filter_need_temporary和r->filter_need_in_memory
-	*/
+    * 类似ctx->need_in_memory,决定数据能否直接发送出去,不能的话就需要拷贝到内存中
+    *
+    * 模块/http/modules/ngx_http_charset_filter_module.c会用到这个标记,该过滤器用到了两个
+    * 标记r->filter_need_temporary和r->filter_need_in_memory
+    */
     unsigned                     need_in_temp:1;
 #if (NGX_HAVE_FILE_AIO || NGX_THREADS)
     unsigned                     aio:1;
@@ -332,10 +332,10 @@ ngx_int_t ngx_chain_writer(void *ctx, ngx_chain_t *in);
  * 所以这里的copy实际上指的是ngx_chain_t结构体的拷贝,因为会重新创建该结构体
  *
  * 比如有两个链:
- * 		ngx_chain_t *chain;
- * 		ngx_chain_t *in;
+ * 	    ngx_chain_t *chain;
+ * 	    ngx_chain_t *in;
  * 假设这连个链表都有值,那么拷贝方法应该这样调用:
- * 		ngx_chain_add_copy(pool, &chain, in);
+ * 	    ngx_chain_add_copy(pool, &chain, in);
  * 注意第二个参数传递的是chain这个链表的变量地址,而不是变量中的值
  *
  */
@@ -348,9 +348,9 @@ ngx_int_t ngx_chain_add_copy(ngx_pool_t *pool, ngx_chain_t **chain,
  * 返回的链表项包括ngx_buf_t结构体,但不包括实际的缓存空间
  *
  * 假设有一个空闲链:
- * 		ngx_chain_t *free;
+ * 	    ngx_chain_t *free;
  * 那么该方法应该这样调用
- * 		ngx_chain_get_free_buf(p, &free);
+ * 	    ngx_chain_get_free_buf(p, &free);
  */
 ngx_chain_t *ngx_chain_get_free_buf(ngx_pool_t *p, ngx_chain_t **free);
 

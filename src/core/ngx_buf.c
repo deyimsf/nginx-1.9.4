@@ -88,9 +88,9 @@ ngx_alloc_chain_link(ngx_pool_t *pool)
     cl = pool->chain;
 
     if (cl) {
-    	/*
-    	 * chain中存在可用的链项,则将链头指向该链头的下一个链项,然后返回老链头
-    	 */
+        /*
+         * chain中存在可用的链项,则将链头指向该链头的下一个链项,然后返回老链头
+         */
 
         pool->chain = cl->next;
         return cl;
@@ -138,18 +138,18 @@ ngx_create_chain_of_bufs(ngx_pool_t *pool, ngx_bufs_t *bufs)
      *    | * |			| * |
      *    -----			-----
      *    	   \ chain /
-     *			-------
-     *			|  *  |
-     *			-------
-     *	ll保存的是chain这个指针变量的地址,并不是chain中的指针值
+     *	        -------
+     *          |  *  |
+     *          -------
+     * ll保存的是chain这个指针变量的地址,并不是chain中的指针值
      */
     ll = &chain;
 
     for (i = 0; i < bufs->num; i++) {
 
-    	/*
-    	 * 创建一个ngx_buf_t结构体,或者说为这个结构体分配内存空间
-    	 */
+        /*
+         * 创建一个ngx_buf_t结构体,或者说为这个结构体分配内存空间
+         */
         b = ngx_calloc_buf(pool);
         if (b == NULL) {
             return NULL;
@@ -196,16 +196,16 @@ ngx_create_chain_of_bufs(ngx_pool_t *pool, ngx_bufs_t *bufs)
          * 将新创建的链项放入到链尾部
          *
          * ll变量存放的是链尾项的next指针变量的地址,所以*ll变量和next是等价的,内存结构体如下:
-         *     ll		    &cl->next
-         *    -----			  -----
-         *    | * |			  | * |
+         *     ll            &cl->next
+         *    -----	          -----
+         *    | * |	          | * |
          *    -----			  -----
          *    	   \ cl->next /
-         *			----------
-         *			|    *   |
-         *			----------
+         *        	----------
+         *          |    *   |
+         *          ----------
          * 有上图可以知道
-         * 		*ll = cl;
+         * 	    *ll = cl;
          * 这一句实际上就是把新建的链表项,追加到链表尾部
          */
         cl->buf = b;
@@ -228,10 +228,10 @@ ngx_create_chain_of_bufs(ngx_pool_t *pool, ngx_bufs_t *bufs)
  * 所以这里的copy实际上指的是ngx_chain_t结构体的拷贝,因为会重新创建该结构体
  *
  * 比如有两个链:
- * 		ngx_chain_t *chain;
- * 		ngx_chain_t *in;
+ * 	    ngx_chain_t *chain;
+ * 	    ngx_chain_t *in;
  * 假设这连个链表都有值,那么拷贝方法应该这样调用:
- * 		ngx_chain_add_copy(pool, &chain, in);
+ * 	    ngx_chain_add_copy(pool, &chain, in);
  * 注意第二个参数传递的是chain这个链表的变量地址,而不是变量中的值
  *
  */
@@ -241,16 +241,16 @@ ngx_chain_add_copy(ngx_pool_t *pool, ngx_chain_t **chain, ngx_chain_t *in)
     ngx_chain_t  *cl, **ll;
 
     /*
-     *		ll			chain
+     *	    ll			chain
      *	   -----		-----
      *	   | * |        | * |
      *	   -----        -----
-     *	   		\      /
-     *	   		 -----
-     *	   		 | * |
-     *	   		 -----
-     *	   		   |
-     *	   	---------------
+     *	   	    \      /
+     *           -----
+     *	       	 | * |
+     *       	 -----
+     *	   	       |
+     *      ---------------
      *	   	| ngx_chain_t |
      *	   	---------------
      */
@@ -301,9 +301,9 @@ ngx_chain_add_copy(ngx_pool_t *pool, ngx_chain_t **chain, ngx_chain_t *in)
  * 返回的链表项包括ngx_buf_t结构体,但不包括实际的缓存空间
  *
  * 假设有一个空闲链:
- * 		ngx_chain_t *free;
+ * 	    ngx_chain_t *free;
  * 那么该方法应该这样调用
- * 		ngx_chain_get_free_buf(p, &free);
+ * 	    ngx_chain_get_free_buf(p, &free);
  */
 ngx_chain_t *
 ngx_chain_get_free_buf(ngx_pool_t *p, ngx_chain_t **free)
@@ -314,7 +314,7 @@ ngx_chain_get_free_buf(ngx_pool_t *p, ngx_chain_t **free)
      * 检查*free链表中是否存在链表项,存在则返回该链表项
      */
     if (*free) {
-    	// 取出链表头
+        // 取出链表头
         cl = *free;
         // 将链表头的下一个链表项设置为链表头
         *free = cl->next;
@@ -364,34 +364,34 @@ ngx_chain_get_free_buf(ngx_pool_t *p, ngx_chain_t **free)
  *
  * out链表是向客户端发送数据时用的链表,调用回收方法前结构图如下:
  *       out
- *	   -------		-------		  -------      -------
- *	   |  1  | ---> |  2  | --->  |  3  | ---> |  4  |
- *	   -------		-------       -------      -------
+ *     -------	    -------	      -------      -------
+ *     |  1  | ---> |  2  | --->  |  3  | ---> |  4  |
+ *     -------	    -------       -------      -------
  *
  * 1.如果回收时out链表中的数据已经被发送到了客户端,那么当调用完回收方法后,除了free链表其它的链表都是NULL
- * 		r->out = NULL
- * 		busy = NULL
- * 		out = NULL
+ * 	    r->out = NULL
+ * 	    busy = NULL
+ * 	    out = NULL
  *
  *       free
- *	   -------		-------		  -------      -------
- *	   |  4  | ---> |  3  | --->  |  2  | ---> |  1  |
- *	   -------		-------       -------      -------
+ *	   -------      -------       -------      -------
+ *     |  4  | ---> |  3  | --->  |  2  | ---> |  1  |
+ *     -------      -------       -------      -------
  *
  * 2.如果回收时out链表中缓存在没有发送完的数据,调用该方法前r->out和out链表的结构可能如下图:
- *       out				      r->out
- *	   -------		-------		  -------      -------
+ *       out        	          r->out
+ *	   -------      -------       -------      -------
  *	   |  1  | ---> |  2  | --->  |  3  | ---> |  4  |
- *	   -------		-------       -------      -------
+ *	   -------	    -------       -------      -------
  *	上图表示out链表中的前两个链表项的数据都已经发送到了客户端,后两块还没有发送,没有发送的数据项追加到了r->out链表尾部.
  *
  *  对于这种情况,当调用完该方法后,各个链表的结构图如下:
- *  	out = NULL
+ *      out = NULL
  *
- *      free			 		      r->out|busy
- *	   -------		-------		  		-------      -------
- *	   |  2  | ---> |  1  |       		|  3  | ---> |  4  |
- *	   -------		-------       		-------      -------
+ *      free                           r->out|busy
+ *	   -------      -------	            -------      -------
+ *	   |  2  | ---> |  1  |       	    |  3  | ---> |  4  |
+ *	   -------      -------       	    -------      -------
  * 可以看到r->out和busy其实指向的是同一个链表
  *
  */
@@ -402,16 +402,16 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
     ngx_chain_t  *cl;
 
     if (*busy == NULL) {
-    	/*
-    	 * 传入的*busy链表为空,则直接释放*out链表
-    	 */
+       	/*
+         * 传入的*busy链表为空,则直接释放*out链表
+         */
 
         *busy = *out;
 
     } else {
-    	/*
-    	 * 将链表*out追加到*busy链表中
-    	 */
+        /*
+         * 将链表*out追加到*busy链表中
+         */
         for (cl = *busy; cl->next; cl = cl->next) { /* void */ }
 
         cl->next = *out;
@@ -429,9 +429,9 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
 
         if (cl->buf->tag != tag) {
 
-        	/*
-        	 * 如果传入的tag和当前buf中的tag不相同,则把他释放到pool->chain链中
-        	 */
+            /*
+             * 如果传入的tag和当前buf中的tag不相同,则把他释放到pool->chain链中
+             */
             *busy = cl->next;
             ngx_free_chain(p, cl);
             continue;
@@ -465,21 +465,21 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
  * 那么对于已经发送出去的数据,更新其对应的chian和buf是在ngx_chain_update_sent()方法中完成的,跟上面两个方法没有直接关系
  *
  * 举一个调用该方法的例子:
- * 		ngx_chain_t *cl; // 假设cl已经有值了,并且cl->buf->in_file为1
+ * 	    ngx_chain_t *cl; // 假设cl已经有值了,并且cl->buf->in_file为1
  * 	    off_t file_size = ngx_chain_coalesce_file(&cl, limit);
  * 其中cl在传递时候的内存结构如下:
- * 			 &cl
- * 			-----
- * 			| * |
- * 			-----
- *			  \ cl
- *			  -----
- *			  | * |
- *			  -----
- *			  	\
- *			  	---------------  		---------------
- *			  	| ngx_chain_t |	----->	| ngx_chain_t |
- *			  	---------------			---------------
+ * 	         &cl
+ * 	        -----
+ * 	        | * |
+ * 	        -----
+ *            \ cl
+ *    	      -----
+ *            | * |
+ *   	      -----
+ *               \
+ *         	  	---------------         ---------------
+ *    	      	| ngx_chain_t |	----->	| ngx_chain_t |
+ *              ---------------	        ---------------
  * 最终file_size就是返回的可以发送的字节数,cl就是不可以发送数据的链表
  *
  *
@@ -488,7 +488,7 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
  *  /src/os/unix/ngx_freebsd_sendfile_chain.c
  *
  *  /src/os/unix/ngx_linux_sendfile_chain.c
- *  	ngx_linux_sendfile_chain()
+ *      ngx_linux_sendfile_chain()
  *
  * 将和链表项*in中属于同一个文件描述符的链表项排除出去(实际链表并没有断裂),比如*in->buf->file->fd中的
  * fd等13,那么从链表项*in开始,所有fd等于13的链表项都会被排除出去(实际链表并没有断裂)
@@ -505,18 +505,18 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
 
     /*
      * cl 和 in的内存结构如下:
-     * 			   in
-     * 			  -----
-     * 			  | * |
-     * 			  -----
-     * 			  	\*in               cl
-     * 			  	-----		      -----
-     * 			  	| * |		      | * |
-     * 			  	-----		      -----
-     * 			  		\			  /
-     * 			  		---------------          ---------------		  ---------------
-     * 			  		| ngx_chain_t |	-------> | ngx_chain_t | -------> | ngx_chain_t |
-     *					---------------			 ---------------		  ---------------
+     * 	           in
+     * 	          -----
+     * 	          | * |
+     * 	          -----
+     * 	            \*in               cl
+     * 	          	-----		      -----
+     *         	  	| * |             | * |
+     *     	      	-----             -----
+     *         	  	    \              /
+     * 	          	    ---------------          ---------------          ---------------
+     * 	                | ngx_chain_t |	-------> | ngx_chain_t | -------> | ngx_chain_t |
+     *            	    ---------------	         ---------------          ---------------
      */
     cl = *in;
     fd = cl->buf->file->fd;
@@ -555,21 +555,21 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
 
 
     /*
-	 * 最终cl和in的内存结构 可能 如下:
-	 *													 in
-	 *													-----
-	 *													| * |
-	 *													-----
-	 *														\*in              cl
-	 *														-----		     -----
-	 *														| * |		     | * |
-	 *														-----		     -----
-	 *														  \			    /
- 	 *	  	---------------          ---------------		  ---------------
- 	 *		| ngx_chain_t |	-------> | ngx_chain_t | -------> | ngx_chain_t |
-	 *		---------------			 ---------------		  ---------------
-	 * 这样*in变量就变成了出参
-	 */
+     * 最终cl和in的内存结构 可能 如下:
+     *                                                   in
+     *                                                  -----
+     *                                                  | * |
+     *                                                  -----
+     *                                                      \*in              cl
+     *                                                      -----            -----
+     *                                                      | * |            | * |
+     *                                                      -----            -----
+     *                                                        \             /
+     *      ---------------          ---------------          ---------------
+     *      | ngx_chain_t |	-------> | ngx_chain_t | -------> | ngx_chain_t |
+     *      ---------------          ---------------          ---------------
+     * 这样*in变量就变成了出参
+     */
     *in = cl;
 
     // 返回这次将要发出去的数据大小
@@ -585,58 +585,58 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
  *
  * 假设链表如下
  *  in链表:
- *    		  	  ngx_chain_t						     ngx_chain_t
- *   			----------------					  ----------------
- *   			| *buf | *next | ------------------>  | *buf | *next |
- *    			----------------					  ----------------
- *    			 / ngx_buf_t      					    /
- *            ----------------			  		--------------------------
- *            | *pos | *last |  				| *file_pos | *file_last |
- *    	      ----------------			  		---------------------------
- *			/            |						 /			       |
- *         -----------------------				----------------------------
- *         |   50个字节   |	...	 |				|  文件中的60个字节   |  ...  |
- *         -----------------------				----------------------------
+ *                ngx_chain_t                            ngx_chain_t
+ *              ----------------                      ----------------
+ *              | *buf | *next | ------------------>  | *buf | *next |
+ *              ----------------                      ----------------
+ *                / ngx_buf_t                             /
+ *            ----------------                  --------------------------
+ *            | *pos | *last |                  | *file_pos | *file_last |
+ *    	      ----------------                  ---------------------------
+ *          /            |                       /                 |
+ *         -----------------------              ----------------------------
+ *         |   50个字节   |	...	 |              |  文件中的60个字节   |  ...  |
+ *         -----------------------              ----------------------------
  *
  * 如果sent值是50那么链表中的第一个链表项就会被排除出去(实际链表并没有断裂),最后结果如下:
  * 	 in链表:
- *    		  	  									     ngx_chain_t
- *   												  ----------------
- *   												  | *buf | *next |
- *    												  ----------------
- *    			 		 	    					    /
- *            							  		--------------------------
- *            					  				| *file_pos | *file_last |
- *    	      							  		---------------------------
- *												 /			       |
- *         										----------------------------
- *         										|  文件中的60个字节   |  ...  |
- *         										----------------------------
+ *                                                       ngx_chain_t
+ *                                                    ----------------
+ *                                                    | *buf | *next |
+ *                                                    ----------------
+ *                                                      /
+ *                                              --------------------------
+ *                                              | *file_pos | *file_last |
+ *                                              ---------------------------
+ *                                               /                 |
+ *                                              ----------------------------
+ *                                              |  文件中的60个字节   |  ...  |
+ *                                              ----------------------------
  * 如果sent值是40那么链表中的第一个链的变化如下:
  *   in链表:
- *    		  	  ngx_chain_t						     ngx_chain_t
- *   			----------------					  ----------------
- *   			| *buf | *next | ------------------>  | *buf | *next |
- *    			----------------					  ----------------
- *    			 / ngx_buf_t      					    /
- *            ----------------			  		--------------------------
- *            | *pos | *last |  				| *file_pos | *file_last |
- *    	      ----------------			  		---------------------------
- *			        \      |					 /			       |
- *         -----------------------				----------------------------
- *         | 40个字节 |10字节| ...	 |				|  文件中的60个字节   |  ...  |
- *         -----------------------				----------------------------
+ *                ngx_chain_t                            ngx_chain_t
+ *              ----------------                      ----------------
+ *              | *buf | *next | ------------------>  | *buf | *next |
+ *              ----------------                      ----------------
+ *                / ngx_buf_t                            /
+ *            ----------------                  --------------------------
+ *            | *pos | *last |                  | *file_pos | *file_last |
+ *            ----------------                  ---------------------------
+ *                  \      |                     /                 |
+ *         -----------------------              ----------------------------
+ *         | 40个字节 |10字节| ...	 |              |  文件中的60个字节   |  ...  |
+ *         -----------------------              ----------------------------
  * 所以最终结果取决于sent的值和链表中的实际字节个数,如果sent值等于链表中的实际字节个数,这就表示链表
  * in中的数据都被发送出去了,那么该方法就会返回null
  *
  *
  * 调用该方法的地方有:
- *	 /src/os/unix/ngx_darwin_sendfile_chain.c
- *	 /src/os/unix/ngx_freebsd_sendfile_chain.c
- *	 /src/os/unix/ngx_solaris_sendfilev_chain.c
+ *   /src/os/unix/ngx_darwin_sendfile_chain.c
+ *   /src/os/unix/ngx_freebsd_sendfile_chain.c
+ *   /src/os/unix/ngx_solaris_sendfilev_chain.c
  *
- *	 /src/os/unix/ngx_writev_chain.c
- *	 /src/os/unix/ngx_linux_sendfile_chain.c
+ *   /src/os/unix/ngx_writev_chain.c
+ *   /src/os/unix/ngx_linux_sendfile_chain.c
  * 我们只关心后两个
  *
  */
@@ -647,18 +647,18 @@ ngx_chain_update_sent(ngx_chain_t *in, off_t sent)
 
     for ( /* void */ ; in; in = in->next) {
 
-    	/*
-    	 * #define ngx_buf_special(b) ((b->flush || b->last_buf || b->sync) && !ngx_buf_in_memory(b) && !b->in_file)
-    	 *
-    	 * 特殊数据直接跳过
-    	 *
-    	 * TODO 特殊数据表示已经发送出去了? 还是没有发送数据?
-    	 */
+        /*
+         * #define ngx_buf_special(b) ((b->flush || b->last_buf || b->sync) && !ngx_buf_in_memory(b) && !b->in_file)
+         *
+         * 特殊数据直接跳过
+         *
+         * TODO 特殊数据表示已经发送出去了? 还是没有发送数据?
+         */
     	if (ngx_buf_special(in->buf)) {
             continue;
         }
 
-    	/* 0表示链表in中没有数据被发送出去,所以什么也不做直接返回 */
+        /* 0表示链表in中没有数据被发送出去,所以什么也不做直接返回 */
         if (sent == 0) {
             break;
         }
@@ -673,7 +673,7 @@ ngx_chain_update_sent(ngx_chain_t *in, off_t sent)
          * 所以我们需要更新这块buf
          */
         if (sent >= size) {
-        	// 已发送数据减去当前这块buf的大小
+            // 已发送数据减去当前这块buf的大小
             sent -= size;
 
             /*

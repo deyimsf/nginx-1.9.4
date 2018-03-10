@@ -124,11 +124,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
     ngx_conf_file_t  *prev, conf_file;
     ngx_conf_dump_t  *cd;
     enum {
-    	// 默认解析配置文件
+        // 默认解析配置文件
         parse_file = 0,
-		// 解析块配置,带花括号的
+        // 解析块配置,带花括号的
         parse_block,
-		// 解析-g参数传入的命令
+        // 解析-g参数传入的命令
         parse_param
     } type;
 
@@ -142,7 +142,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
         /* open configuration file */
 
-    	// 打开配置文件,比如nginx.conf,也有可能是include指令指定的文件
+        // 打开配置文件,比如nginx.conf,也有可能是include指令指定的文件
         fd = ngx_open_file(filename->data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
         if (fd == NGX_INVALID_FILE) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
@@ -240,11 +240,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
     } else if (cf->conf_file->file.fd != NGX_INVALID_FILE) {
 
-    	// 解析花括号中的命令
+        // 解析花括号中的命令
         type = parse_block;
 
     } else {
-    	// 解析以-g入参输入的命令
+        // 解析以-g入参输入的命令
         type = parse_param;
     }
 
@@ -309,10 +309,10 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
          *
          * 目前使用的模块有:
          * /src/http/modules/ngx_http_charset_filter_module.c:1286:    cf->handler = ngx_http_charset_map;
-		 * /src/http/modules/ngx_http_geo_module.c:456:    cf->handler = ngx_http_geo;
-		 * /src/http/modules/ngx_http_map_module.c:273:    cf->handler = ngx_http_map;
-		 * /src/http/modules/ngx_http_split_clients_module.c:168:    cf->handler = ngx_http_split_clients;
-		 * /src/http/ngx_http_core_module.c:3374:    cf->handler = ngx_http_core_type;
+	     * /src/http/modules/ngx_http_geo_module.c:456:    cf->handler = ngx_http_geo;
+         * /src/http/modules/ngx_http_map_module.c:273:    cf->handler = ngx_http_map;
+         * /src/http/modules/ngx_http_split_clients_module.c:168:    cf->handler = ngx_http_split_clients;
+         * /src/http/ngx_http_core_module.c:3374:    cf->handler = ngx_http_core_type;
          */
         if (cf->handler) {
 
@@ -321,9 +321,9 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
              * "types { ... }" directive
              *
              *	types {
-             *		{}; // 不允许出现这种情况
-             *		text/html html; // 正常的情况
-             *	}
+             *      {}; // 不允许出现这种情况
+             *      text/html html; // 正常的情况
+             *  }
              *
              */
             if (rc == NGX_CONF_BLOCK_START) {
@@ -336,11 +336,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
              *
              * 假设pfunc是一个指向函数的指针,*pfunc就是这个函数,按照这种解释,则我们在使用
              * 函数指针调用函数的时候应该使用 *pfunc 来调用函数,像这样
-             * 		int c = (*pfunc)(5,6)
+             * 	    int c = (*pfunc)(5,6)
              * 历史上,贝尔实验室的C和Unix的开发者使用的就是这种观点,即
-             * 		int c = (*pfunc)(5,6)
+             * 	    int c = (*pfunc)(5,6)
              * 而Berkeyly的Unix的扩展这采用函数指针的形式对其调用,即
-             *		pfunc(5,6)
+             *	    pfunc(5,6)
              * 标准C为了兼容性,两种方式都接受。
              */
             rv = (*cf->handler)(cf, NULL, cf->handler_conf);
@@ -425,7 +425,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
         // 遍历某个模块的所有指令
         for ( /* void */ ; cmd->name.len; cmd++) {
 
-        	// 比较指令名字的长度是否一致
+            // 比较指令名字的长度是否一致
             if (name->len != cmd->name.len) {
                 continue;
             }
@@ -441,7 +441,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             if (ngx_modules[i]->type != NGX_CONF_MODULE
                 && ngx_modules[i]->type != cf->module_type)
             {
-            	// 过滤NGX_CONF_MODULE模块
+                // 过滤NGX_CONF_MODULE模块
                 continue;
             }
 
@@ -517,155 +517,155 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             conf = NULL;
 
             if (cmd->type & NGX_DIRECT_CONF) {
-            	/*
-            	 * 此时cf->ctx有/src/core/ngx_cycle.c/ngx_init_cycle方法传递过来;
-            	 *
-            	 *
-            	 * NGX_DIRECT_CONF 有这个标记代表模块的配置信息结构体放在了,cycle->conf_ctx的第二层指针上,
-            	 * 比如ngx的核心模块(ngx_core_module),直接从第二层指针上就可以取到这些模块的配置信息结构体
-            	 * 目前使用该标志的模块有:
-            	 * 		/core/nginx.c/ngx_core_module模块
-            	 * 		/core/ngx_regex.c/ngx_regex_module模块
-		    	 *		/core/ngx_thread_pool.c/ngx_thread_pool_module模块
-		    	 *		/event/ngx_event_openssl.c/ngx_openssl_module模块
-		    	 *		/misc/ngx_google_perftools_module.c/ngx_google_perftools_module模块
-				 * 以上这几个模块都是核心模块,其他模块都没有使用该标记。
-				 *
-				 * 下面的操作取出的conf如下图:
-				 *   cf->ctx|cycle->conf_ctx
-				 *   -----
-				 *	 | * |
-				 *	 -----
-				 *	 \					   conf
-				 *	  ---------           -----
-            	 *	  | * | ...           | * |
-            	 *	  ---------           -----
-				 *	   \                 /
-				 *	    -----------------
-				 *	    |ngx_core_conf_t|
-				 *	    -----------------
-            	 */
+                /*
+                 * 此时cf->ctx有/src/core/ngx_cycle.c/ngx_init_cycle方法传递过来;
+                 *
+                 *
+                 * NGX_DIRECT_CONF 有这个标记代表模块的配置信息结构体放在了,cycle->conf_ctx的第二层指针上,
+                 * 比如ngx的核心模块(ngx_core_module),直接从第二层指针上就可以取到这些模块的配置信息结构体
+                 * 目前使用该标志的模块有:
+                 * 		/core/nginx.c/ngx_core_module模块
+                 * 		/core/ngx_regex.c/ngx_regex_module模块
+		         *		/core/ngx_thread_pool.c/ngx_thread_pool_module模块
+		         *		/event/ngx_event_openssl.c/ngx_openssl_module模块
+		         *		/misc/ngx_google_perftools_module.c/ngx_google_perftools_module模块
+			     * 以上这几个模块都是核心模块,其他模块都没有使用该标记。
+			     *
+			     * 下面的操作取出的conf如下图:
+			     *   cf->ctx|cycle->conf_ctx
+			     *   -----
+			     *	 | * |
+			     *	 -----
+			     *	 \					   conf
+			     *	  ---------           -----
+                 *	  | * | ...           | * |
+                 *	  ---------           -----
+			     *	   \                 /
+			     *	    -----------------
+			     *	    |ngx_core_conf_t|
+			     *	    -----------------
+                 */
                 conf = ((void **) cf->ctx)[ngx_modules[i]->index];
 
             } else if (cmd->type & NGX_MAIN_CONF) {
-            	/*
-            	 * 此时cf->ctx有/src/core/ngx_cycle.c/ngx_init_cycle方法传递过来;
-            	 *
-            	 *
-            	 * 该指令类型是存放在配置文件的顶层区域的,比如:
-            	 * 	核心事件模块(ngx_events_module)的"events {}"指令;
-            	 * 	核心http模块(ngx_http_module)的"http {}"指令;
-            	 *
-            	 * 没有使用NGX_DIRECT_CONF标记,则代表当前命令所在的模块使用到了cycle->conf_ctx的四层指针。
-            	 *
-            	 * 下面的操作是取出当前模块在第二层指针的位置,然后在取出该位置的地址,如下图:
-            	 * cf->ctx|cycle->conf_ctx  conf
-				 *   -----                 -----
-				 *	 | * |                 | * |
-				 *	 -----                 -----
-				 *	   \                   /
-				 *	  	-------------------
-            	 *	  	| * |   ...   | * |
-            	 *	  	-------------------
-            	 * 如果ngx_modules[i]->index 的值等于3,那么conf的值就是第二层中第四个星号变量的地址
-            	 */
+                /*
+                 * 此时cf->ctx有/src/core/ngx_cycle.c/ngx_init_cycle方法传递过来;
+                 *
+                 *
+                 * 该指令类型是存放在配置文件的顶层区域的,比如:
+                 * 	核心事件模块(ngx_events_module)的"events {}"指令;
+                 * 	核心http模块(ngx_http_module)的"http {}"指令;
+                 *
+                 * 没有使用NGX_DIRECT_CONF标记,则代表当前命令所在的模块使用到了cycle->conf_ctx的四层指针。
+                 *
+                 * 下面的操作是取出当前模块在第二层指针的位置,然后在取出该位置的地址,如下图:
+                 * cf->ctx|cycle->conf_ctx  conf
+	             *   -----                 -----
+			     *	 | * |                 | * |
+			     *	 -----                 -----
+			     *	   \                   /
+			     *	  	-------------------
+                 *	  	| * |   ...   | * |
+                 *	  	-------------------
+                 * 如果ngx_modules[i]->index 的值等于3,那么conf的值就是第二层中第四个星号变量的地址
+                 */
                 conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
 
             } else if (cf->ctx) {
 
-            	/*
-            	 * 如果是事件模块,那么cf->ctx最开始是有/src/event/ngx_event.c/ngx_events_block方法传递过来的;
-            	 * 如果是http模块,那么cf->ctx最开始是有/src/http/ngx_http.c/ngx_http_block方法传递过来的;
-            	 *
-            	 *
-            	 * 这一步是取各个非核心模块的自定义结构体指针了,比如:
-            	 *  事件模块NGX_EVENT_MODULE;
-            	 *  http模块NGX_HTTP_MODULE;
-            	 *
-            	 *
-            	 * 1.如果当前是具体的事件模块,那么cf->ctx的内存结构是这样的:
-            	 * cycle->conf_ctx
-				 *   -----
-				 *	 | * |
-				 *	 -----
-				 *	  \               		    				    cf->ctx
-				 *	   --------------------------------------	     -----
-				 *	   | * |  ...  |*ngx_events_module.index| 		 | * |
-				 *     --------------------------------------		 -----
-				 *     				  					 \            /
-				 *					   					 --------------
-				 *					   				     |     *      |
-				 *					   					 --------------
-				 *					   	  				   \
-				 *					   	   				    ---------------
-				 *					   	   				    | * | ... | * | 存放各个事件模块的配置结构体指针
-				 *					   	   				    ---------------
-				 *											 /			 \
-				 *					   	   		------------------	  ------------------
-				 *					   	   		|ngx_event_conf_t|	  |ngx_epoll_conf_t|
-				 *								------------------	  ------------------
-				 *
-            	 * 另外,事件模块的cmd->conf都是零,貌似目前只有http模块使用了cmd->conf字段。
-            	 * 最终conf会指向具体的ngx_xxx_cont_t结构体。
-            	 *
-            	 *
-            	 * 2.如果当前是核心http模块(ngx_http_module)在执行ngx_http_block()方法,那么cf->ctx的内存结构是这样的:
-            	 *  (所以,所有直接在http{}块下的指令,他们的第一个入参cf,都是下面的这种结构)
-            	 *  cycle->conf_ctx
-				 *   -----
-				 *	 | * |
-				 *	 -----
-				 *	  \        ngx_http_module.index					 	 cf->ctx
-				 *	   ---------------										  -----
-				 *	   | * | ... | * | ngx_max_module个						  | * |
-				 *     ---------------										  -----
-				 *    		 		\         ngx_http_conf_ctx_t				/
-				 *    		 	   -----------------------------------------------
-				 *    		 	   |  **main_conf  |  **srv_conf  |  **loc_conf  |
-				 *			 	   -----------------------------------------------
-			     * 			    	 /           	      /                      \
-			 	 *			-------------		   -------------			   -------------
-			 	 *			| * |...| * |		   | * |...| * |			   | * |...| * | 都是ngx_http_max_module个
-			 	 *			-------------		   -------------			   -------------
-				 *			  |  					 |							 |
-				 *  ---------------------------	  ---------------------------	--------------------------
-				 *	|ngx_http_core_main_conf_t|	  |ngx_http_core_main_conf_t|	|ngx_http_core_loc_conf_t|
-				 *	---------------------------	  ---------------------------	--------------------------
-            	 *
-            	 *	server{}指令的ngx_http_core_server方法中不会用到conf这个入参,所以这里传递与否都无所谓。
-            	 *
-            	 *
-            	 * 在http模块中:
-            	 *  最终confp的值会和ngx_http_conf_ctx_t结构体中的 xxx_conf 指针相等,具体等于哪个,则依赖于cmd->conf的值。
-            	 *  最终conf的值就是xxx_conf[ngx_modules[i]->ctx_index],也就是各个自定义的http模块对应的配置信息结构体。
-            	 *
-            	 *
-            	 * 3.如果当前是http核心模块(ngx_http_core_module)在执行ngx_http_core_server()方法,那么cf->ctx的结构如下:
-            	 *  (所以,所有直接在server{}块下的指令,他们的第一个入参cf,都是下面的这种结构)
-            	 *  "+"边表示的图形代表是同一个结构体
-            	 *
-            	 *																				cycle->conf_ctx
-            	 *																					 -----
-            	 *																					 | * |
-            	 *																				     -----
-            	 * 	 			   		   cf->ctx														\
-				 *				  			-----												  ---------------------
-				 *				  			| * |												  | * | ... | * | ... | ngx_max_module个
-				 *				  			-----												  ---------------------
-				 *	 			 			 \	         ngx_http_conf_ctx_t							       \			ngx_http_conf_ctx_t
-				 *    						-----------------------------------------------------			   -----------------------------------------------------
-				 *    						|   **main_conf   |   **srv_conf   |   **loc_conf   |			   |   **main_conf   |   **srv_conf   |   **loc_conf   |
-				 *    						-----------------------------------------------------			   -----------------------------------------------------
-				 *		 			 			/				|				  	   |						   |				 |					|
-				 *	         	  	---------------	 	 ---------------	 		---------------			 +------------+	  ---------------	 ---------------
-				 *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 |_main_conf_t|	  | * | ... | * |	 | * | ... | * |都是ngx_http_max_module个
-				 *					---------------		 ---------------	    	---------------			 +------------+	  ---------------	 ---------------
-				 *	      			  |					  / ngx_http_core_srv_conf_t   \												|					|
-				 *	 +-------------------------+		----------------------------	--------------------------		 --------------------------		--------------------------
-				 *	 |ngx_http_core_main_conf_t|		| * | *ctx |      ...  	   |	|ngx_http_core_loc_conf_t|		 |ngx_http_core_srv_conf_t|		|ngx_http_core_loc_conf_t|
-				 *	 +-------------------------+ 	 	----------------------------	--------------------------		 --------------------------		--------------------------
-            	 *
-            	 */
+                /*
+                 * 如果是事件模块,那么cf->ctx最开始是有/src/event/ngx_event.c/ngx_events_block方法传递过来的;
+                 * 如果是http模块,那么cf->ctx最开始是有/src/http/ngx_http.c/ngx_http_block方法传递过来的;
+                 *
+                 *
+                 * 这一步是取各个非核心模块的自定义结构体指针了,比如:
+                 *  事件模块NGX_EVENT_MODULE;
+                 *  http模块NGX_HTTP_MODULE;
+                 *
+                 *
+                 * 1.如果当前是具体的事件模块,那么cf->ctx的内存结构是这样的:
+                 * cycle->conf_ctx
+			     *   -----
+			     *   | * |
+			     *   -----
+			     *     \                                            cf->ctx
+			     *	   --------------------------------------        -----
+			     *	   | * |  ...  |*ngx_events_module.index|        | * |
+			     *     --------------------------------------        -----
+			     *                                       \            /
+			     *                                       --------------
+			     *                                       |     *      |
+			     *                                       --------------
+			     *                                         \
+			     *                                          ---------------
+			     *                                          | * | ... | * | 存放各个事件模块的配置结构体指针
+			     *                                          ---------------
+			     *                                            /         \
+			     *                              ------------------	  ------------------
+			     *                              |ngx_event_conf_t|	  |ngx_epoll_conf_t|
+			     *                              ------------------	  ------------------
+			     *
+                 * 另外,事件模块的cmd->conf都是零,貌似目前只有http模块使用了cmd->conf字段。
+                 * 最终conf会指向具体的ngx_xxx_cont_t结构体。
+                 *
+                 *
+                 * 2.如果当前是核心http模块(ngx_http_module)在执行ngx_http_block()方法,那么cf->ctx的内存结构是这样的:
+                 *  (所以,所有直接在http{}块下的指令,他们的第一个入参cf,都是下面的这种结构)
+                 *  cycle->conf_ctx
+			     *   -----
+			     *	 | * |
+			     *   -----
+			     *    \        ngx_http_module.index                         cf->ctx
+			     *	   ---------------                                       ------
+			     *	   | * | ... | * | ngx_max_module个                       | * |
+			     *     ---------------                                       ------
+			     *                  \         ngx_http_conf_ctx_t               /
+			     *                 -----------------------------------------------
+			     *                 |  **main_conf  |  **srv_conf  |  **loc_conf  |
+			     *                 -----------------------------------------------
+			     *                   /           	      /                      \
+			     *          -------------          -------------               -------------
+			     *          | * |...| * |          | * |...| * |               | * |...| * | 都是ngx_http_max_module个
+			     *          -------------          -------------               -------------
+			     *            |  					 |                           |
+			     *  ---------------------------	  ---------------------------	--------------------------
+			     *	|ngx_http_core_main_conf_t|	  |ngx_http_core_main_conf_t|	|ngx_http_core_loc_conf_t|
+			     *	---------------------------	  ---------------------------	--------------------------
+                 *
+                 *	server{}指令的ngx_http_core_server方法中不会用到conf这个入参,所以这里传递与否都无所谓。
+                 *
+                 *
+                 * 在http模块中:
+                 *  最终confp的值会和ngx_http_conf_ctx_t结构体中的 xxx_conf 指针相等,具体等于哪个,则依赖于cmd->conf的值。
+                 *  最终conf的值就是xxx_conf[ngx_modules[i]->ctx_index],也就是各个自定义的http模块对应的配置信息结构体。
+                 *
+                 *
+                 * 3.如果当前是http核心模块(ngx_http_core_module)在执行ngx_http_core_server()方法,那么cf->ctx的结构如下:
+                 *  (所以,所有直接在server{}块下的指令,他们的第一个入参cf,都是下面的这种结构)
+                 *  "+"边表示的图形代表是同一个结构体
+                 *
+                 *	                                                                            cycle->conf_ctx
+                 *                                                                                   -----
+                 *	                                                                                 | * |
+                 *	                                                                                 -----
+                 *                          cf->ctx                                                     \
+			     *                          -----                                                 ---------------------
+			     *                          | * |                                                 | * | ... | * | ... | ngx_max_module个
+			     *                          -----                                                 ---------------------
+			     *                            \	         ngx_http_conf_ctx_t                                   \         ngx_http_conf_ctx_t
+			     *                          -----------------------------------------------------              -----------------------------------------------------
+			     *                          |   **main_conf   |   **srv_conf   |   **loc_conf   |              |   **main_conf   |   **srv_conf   |   **loc_conf   |
+			     *                          -----------------------------------------------------              -----------------------------------------------------
+			     *                               /              |				  	   |                            |                |                  |
+			     *	         	  	---------------      ---------------            ---------------          +------------+	  ---------------    ---------------
+			     *	 	      	    | * | ... | * |      | * | ... | * |            | * | ... | * |          |_main_conf_t|	  | * | ... | * |    | * | ... | * |都是ngx_http_max_module个
+			     *                  ---------------	     ---------------            ---------------          +------------+	  ---------------    ---------------
+			     *                    |                   / ngx_http_core_srv_conf_t   \                                                  |                  |
+			     *   +-------------------------+        ----------------------------    --------------------------	     --------------------------	    --------------------------
+			     *   |ngx_http_core_main_conf_t|        | * | *ctx |      ...  	   |    |ngx_http_core_loc_conf_t|       |ngx_http_core_srv_conf_t|     |ngx_http_core_loc_conf_t|
+			     *   +-------------------------+        ----------------------------    --------------------------       --------------------------     --------------------------
+                 *
+                 */
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
                 if (confp) {
                     conf = confp[ngx_modules[i]->ctx_index];

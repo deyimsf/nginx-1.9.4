@@ -26,30 +26,30 @@
  *    字段ctx:
  *    	可以用来扩展模块,一般情况用来指定要扩展的模块的接口上下文,用该字段可以规定自定义模块的一些特性。
  *    	比如核心模块:
- *  		typedef struct {
- *				ngx_str_t          name;
- *				void               *(*create_conf)(ngx_cycle_t *cycle);
- *				char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
- *			} ngx_core_module_t;
- *		规定每个核心模块都要有一个描述该模块的名字,一个create_conf()方法用来创建该模块需要的结构体,
- *		一个init_conf()方法做一些初始化操作。
+ *          typedef struct {
+ *              ngx_str_t          name;
+ *              void               *(*create_conf)(ngx_cycle_t *cycle);
+ *              char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+ *          } ngx_core_module_t;
+ *      规定每个核心模块都要有一个描述该模块的名字,一个create_conf()方法用来创建该模块需要的结构体,
+ *      一个init_conf()方法做一些初始化操作。
  *
- *		比如事件模块:
- *	  		typedef struct {
- *    			ngx_str_t            *name;
- *    			void                 *(*create_conf)(ngx_cycle_t *cycle);
- *    			char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+ *      比如事件模块:
+ *          typedef struct {
+ *              ngx_str_t            *name;
+ *              void                 *(*create_conf)(ngx_cycle_t *cycle);
+ *              char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
  *
- *    			// 实现该模块必须定义ngx_event_actions_t中规定的10个抽象方法
- *    			ngx_event_actions_t     actions;
- * 	 		} ngx_event_module_t;
- *		同样规了该模块的一些行为
+ *              // 实现该模块必须定义ngx_event_actions_t中规定的10个抽象方法
+ *    	        ngx_event_actions_t     actions;
+ * 	        } ngx_event_module_t;
+ *      同样规了该模块的一些行为
  *
  *    字段commands:
- *    		用来存放该模块的指令信息
+ *    	    用来存放该模块的指令信息
  *
  *    字段type:
- *    		用来标记模块的类型(核心模块、配置模块、http模块等)
+ *    	    用来标记模块的类型(核心模块、配置模块、http模块等)
  *
  *
  * ngx中每个模块都有一个结构体,这个结构体用来保存该模块的一些配置信息,我们管他叫做配置信息结构体,
@@ -205,7 +205,7 @@ static ngx_command_t  ngx_core_commands[] = {
  *
  */
 static ngx_core_module_t  ngx_core_module_ctx = {
-	// 模块名字
+    // 模块名字
     ngx_string("core"),
     ngx_core_module_create_conf,
     ngx_core_module_init_conf
@@ -254,23 +254,23 @@ static char **ngx_os_environ;
  *
  * argc: 入参个数
  * argv: 入参，可以是多个字符串,比如：
- * 		name value flag等
+ *      name value flag等
  *
- * 		用const修饰 *argv表示传入的字符串地址不可变
+ * 	    用const修饰 *argv表示传入的字符串地址不可变
  * 		   	   argv
- * 		   	   -------
- * 			   |  *	 |
- * 			   -------
- * 		         |argv0 	| argv1    | argv2
- * 		         \          \		   \
- *			      ----------------------------------------
- *			      |  *       |    *     |    *    |
- *			      ----------------------------------------
- *				     |		     |         |
- *				     \		     \		   \
- *				      ------      -------   --------
- *				      |name|      |value|   | falg |
- *				      ------      -------   --------
+ * 	       	   -------
+ * 	           |  *	 |
+ * 	           -------
+ * 	             |argv0     | argv1    | argv2
+ * 	             \          \	       \
+ *	              ----------------------------------------
+ *	              |  *       |    *     |    *    |
+ *	              ----------------------------------------
+ *	                 |	         |         |
+ *	                 \	         \	       \
+ *         	          ------      -------   --------
+ *	                  |name|      |value|   | falg |
+ *            	      ------      -------   --------
  */
 int ngx_cdecl
 main(int argc, char *const *argv)
@@ -285,8 +285,8 @@ main(int argc, char *const *argv)
     ngx_debug_init();
 
     /*
-     *  初始化数组ngx_sys_errlist
-     *  把系统错误码全部拷贝到ngx_sys_errlist数组中
+     * 初始化数组ngx_sys_errlist
+     * 把系统错误码全部拷贝到ngx_sys_errlist数组中
      */
     if (ngx_strerror_init() != NGX_OK) {
         return 1;
@@ -302,8 +302,8 @@ main(int argc, char *const *argv)
     }
 
     /*
-     *  凡是展示的信息都会先显示版本号, 如ngx_show_help和ngx_show_configure
-     *  显示版本信息。
+     * 凡是展示的信息都会先显示版本号, 如ngx_show_help和ngx_show_configure
+     * 显示版本信息。
      */
     if (ngx_show_version) {
         ngx_write_stderr("nginx version: " NGINX_VER_BUILD NGX_LINEFEED);
@@ -498,16 +498,16 @@ main(int argc, char *const *argv)
     }
 
     if (ngx_signal) {
-    	/*
-    	 * 处理 stop、quit、reopen、reload这四个信号,这四个信号要求当前nginx是已启动状态的,
-    	 * 因为下面的方法用到了nginx的主进程id(在文件nginx.pid中)。
-    	 *
-    	 * 信号函数已经有/src/os/unix/ngx_process.c/ngx_init_signals方法负责绑定。
-    	 *
-    	 * 发送完信号之后该进程就退出了,前面一系列操作的意义就是验证配置的正确性,如果不正确就不应该发信息号。
-    	 *
-    	 * 信号有主进程的/src/os/unix/ngx_process_cycle.c/ngx_master_process_cycle方法接收处理(master-worker模式)
-    	 */
+        /*
+         * 处理 stop、quit、reopen、reload这四个信号,这四个信号要求当前nginx是已启动状态的,
+         * 因为下面的方法用到了nginx的主进程id(在文件nginx.pid中)。
+         *
+         * 信号函数已经有/src/os/unix/ngx_process.c/ngx_init_signals方法负责绑定。
+         *
+         * 发送完信号之后该进程就退出了,前面一系列操作的意义就是验证配置的正确性,如果不正确就不应该发信息号。
+         *
+         * 信号有主进程的/src/os/unix/ngx_process_cycle.c/ngx_master_process_cycle方法接收处理(master-worker模式)
+         */
         return ngx_signal_process(cycle, ngx_signal);
     }
 
@@ -572,10 +572,10 @@ main(int argc, char *const *argv)
     }
 
     if (log->file->fd != ngx_stderr) {
-    	/*
-    	 * 因为已经把标准错误文件描述符定位到fd代表的error.log文件了,所以这个fd就没有了
-    	 * 想输出错误信息到error.log文件,则直接用标准错误文件描述符就可以了
-    	 */
+        /*
+         * 因为已经把标准错误文件描述符定位到fd代表的error.log文件了,所以这个fd就没有了
+         * 想输出错误信息到error.log文件,则直接用标准错误文件描述符就可以了
+         */
         if (ngx_close_file(log->file->fd) == NGX_FILE_ERROR) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           ngx_close_file_n " built-in log failed");
@@ -586,11 +586,11 @@ main(int argc, char *const *argv)
 
     // 这里为啥不用ccf->master标记来判断 TODO
     if (ngx_process == NGX_PROCESS_SINGLE) {
-    	// 单进程模式
+        // 单进程模式
         ngx_single_process_cycle(cycle);
 
     } else {
-    	// master-worker模式
+        // master-worker模式
         ngx_master_process_cycle(cycle);
     }
 
@@ -875,7 +875,7 @@ ngx_get_options(int argc, char *const *argv)
 
     for (i = 1; i < argc; i++) {
 
-    	// 第i个入参字符串(如 -V、-s等)
+        // 第i个入参字符串(如 -V、-s等)
         p = (u_char *) argv[i];
 
         // 如果入参不是以字符 "-" 开始的则报错; 说明nginx入参必须以"-"开始
@@ -967,15 +967,15 @@ ngx_get_options(int argc, char *const *argv)
             // 入参以 -s(信号) 开始
             case 's':
                 if (*p) {
-                	// -sreload(命令未加空格)
+                    // -sreload(命令未加空格)
                     ngx_signal = (char *) p;
 
                 } else if (argv[++i]) {
-                	// -s reload(命令加空格了)
+                    // -s reload(命令加空格了)
                     ngx_signal = argv[i];
 
                 } else {
-                	// -s  (命令后什么也没输入)
+                    // -s  (命令后什么也没输入)
                     ngx_log_stderr(0, "option \"-s\" requires parameter");
                     return NGX_ERROR;
                 }
@@ -1120,12 +1120,12 @@ ngx_process_options(ngx_cycle_t *cycle)
 
     // 向对象cycle中的配置文件路径赋值,相对路径
     if (ngx_conf_file) {
-    	// 如果用户启动nginx时使用了-c来指定文件路径,则使用给用户指定的文件路径
+        // 如果用户启动nginx时使用了-c来指定文件路径,则使用给用户指定的文件路径
         cycle->conf_file.len = ngx_strlen(ngx_conf_file);
         cycle->conf_file.data = ngx_conf_file;
 
     } else {
-    	// 启动nginx时用户未使用-c指定配置文件路径,则使用默认文件路径
+        // 启动nginx时用户未使用-c指定配置文件路径,则使用默认文件路径
         ngx_str_set(&cycle->conf_file, NGX_CONF_PATH);
     }
 
@@ -1139,10 +1139,10 @@ ngx_process_options(ngx_cycle_t *cycle)
          p > cycle->conf_file.data;
          p--)
     {
-    	// 从这里开始cycle->conf_prefix和cycle->prefix的值就不一定一样了
-    	// 从cycle->conf_file里面解析出配置文件前缀
-    	// 比如cycle->conf_file = "/my/path/nginx.conf",执行完下面的代码后
-    	// cycle->conf_prefix就变成了"/my/path/"
+        // 从这里开始cycle->conf_prefix和cycle->prefix的值就不一定一样了
+        // 从cycle->conf_file里面解析出配置文件前缀
+        // 比如cycle->conf_file = "/my/path/nginx.conf",执行完下面的代码后
+        // cycle->conf_prefix就变成了"/my/path/"
         if (ngx_path_separator(*p)) {
             cycle->conf_prefix.len = p - ngx_cycle->conf_file.data + 1;
             cycle->conf_prefix.data = ngx_cycle->conf_file.data;

@@ -22,7 +22,7 @@
 
 
 typedef struct {
-	// 数组元素的起始地址
+    // 数组元素的起始地址
     void        *elts;
     // 已经存储了多少个元素
     ngx_uint_t   nelts;

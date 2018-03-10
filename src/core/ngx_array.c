@@ -96,10 +96,10 @@ ngx_array_push(ngx_array_t *a)
             && p->d.last + a->size <= p->d.end)
         {
 
-        	/**
-        	 *	走到这里，说明数组a是用内存池中最顶端的pool->d分配的内存
-        	 *	并且pool->d中仍然有足够的空间可以分配一个元素的大小
-        	 */
+            /**
+             *	走到这里，说明数组a是用内存池中最顶端的pool->d分配的内存
+             *	并且pool->d中仍然有足够的空间可以分配一个元素的大小
+             */
 
             /*
              * the array allocation is the last in the pool
@@ -111,11 +111,11 @@ ngx_array_push(ngx_array_t *a)
             a->nalloc++;
 
         } else {
-        	//扩容数组
+            //扩容数组
 
             /* allocate a new array */
 
-        	//按照原始内存两倍大小扩容; size是字节数
+            //按照原始内存两倍大小扩容; size是字节数
             new = ngx_palloc(p, 2 * size);
             if (new == NULL) {
                 return NULL;
