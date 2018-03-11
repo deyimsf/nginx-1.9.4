@@ -306,13 +306,17 @@ typedef struct {
     ngx_hash_t                 variables_hash;
 
     /*
-     * 存放ngx配置文件中出现的以"$"开头的变量(已使用变量)
+     * 在第一次调用ngx_http_get_variable_index()方法的时候会为该字段分配内存空间
      *
      * set指令调用ngx_http_add_variable()和ngx_http_get_variable_index()方法
      * 分别把变量名放入到cmcf->variables_keys和cmcf->variables数组中
      *
+     * 第三方模块一般也会通过ngx_http_add_variable()和ngx_http_get_variable_index()方法
+     * 将自己的变量导入到ngx中
+     *
      * 变量值存放在ngx_http_rewrite_loc_conf_t->codes中,最终有ngx_http_rewrite_handler()方法
      * 启动引擎来为r->variables中用到的变量赋值
+     *
      */
     ngx_array_t                variables;       /* ngx_http_variable_t */
     ngx_uint_t                 ncaptures;
@@ -328,8 +332,8 @@ typedef struct {
 	 * set指令调用ngx_http_add_variable()和ngx_http_get_variable_index()方法
 	 * 分别把变量名放入到cmcf->variables_keys和cmcf->variables数组中
 	 *
-	 * key是变量的名字
-	 * value是ngx_http_variable_t结构体
+	 * 键值对key是变量的名字
+	 * 键值对value是ngx_http_variable_t结构体
 	 *
 	 * 存放ngx中的外置变量和内置变量(已定义变量)
 	 * 它的作用基本就是防止变量重复定义,以及为variables中用到的内置变量设置get_handler方法

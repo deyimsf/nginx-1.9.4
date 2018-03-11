@@ -29,17 +29,39 @@ typedef struct {
  * 表示变量值
  */
 typedef struct {
-	// 变量值长度
+	/*
+	 * 变量值长度(data字段标识的值的长度)
+	 *
+	 * 比如在get_handler()方法中设置正真变量值时如下:
+	 *    v->len = sizeof("hello");
+	 *    v->data = ngx_pnalloc(r->pool, v->len);
+	 *
+	 *    ngx_cpystrn(v->data, "hello", v->len);
+	 */
     unsigned    len:28;
 
+    /*
+     * 变量值是否有效 TODO ?
+     * 1: 有效
+     * 0: 无效,get_handler()方法获取失败
+     */
     unsigned    valid:1;
-    // 不要cache变量值(Do not cache result)
+
+    /*
+     * 不要cache变量值(Do not cache result)
+     *
+     * 1: 表示不要缓存
+     * 0: 表示可以缓存变量结果
+     */
     unsigned    no_cacheable:1;
 
     /*
      * 表示没有发现这个变量
      *  比如该变量没有被定义过(即不存在于cmcf->variables中,也不存在于cmcv->variable-keys中)
      *  比如需要$arg_name这个变量,但是请求是并没有传递name这个入参
+     *
+     * 1: 没有发现这个变量值
+     * 0: 发现这个变量值,但不一定有效(比如缓存中有,但是该变量值的no_cacheable字段为1)
      */
     unsigned    not_found:1;
 
@@ -49,7 +71,11 @@ typedef struct {
      */
     unsigned    escape:1;
 
-    // 变量值
+    /*
+     * 变量值
+     *
+     * 比如在get_handler()方法中需要把变量的实际值放到这个字段中
+     */
     u_char     *data;
 } ngx_variable_value_t;
 
