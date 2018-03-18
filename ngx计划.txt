@@ -5,18 +5,13 @@
 
 
 
-TODO 开始看变量
- 变量的实现方式
- 变量脚本引擎
-
+TODO 开始看变量 最近状态不好,要抓紧调整好状态
  先看下面的文档
-  http://nginx.org/en/docs/dev/development_guide.html#http_variables
   http://nginx.org/en/docs/dev/development_guide.html#http_complex_values
 
+ 变量脚本引擎
 
-ngx_http_add_variable()方法和ngx_http_get_variable_index()可以理解为是定义变量的
-比如定义变量name:
-  set name 张三
+
 
 ngx中的脚本是为了解析带有变量的变量值的?,比如:
   set name $var_name

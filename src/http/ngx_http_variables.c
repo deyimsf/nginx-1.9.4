@@ -590,6 +590,11 @@ ngx_http_get_indexed_variable(ngx_http_request_t *r, ngx_uint_t index)
     }
 
     if (r->variables[index].not_found || r->variables[index].valid) {
+    	/*
+    	 * 变量没有被发现或者变量是有效的都会走这里,表示直接获取缓存变量
+    	 *
+    	 * 只有变量被发现并且变量是无效的时候才不会走这里
+    	 */
         return &r->variables[index];
     }
 
@@ -620,6 +625,10 @@ ngx_http_get_indexed_variable(ngx_http_request_t *r, ngx_uint_t index)
 }
 
 
+/*
+ * 这个方法会flush哪些不可缓存的变量,也就是说如果这个变量值的no_cacheable字段标记为1,那么在
+ * 获取变量的时候无论如果不走缓存,会调用变量的get_handler()方法来获得变量值
+ */
 ngx_http_variable_value_t *
 ngx_http_get_flushed_variable(ngx_http_request_t *r, ngx_uint_t index)
 {
@@ -630,12 +639,16 @@ ngx_http_get_flushed_variable(ngx_http_request_t *r, ngx_uint_t index)
     if (v->valid || v->not_found) {
         if (!v->no_cacheable) {
         	/*
+        	 * 走到这里表示可以使用缓存
         	 * 使用缓存的变量值
         	 */
             return v;
         }
 
-        // 不可缓存
+        /*
+         * 不可以使用缓存,打完这两个标记后,再调用ngx_http_get_indexed_variable()方法就不会
+         * 使用缓存了,所以把变量置为无效,但是是否发现变量则置为发现
+         */
         v->valid = 0;
         v->not_found = 0;
     }
@@ -646,7 +659,7 @@ ngx_http_get_flushed_variable(ngx_http_request_t *r, ngx_uint_t index)
 
 /**
  * 通过变量名获取变量值,如果找到这个变量则调用ngx_http_get_flushed_variable()方法获取
- * 或者直接设置调用变量的get_handler()方法来获取变量值
+ * 或者直接调用变量的get_handler()方法来获取变量值
  *
  * 对于6个动态变量(如http_、sent_http_等)则有该方法负责处理
  *
@@ -666,6 +679,9 @@ ngx_http_get_variable(ngx_http_request_t *r, ngx_str_t *name, ngx_uint_t key)
     	/* 找到这个变量 */
 
         if (v->flags & NGX_HTTP_VAR_INDEXED) {
+        	/*
+        	 * 如果这个变量是被索引的则直接通过索引来查找变量
+        	 */
             return ngx_http_get_flushed_variable(r, v->index);
 
         } else {
@@ -753,7 +769,12 @@ ngx_http_get_variable(ngx_http_request_t *r, ngx_str_t *name, ngx_uint_t key)
         return NULL;
     }
 
-    // 没有发现这个变量,也就是说该变量没有被定义过
+    /*
+     * 没有在hash结构中找到这个变量,也不是动态变量
+     *
+     * 这里得出一个结论,如果在某个请求过程中出现了大量的变量,那么就很容易引起r->pool的内存
+     * 池的扩容,因为每次调用该方法都需要从r->pool中分配出一块内存
+     */
     vv->not_found = 1;
 
     return vv;
@@ -827,6 +848,13 @@ ngx_http_variable_request_get_size(ngx_http_request_t *r,
 }
 
 
+/*
+ * 通过变量的set_handler()方法改变r对象中某个字段的值
+ *
+ * 比如 set $limit_rate 5k
+ *     ngx_http_variable_request_set_size(r, v, offsetof(ngx_http_request_t, limit_reate))
+ *
+ */
 static void
 ngx_http_variable_request_set_size(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data)
@@ -845,6 +873,9 @@ ngx_http_variable_request_set_size(ngx_http_request_t *r,
         return;
     }
 
+    /*
+     * data在这里是个偏移量,代表r对象中类型是ssize_t的字段
+     */
     sp = (ssize_t *) ((char *) r + data);
 
     *sp = s;

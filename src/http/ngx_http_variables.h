@@ -18,7 +18,7 @@
  *
  *
  *
- * ngx_http_add_variable()方法和ngx_http_get_variable_index()方法可以理解为是定义变量的
+ * ngx_http_add_variable()方法和ngx_http_get_variable_index()方法可以理解为是创建变量的
  * 比如定义变量name:
  *    set name 张三
  * 上面两个方法调用完毕后,还需要设置变量的get_handler()方法,因为handler()方法才是获取变量值的方法
