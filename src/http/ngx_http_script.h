@@ -15,7 +15,18 @@
 
 
 typedef struct {
-	// 引擎执行时存放codes中的元素
+	/*
+	 * 引擎执行时存放codes中的元素
+	 * 在变量值解析过程中设置的各种结构体,这些结构体的第一个字段必须是一个方法,比如下面的方法
+	 *    void (*ngx_http_script_code_pt) (ngx_http_script_engine_t *e);
+     *    size_t (*ngx_http_script_len_code_pt) (ngx_http_script_engine_t *e);
+     * 脚本引擎像下面的方式执行:
+     *   while (*(uintptr_t *) e->ip) {
+     *     code = *(ngx_http_script_code_pt *) e->ip;
+     *     code(e);
+     *   }
+     * 可以看到脚本在执行时会先把e->ip强转成约定好的方法,然后执行
+	 */
     u_char                     *ip;
     u_char                     *pos;
 
@@ -37,7 +48,14 @@ typedef struct {
     unsigned                    is_args:1;
     unsigned                    log:1;
 
+    /*
+     * 响应码
+     */
     ngx_int_t                   status;
+
+    /*
+     * 当前被处理的请求
+     */
     ngx_http_request_t         *request;
 } ngx_http_script_engine_t;
 
@@ -45,9 +63,9 @@ typedef struct {
 typedef struct {
     ngx_conf_t                 *cf;
     /*
-     * 复杂变量值,如 set $a $bb 中的$bb
-     *
-     * 一个表达式 TODO
+     * 要编译的复杂值,比如:
+     *    return 200 "I am $uri";
+     * 此时该字段指向"I am $uri"这个复杂值
      */
     ngx_str_t                  *source;
 
@@ -69,7 +87,7 @@ typedef struct {
      *				---------------
      *						\ elts
      *						---------
-     *						| 1 | 2 |
+     *						| 9 | 3 |
      *						---------
      */
     ngx_array_t               **flushes;
@@ -81,13 +99,21 @@ typedef struct {
     ngx_array_t               **values;
 
     /*
-     * 复杂变量值中的变量个数, 比如:
-     * 		set $a $bb$cc
+     * 复杂值中的变量个数, 比如:
+     *    set $a $bb$cc
      * 则该值为2
+     *
+     * 比如:
+     *    return 200 "I am $uri";
+     * 该该值为1
      */
     ngx_uint_t                  variables;
     ngx_uint_t                  ncaptures;
     ngx_uint_t                  captures_mask;
+
+    /*
+     *
+     */
     ngx_uint_t                  size;
 
     void                       *main;
@@ -104,18 +130,37 @@ typedef struct {
 } ngx_http_script_compile_t;
 
 
+/*
+ * 复杂值编译后的结构体
+ * 该结构体用来在运行时计算表达式的值
+ */
 typedef struct {
 	/*
-	 * 变量值
-	 * 如: $http_name
+	 * 原生复杂值,比如有如下指令
+	 *    return 200 "I am $uri $host";
+	 * 那么该字段值为"I am $uri $host"
 	 */
     ngx_str_t                   value;
     ngx_uint_t                 *flushes;
+
+    /*
+     * 当变量值是纯文本时该值是NULL,比如有如下指令
+     *    return 200 "I am value"
+     * 此时该字段值为NULL
+     *
+     *
+     */
     void                       *lengths;
     void                       *values;
 } ngx_http_complex_value_t;
 
 
+/*
+ * 用来编译复杂值的中间结构体
+ *
+ * 在配置阶段收集复杂值,然后把复杂值编译到ngx_http_complex_value_t结构体的一个中间结构体
+ * 作为ngx_http_compile_complex_value()方法的一个入参,最终会把值编译到complex_value字段中
+ */
 typedef struct {
     ngx_conf_t                 *cf;
 
@@ -133,6 +178,9 @@ typedef void (*ngx_http_script_code_pt) (ngx_http_script_engine_t *e);
 typedef size_t (*ngx_http_script_len_code_pt) (ngx_http_script_engine_t *e);
 
 
+/*
+ * 用于拷贝纯文本的脚本
+ */
 typedef struct {
     ngx_http_script_code_pt     code;
     uintptr_t                   len;
@@ -231,6 +279,7 @@ typedef struct {
 
 /*
  * return指令对应的脚本引擎结构体
+ *
  * 每一个这样的结构体都会对应一个ngx_http_script_code_pt回调方法,这个方法有脚本引擎负责调用,
  * 其它字段根据指令对应的功能会做响应的调整
  */
@@ -242,6 +291,10 @@ typedef struct {
 
     // return指令中的状态码
     uintptr_t                   status;
+
+    /*
+     * 调用ngx_http_compile_complex_value()方法编译好的复杂值
+     */
     ngx_http_complex_value_t    text;
 } ngx_http_script_return_code_t;
 

@@ -32,7 +32,7 @@ typedef struct {
      *	  uintptr_t                   text_data;
 	 * } ngx_http_script_value_code_t;
 	 *
-	 * 存放变量的值(ngx_http_script_value_code_t),比如:
+	 * 存放处理变量值的结构体(ngx_http_script_value_code_t),比如:
 	 *  set $name zhangsan
 	 *
 	 * 那么此时,对于变量name来说,codes的第一个元素就是ngx_http_script_value_code_t:
@@ -273,11 +273,23 @@ ngx_http_rewrite_handler(ngx_http_request_t *r)
         // ngx_http_script_var_code_t->ngx_http_script_set_var_code()
     }
 
+    /*
+     * 脚本执行完毕之后会根据e->status值来决定返回什么数据
+     */
+
     if (e->status < NGX_HTTP_BAD_REQUEST) {
+    	/*
+    	 * 状态码小于400,则表明为发生错误,走正常逻辑
+    	 */
         return e->status;
     }
 
     if (r->err_status == 0) {
+
+    	/*
+    	 * 请求错误码为0代表未发生错误,按照原样返回状态码
+    	 */
+
         return e->status;
     }
 
@@ -571,6 +583,10 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/*
+ * 该方法会把return指令要输出的值放到ngx_http_script_return_code_t对象的text字段中,text字段
+ * 是ngx_http_complex_value_t类型的结构体,该结构体用来在运行时计算复杂值(比如 name$uri)
+ */
 static char *
 ngx_http_rewrite_return(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -593,8 +609,14 @@ ngx_http_rewrite_return(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ret->code = ngx_http_script_return_code;
 
+    /*
+     * return指令返回的状态码
+     */
     p = value[1].data;
 
+    /*
+     * 状态码转换为数字
+     */
     ret->status = ngx_atoi(p, value[1].len);
 
     if (ret->status == (uintptr_t) NGX_ERROR) {
@@ -635,6 +657,9 @@ ngx_http_rewrite_return(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ccv.value = v;
     ccv.complex_value = &ret->text;
 
+    /*
+     * 编译复杂值
+     */
     if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
         return NGX_CONF_ERROR;
     }

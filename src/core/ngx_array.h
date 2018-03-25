@@ -48,7 +48,7 @@ void *ngx_array_push_n(ngx_array_t *a, ngx_uint_t n);
  *array: 要初始化的数组
  *pool:用于分配内存的内存池
  *n: 可以存储的元素个数(只是个初始值,可以动态扩容)
- *size: 数组中元素的大小
+ *size: 数组中元素的大小(字节个数)
  */
 static ngx_inline ngx_int_t
 ngx_array_init(ngx_array_t *array, ngx_pool_t *pool, ngx_uint_t n, size_t size)

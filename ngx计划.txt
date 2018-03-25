@@ -1,27 +1,57 @@
 
-
 注释空格替换
   core/ngx_conf_file.c/ 结束
 
 
 
-TODO 开始看变量 最近状态不好,要抓紧调整好状态
- 先看下面的文档
-  http://nginx.org/en/docs/dev/development_guide.html#http_complex_values
+1.纯文本值
+  return 200 “I am value”;
+ 
+  a.解析到return指令后,向lcf->codes中添加一个ngx_http_script_return_code_t脚本对象,该对象中有一个ngx_http_complex_value_t
+    类型的text字段,该字段用来存放编译后的复杂值
 
- 变量脚本引擎
+  b.通过ngx_http_compile_complex_value()方法将复杂值编译到ngx_http_complex_value_t对象中,而该对象就是
+    ngx_http_script_return_code_t->text字段的值
 
-
-
-ngx中的脚本是为了解析带有变量的变量值的?,比如:
-  set name $var_name
-
-
+  c.因为是纯文本,所以编译后的ngx_http_complex_value_t对象,只有value有值,其它字段都为null
 
 
 
+  a.获取动态值时,通过ngx_http_rewrite_handler()方法执行脚本之前放到lcf->codes中的脚本对象(ngx_http_script_return_code_t)
+    
+  b.执行脚本对象方法ngx_http_script_return_code(),该方法调用ngx_http_send_response()方法并传递ngx_http_complex_value_t
+    对象参数(即ngx_http_script_return_code_t->text字段值)
+  
+  c.在ngx_http_send_response()方法中通过调用ngx_http_complex_value()方法来动态获取复杂值.
+    该方法判断ngx_http_complex_value_t->lengths为NULL,则直接返回ngx_http_complex_value_t->value的字面值.
+ 
+
+2.带变量的复杂值
+  return 200 “I am $uri”;
+
+  a.解析到return指令后,向lcf->codes中添加一个ngx_http_script_return_code_t脚本对象,该对象中有一个ngx_http_complex_value_t
+    类型的text字段,该字段用来存放编译后的复杂值
+  
+  b.通过ngx_http_compile_complex_value()方法将复杂值编译到ngx_http_complex_value_t对象中,也就是
+    ngx_http_script_return_code_t脚本对象的text字段
+
+  c.TODO 看ngx_http_compile_complex_value()中处理复杂值中带变量的逻辑
+        ngx_http_script_compile() 编译变量脚本
+           ngx_http_script_add_var_code() 添加变量脚本  下周从这里看 TODO
 
 
+
+  ngx_http_rewrite_return()  这里面用到了复杂值和脚本引擎
+
+  ngx_http_compile_complex_value() 解析复杂值
+  ngx_http_complex_value()  动态获取复杂值
+
+
+
+rewrite阶段脚本引擎执行方法
+  ngx_http_rewrite_handler()
+
+然后看set如何解析变量
 
 
 

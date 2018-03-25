@@ -54,6 +54,11 @@ ngx_http_script_flush_complex_value(ngx_http_request_t *r,
 }
 
 
+/*
+ * 计算出变量值
+ *
+ * 通过r和val计算出val代表的表达式的值,并写到value中
+ */
 ngx_int_t
 ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val,
     ngx_str_t *value)
@@ -64,6 +69,16 @@ ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val,
     ngx_http_script_engine_t      e;
 
     if (val->lengths == NULL) {
+    	/*
+    	 * 这里使用val->lengths字段是NULL来判断要获取的复杂值是一个纯文本值,所以直接返回这个纯文本值就可以了
+    	 *
+    	 * 比如如下语句:
+    	 *    return 200 "I am value";
+    	 * 在ngx_http_rewrite_return()方法中通过调用ngx_http_compile_complex_value()方法来编译这个
+    	 * 复杂值,编译的过程中发现该值只是一个纯文本值,所以他仅会设置val->value值,其它值如val->lengths设置
+    	 * 为NULL,所以这里可以用val->lengths等于NULL来区分该复杂值是否是纯文本值.
+    	 */
+
         *value = val->value;
         return NGX_OK;
     }
@@ -104,6 +119,9 @@ ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val,
 }
 
 
+/*
+ * 编译收集到的复杂值,把编译后的数据放入到ngx_http_complex_value_t结构体中(ccv->complex_value字段)
+ */
 ngx_int_t
 ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
 {
@@ -114,7 +132,17 @@ ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
 
     v = ccv->value;
 
+    /*
+     * 复杂值v包含的变量值的个数,比如有如下复杂值
+     *   "I am $uri $host"
+     * 那么nv值为2,表示在v中有两个变量值
+     */
     nv = 0;
+    /*
+     * 复杂值v中包含正则表达式子捕获的个数,比如有如下复杂值
+     *   "I am $1 $2 $3"
+     * 那么nc值为3,表示在v中有3个有效的子捕获变量值
+     */
     nc = 0;
 
     for (i = 0; i < v->len; i++) {
@@ -145,11 +173,26 @@ ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
     ccv->complex_value->values = NULL;
 
     if (nv == 0 && nc == 0) {
+    	/*
+    	 * 如果这两个值都是0,表示ccv->value是一个纯文本值
+    	 * 如果是纯文本,则flushes、lengths、values三个字段为NULL
+    	 */
         return NGX_OK;
     }
 
     n = nv + 1;
 
+    /*
+     * 走道这里说明复杂值中包含变量,比如
+     *    reutrn 200 "I am $uri";
+     *
+     * flushes里面存放了n个元素,每个元素占sizeof(ngx_uint_t)个字节,假设n是3,则相当于存放了3个整数值
+     *
+     * flushes
+     * ----------------------------------------------------------------
+     * | sizeof(ngx_uint_t) | sizeof(ngx_uint_t) | sizeof(ngx_uint_t) |
+     * ----------------------------------------------------------------
+     */
     if (ngx_array_init(&flushes, ccv->cf->pool, n, sizeof(ngx_uint_t))
         != NGX_OK)
     {
@@ -158,18 +201,19 @@ ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
 
     n = nv * (2 * sizeof(ngx_http_script_copy_code_t)
                   + sizeof(ngx_http_script_var_code_t))
-        + sizeof(uintptr_t);
+                		 + sizeof(uintptr_t);
 
+    /*
+     *
+     */
     if (ngx_array_init(&lengths, ccv->cf->pool, n, 1) != NGX_OK) {
         return NGX_ERROR;
     }
 
     n = (nv * (2 * sizeof(ngx_http_script_copy_code_t)
                    + sizeof(ngx_http_script_var_code_t))
-                + sizeof(uintptr_t)
-                + v->len
-                + sizeof(uintptr_t) - 1)
-            & ~(sizeof(uintptr_t) - 1);
+    		       + sizeof(uintptr_t) + v->len
+                   + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1);
 
     if (ngx_array_init(&values, ccv->cf->pool, n, 1) != NGX_OK) {
         return NGX_ERROR;
@@ -181,6 +225,21 @@ ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
 
     ngx_memzero(&sc, sizeof(ngx_http_script_compile_t));
 
+    /*
+     * 下面代码赋值完毕后pf内存结构如下:
+     *         sc.flushes
+     *           -----
+     *           | * |
+     *           -----
+     *              \  pf
+     *               -----
+     *               | * |
+     *               -----
+     *                /
+     *           -----------
+     *           | flushes |
+     *           -----------
+     */
     sc.cf = ccv->cf;
     sc.source = v;
     sc.flushes = &pf;
@@ -198,6 +257,8 @@ ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
 
     if (flushes.nelts) {
         ccv->complex_value->flushes = flushes.elts;
+
+        /* 最后一个设置为-1作为结束标记 */
         ccv->complex_value->flushes[flushes.nelts] = (ngx_uint_t) -1;
     }
 
@@ -336,25 +397,53 @@ ngx_http_script_variables_count(ngx_str_t *value)
  * TODO 没看懂,以后有时间再看
  *
  * 将变量(如$http_name、$age等)放入cmcv->variabls中并存储变量在数组中的下标
+ *
+ *
+ * 在ngx_http_compile_complex_value()方法中有如下调用
+ *   sc.cf = ccv->cf;
+ *   sc.source = v;
+ *   sc.flushes = &pf;
+ *   sc.lengths = &pl;
+ *   sc.values = &pv;
+ *   sc.complete_lengths = 1;
+ *   sc.complete_values = 1;
+ *   sc.zero = ccv->zero;
+ *   sc.conf_prefix = ccv->conf_prefix;
+ *   sc.root_prefix = ccv->root_prefix;
  */
 ngx_int_t
 ngx_http_script_compile(ngx_http_script_compile_t *sc)
 {
     u_char       ch;
     ngx_str_t    name;
-    ngx_uint_t   i, bracket;
+    ngx_uint_t   i, bracket; /* bracket 当前变量是否包含花括号 */
 
     /*
      * 初始化sc(ngx_http_script_compile_t)
+     *
+     * 主要是为*sc->flushes、*sc->lengths、*sc->values分配内存空间
+     *    sc->flushes
+     *      -----
+     *      | * |
+     *      -----
+     *        \ pf (ngx_http_compile_complex_value方法中的变量)
+     *        -----
+     *        | * |
+     *        -----
+     *          /
+     *      -----------
+     *      | flushes |
+     *      -----------
      */
     if (ngx_http_script_init_arrays(sc) != NGX_OK) {
         return NGX_ERROR;
     }
 
     /*
-     * 循环变量值,如 set $a $bb$cc 则source->len等于 $bb$cc的长度6
+     * 遍历复杂值,假设此时在编译如下指令的复杂值：
+     *    return 200 "I am $uri";
+     * 则此时source代表"I am $uri"字符串
      *
-     * source等于 $bb$cc
      */
     for (i = 0; i < sc->source->len; /* void */ ) {
 
@@ -363,11 +452,13 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
         if (sc->source->data[i] == '$') {
 
         	/*
-        	 * 如果当前变量值最后一个字符是$则该变量值无效
-        	 *
-        	 * 否则检查下一个字符
+        	 * 走到这里说明可能找到一个变量
         	 */
+
             if (++i == sc->source->len) {
+            	/*
+            	 * 如果当前变量值最后一个字符是$则该变量值无效
+            	 */
                 goto invalid_variable;
             }
 
@@ -397,7 +488,10 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
             }
 #endif
 
-            // 如果紧跟'$'字符之后是一个'{'字符
+            /*
+             * 如果紧跟'$'字符之后是一个'{'字符,比如
+             *    return 200 "I am ${uri}"
+             */
             if (sc->source->data[i] == '{') {
             	// 记录当前正在遍历括号('{}')内字符
                 bracket = 1;
@@ -410,13 +504,27 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
                 name.data = &sc->source->data[i];
 
             } else {
-            	// 当前变量不包含括号('{}')
+            	/*
+            	 * 当前变量不包含括号('{}')
+            	 */
                 bracket = 0;
-                // 记录去掉变量前缀的字符指针值
+
+                /*
+                 * 记录去掉变量前缀的字符指针值,比如
+                 *    "$uri"
+                 * 则此时name.data指向
+                 *    "uri"
+                 */
                 name.data = &sc->source->data[i];
             }
 
-            // 开始计算不带前缀的变量值,如${bb} 去掉 ${}
+            /*
+             * 计算出不带'$'符号的变量值,比如
+             *    "$uri"和"${uri}"
+             * 目的是找出
+             *    "uri"
+             * 也就是说去掉了"$"和"{}"字符
+             */
             for ( /* void */ ; i < sc->source->len; i++, name.len++) {
                 ch = sc->source->data[i];
 
@@ -424,7 +532,10 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
                     i++;
                     bracket = 0;
 
-                    // 计算出一个变量值
+                    /*
+                     * 走到这里说明找出了一个带花括号的变量值,比如
+                     *   "${uri}"
+                     */
                     break;
                 }
 
@@ -436,7 +547,10 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
                     continue;
                 }
 
-                // 计算出一个变量值
+                /*
+                 * 走到这里说明找出了一个不带话括号的变量值,比如
+                 *    "$uri"
+                 */
                 break;
             }
 
@@ -451,10 +565,14 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
                 goto invalid_variable;
             }
 
-            // 变量值中变量的个数加一
+            /*
+             * 变量值中变量的个数加一
+             */
             sc->variables++;
 
-            // TODO 费劲
+            /*
+             * 添加一个计算变量的脚本
+             */
             if (ngx_http_script_add_var_code(sc, &name) != NGX_OK) {
                 return NGX_ERROR;
             }
@@ -476,7 +594,12 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
         }
 
         name.data = &sc->source->data[i];
-
+        /*
+         * 下面这个循环用来跳出复杂值的中的字面量,比如
+         *    return 200 "I am $uri";
+         * 则该循环会把name.len设置为5,不包括'$'符号,遇见'$'符号后表示可能找到一个变量,需要跳到
+         * 最开始的if去解析出这个变量
+         */
         while (i < sc->source->len) {
 
             if (sc->source->data[i] == '$') {
@@ -498,6 +621,18 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
 
         sc->size += name.len;
 
+        /*
+         * sc.cf = ccv->cf;
+         * sc.source = v;
+         * sc.flushes = &pf;
+         * sc.lengths = &pl;
+         * sc.values = &pv;
+         * sc.complete_lengths = 1;
+         * sc.complete_values = 1;
+         * sc.zero = ccv->zero;
+         * sc.conf_prefix = ccv->conf_prefix;
+         * sc.root_prefix = ccv->root_prefix;
+         */
         if (ngx_http_script_add_copy_code(sc, &name, (i == sc->source->len))
             != NGX_OK)
         {
@@ -597,7 +732,7 @@ ngx_http_script_init_arrays(ngx_http_script_compile_t *sc)
          * 	 -------
          * 	 |  *  |
          * 	 -------
-         * 	    \
+         * 	    \ pf
          * 	    -------
          * 	    |  *  |
          * 	    -------
@@ -794,6 +929,14 @@ ngx_http_script_add_code(ngx_array_t *codes, size_t size, void *code)
 }
 
 
+/*
+ * 这是一个用来添加计算纯文本值的脚本方法,也就是说该方法生成了一个脚本,这个脚本用来动态计算纯文本值的,比如
+ *    return  200 "I am $uri";
+ * 其中"I am $uri"在ngx中是一个复杂值,这个值的计算会被编译成脚本,对于纯文本值"I am "会使用
+ * ngx_http_script_add_copy_code()方法来生成计算脚本,而对于"$uri"这个变量则需要使用
+ * ngx_http_script_add_var_code()方法来生成计算脚本,最后通过脚本引擎执行脚本的形式把整个复杂值
+ * 给事实的计算出来
+ */
 static ngx_int_t
 ngx_http_script_add_copy_code(ngx_http_script_compile_t *sc, ngx_str_t *value,
     ngx_uint_t last)
@@ -805,6 +948,11 @@ ngx_http_script_add_copy_code(ngx_http_script_compile_t *sc, ngx_str_t *value,
     zero = (sc->zero && last);
     len = value->len + zero;
 
+    /*
+     * 向*sc->lengths数组中添加一个ngx_http_script_copy_code_t脚本对象
+     *
+     * 这个脚本对象只是为了计算长度吗? TODO 计算的是谁的长度?
+     */
     code = ngx_http_script_add_code(*sc->lengths,
                                     sizeof(ngx_http_script_copy_code_t), NULL);
     if (code == NULL) {
@@ -817,6 +965,19 @@ ngx_http_script_add_copy_code(ngx_http_script_compile_t *sc, ngx_str_t *value,
     size = (sizeof(ngx_http_script_copy_code_t) + len + sizeof(uintptr_t) - 1)
             & ~(sizeof(uintptr_t) - 1);
 
+    /*
+     * 向*sc->values数组中添加一个ngx_http_script_copy_code_t脚本对象
+     *
+     * 如果在添加的过程中*sc->values发生了扩容,那么*sc->main中的指针就是扩容后的新指针
+     *
+     * 从size的计算方式可以看出*sc->values中存放了真正的文本信息,比如
+     *    return 200 "I am $uri";
+     * 此时*sc->values应该是如下结构:
+     *   ---------------------------------------------------------
+     *   | sizeof(ngx_http_script_copy_code_t) |  len   |
+     *   ---------------------------------------------------------
+     * 而ngx_http_script_copy_code()方法知道如何去处理这个结构
+     */
     code = ngx_http_script_add_code(*sc->values, size, &sc->main);
     if (code == NULL) {
         return NGX_ERROR;
@@ -825,6 +986,12 @@ ngx_http_script_add_copy_code(ngx_http_script_compile_t *sc, ngx_str_t *value,
     code->code = ngx_http_script_copy_code;
     code->len = len;
 
+    /*
+     * 这一步是为了把"I am "字符 *sc->values中,拷贝完成后*sc->values结构如下:
+     *   ---------------------------------------------------------
+     *   | sizeof(ngx_http_script_copy_code_t) | "I am " |
+     *   ---------------------------------------------------------
+     */
     p = ngx_cpymem((u_char *) code + sizeof(ngx_http_script_copy_code_t),
                    value->data, value->len);
 
@@ -837,6 +1004,10 @@ ngx_http_script_add_copy_code(ngx_http_script_compile_t *sc, ngx_str_t *value,
 }
 
 
+/*
+ * 返回ngx_http_script_copy_code_t脚本对象中code->len的值
+ * 并且把e->ip移动sizeof(ngx_http_script_copy_code_t)个字节
+ */
 size_t
 ngx_http_script_copy_len_code(ngx_http_script_engine_t *e)
 {
@@ -873,6 +1044,14 @@ ngx_http_script_copy_code(ngx_http_script_engine_t *e)
 }
 
 
+/*
+ * 这是一个用来添加计算变量值的脚本方法,也就是说该方法生成了一个脚本,这个脚本用来动态计算变量值的,比如
+ *    return  200 "I am $uri";
+ * 其中"I am $uri"在ngx中是一个复杂值,这个值的计算会被编译成脚本,对于纯文本值"I am "会使用
+ * ngx_http_script_add_copy_code()方法来生成计算脚本,而对于"$uri"这个变量则需要使用
+ * ngx_http_script_add_var_code()方法来生成计算脚本,最后通过脚本引擎执行脚本的形式把整个复杂值
+ * 给事实的计算出来
+ */
 static ngx_int_t
 ngx_http_script_add_var_code(ngx_http_script_compile_t *sc, ngx_str_t *name)
 {
@@ -894,7 +1073,25 @@ ngx_http_script_add_var_code(ngx_http_script_compile_t *sc, ngx_str_t *name)
             return NGX_ERROR;
         }
 
-        // 变量下标放入到 *sc->flushes数组中
+        /*
+         * 变量在cmcf->variables数组中的下标,放到*sc->flushes数组中
+         *
+         * 假设解析的是如下复杂值,并且变量"$uri"在cmcf->variables数组中的下标是8
+         *   return 200 "I am $uri $uri";
+         * 则此时sc->flushes结构如下:
+         *   sc->flushes
+         *     -----
+         *     | * |
+         *     -----
+         *       \ p
+         *       -----
+         *       | * |
+         *       -----
+         *         \
+         *          ---------
+         *          | 8 | 8 |
+         *          ---------
+         */
         *p = index;
     }
 
