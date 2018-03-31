@@ -152,6 +152,9 @@ void *ngx_memcpy(void *dst, const void *src, size_t n);
  * icc8 compile memcpy(d, s, 4) to the inline "mov"es or XMM moves.
  */
 #define ngx_memcpy(dst, src, n)   (void) memcpy(dst, src, n)
+/*
+ * 从src中拷贝n个字符到dst中,然后返回拷贝后dst中最后一个字符地址加一后的值
+ */
 #define ngx_cpymem(dst, src, n)   (((u_char *) memcpy(dst, src, n)) + (n))
 
 #endif

@@ -35,15 +35,44 @@
   b.通过ngx_http_compile_complex_value()方法将复杂值编译到ngx_http_complex_value_t对象中,也就是
     ngx_http_script_return_code_t脚本对象的text字段
 
-  c.TODO 看ngx_http_compile_complex_value()中处理复杂值中带变量的逻辑
-        ngx_http_script_compile() 编译变量脚本
-           ngx_http_script_add_var_code() 添加变量脚本  下周从这里看 TODO
+  c.最终通过ngx_http_script_compile()将复杂值中的变量的索引值按顺序放到complex_value的flushes中
+    将计算复杂值长度的脚本放到complex_value的lengths中
+    将计算复杂值的实际值的脚本放到complex_value的values中
+
+
+总结:
+   ngx在编译复杂值的时候,会把复杂值分成几种不同的成分,然后每种成分都会对应一个生成脚本code的方法,比如
+       ngx_http_script_add_copy_code(): 生成复杂值中纯文本脚本code的方法
+       ngx_http_script_add_var_code(): 生成复杂值中变量脚本code的方法
+       ngx_http_script_add_args_code():
+       ngx_http_script_add_capture_code(): 复杂值中包含正则的子捕获时,使用这个方法生成对应的脚本code
+       ngx_http_script_add_full_name_code():
+   然后每个code()方法又会对应相关的脚本code结构体,比如
+       ngx_http_script_add_copy_code()对应的ngx_http_script_copy_code_t结构体
+       ngx_http_script_add_var_code()对应的ngx_http_script_var_code_t结构体
+
+
+
+
+
+
+
+TODO 明天看 
+  回顾一下复杂值脚本的生成过程,然后注释到脚本中
+
+  带变量的复杂值脚本如何执行 
+
+
+
+
+
+
 
 
 
   ngx_http_rewrite_return()  这里面用到了复杂值和脚本引擎
 
-  ngx_http_compile_complex_value() 解析复杂值
+  ngx_http_compile_complex_value() 编译复杂值
   ngx_http_complex_value()  动态获取复杂值
 
 

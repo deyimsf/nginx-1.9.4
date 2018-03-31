@@ -89,12 +89,62 @@ typedef struct {
      *						---------
      *						| 9 | 3 |
      *						---------
+     *
+     * 该字段用来存放某个复杂值中的变量在ngx中的索引值,比如
+     *    "I am $uri $uri"
+     * 上面的复杂值中存在两个变量,都是uri,那么该数组就顺序存储这两个变量值在ngx中的索引值
+     *
+     * 在调用ngx_http_script_add_var_code()方法时设置该字段中的值,一旦在复杂值中发现
+     * 一个变量就会调用这个方法
      */
     ngx_array_t               **flushes;
+
+    /*
+     * 存放用来计算复杂值(存在变量的复杂值)长度的脚本,比如有如下复杂值
+     *    reutrn 200 "I am $uri"
+     * 那么此时该字段存放的脚本及其顺序是
+     *    -------------------------------
+     *    | ngx_http_script_copy_code_t |
+     *    -------------------------------
+     *    |  ngx_http_script_var_code_t |
+     *    -------------------------------
+     * 其中ngx_http_script_copy_code_t结构体有如下两个字段
+     *    code = (ngx_http_script_code_pt) ngx_http_script_copy_len_code;
+     *    len = len;
+     * 此时code对应的方法用来计算文本"I am "的长度,其实就是len字段的值
+     *
+     * 其中ngx_http_script_var_code_t结构体也有如下两个字段
+     *    code = code = (ngx_http_script_code_pt) ngx_http_script_copy_var_len_code;
+     *    index = index; // 变量在ngx中的索引值
+     * 此时code对应的方法用来计算变量"$uri"的长度(变量真正代表的值)
+     *
+     */
     ngx_array_t               **lengths;
 
     /*
      * lcf->codes
+     *
+     * 存放用来计算真正复杂值(存在变量的复杂值)的脚本,比如有如下复杂值
+     *    reutrn 200 "I am $uri"
+     * 那么此时该字段存放的脚本及其顺序是
+     *    -------------------------------------------
+     *    | ngx_http_script_copy_code_t + len + xxx |
+     *    -------------------------------------------
+     *    | ngx_http_script_var_code_t              |
+     *    -------------------------------------------
+     * 其中ngx_http_script_copy_code_t结构体有两个字段
+     *    code = ngx_http_script_copy_code;
+     *    len = len;
+     * 此时code对应的方法的作用是将文本值"I am "拷贝到脚本引擎中,而这个文本值就放在ngx_http_script_copy_code_t
+     * 结构体后面,也就是图中len所占的字节个数
+     *
+     * 其中ngx_http_script_var_code_t结构体也有如下两个字段
+     *    code = ngx_http_script_copy_var_code;
+     *    index = (uintptr_t) index;
+     * 此时code对应的方法会通过变量的索引值index从ngx中取出,然后将其拷贝到脚本引擎中
+     *
+     * 字段lengths里面的脚本是用来计算复杂值长度的
+     * 字段values里面的脚本是用来计算真正复杂值的
      */
     ngx_array_t               **values;
 
@@ -141,6 +191,30 @@ typedef struct {
 	 * 那么该字段值为"I am $uri $host"
 	 */
     ngx_str_t                   value;
+
+    /*
+     * 该字段用来存放某个复杂值中的变量在ngx中的索引值,比如
+     *    "I am $uri $uri"
+     * 上面的复杂值中存在两个变量,都是uri,那么该数组就顺序存储这两个变量值在ngx中的索引值
+     *
+     * 数组中存放各个变量在cmcf->variables中的下标
+     * 		flushes
+     * 		-------
+     * 		|  *  |
+     * 		-------
+     *		    \
+     *		    ---------------
+     *			| ngx_array_t |
+     *			---------------
+     *					\ elts
+     *					---------
+     *					| 9 | 3 |
+     *					---------
+     *
+     * 在调用ngx_http_script_add_var_code()方法时设置该字段中的值,一旦在复杂值中发现
+     * 一个变量就会调用这个方法
+     *
+     */
     ngx_uint_t                 *flushes;
 
     /*
@@ -149,8 +223,52 @@ typedef struct {
      * 此时该字段值为NULL
      *
      *
+     * 存放用来计算复杂值(存在变量的复杂值)长度的脚本,比如有如下复杂值
+     *    reutrn 200 "I am $uri"
+     * 那么此时该字段存放的脚本及其顺序是
+     *    -------------------------------
+     *    | ngx_http_script_copy_code_t |
+     *    -------------------------------
+     *    |  ngx_http_script_var_code_t |
+     *    -------------------------------
+     * 其中ngx_http_script_copy_code_t结构体有如下两个字段
+     *    code = (ngx_http_script_code_pt) ngx_http_script_copy_len_code;
+     *    len = len;
+     * 此时code对应的方法用来计算文本"I am "的长度,其实就是len字段的值
+     *
+     * 其中ngx_http_script_var_code_t结构体也有如下两个字段
+     *    code = code = (ngx_http_script_code_pt) ngx_http_script_copy_var_len_code;
+     *    index = index // 变量在ngx中的索引值
+     * 此时code对应的方法用来计算变量"$uri"的长度(变量真正代表的值)
+     *
      */
     void                       *lengths;
+
+    /*
+     * lcf->codes
+     *
+     * 存放用来计算真正复杂值(存在变量的复杂值)的脚本,比如有如下复杂值
+     *    reutrn 200 "I am $uri"
+     * 那么此时该字段存放的脚本及其顺序是
+     *    -------------------------------------------
+     *    | ngx_http_script_copy_code_t + len + xxx |
+     *    -------------------------------------------
+     *    | ngx_http_script_var_code_t              |
+     *    -------------------------------------------
+     * 其中ngx_http_script_copy_code_t结构体有两个字段
+     *    code = ngx_http_script_copy_code;
+     *    len = len;
+     * 此时code对应的方法的作用是将文本值"I am "拷贝到脚本引擎中,而这个文本值就放在ngx_http_script_copy_code_t
+     * 结构体后面,也就是图中len所占的字节个数
+     *
+     * 其中ngx_http_script_var_code_t结构体也有如下两个字段
+     *    code = ngx_http_script_copy_var_code;
+     *    index = (uintptr_t) index;
+     * 此时code对应的方法会通过变量的索引值index从ngx中取出,然后将其拷贝到脚本引擎中
+     *
+     * 字段lengths里面的脚本是用来计算复杂值长度的
+     * 字段values里面的脚本是用来计算真正复杂值的
+     */
     void                       *values;
 } ngx_http_complex_value_t;
 
@@ -164,8 +282,16 @@ typedef struct {
 typedef struct {
     ngx_conf_t                 *cf;
 
-    // 变量值
+    /*
+     * 原生复杂值,比如
+     *    return 200 "I am $uri"
+     * 则该值为
+     *    "I am $uri"
+     */
     ngx_str_t                  *value;
+    /*
+     * 原生复杂值被编译后的值
+     */
     ngx_http_complex_value_t   *complex_value;
 
     unsigned                    zero:1;
@@ -179,7 +305,32 @@ typedef size_t (*ngx_http_script_len_code_pt) (ngx_http_script_engine_t *e);
 
 
 /*
- * 用于拷贝纯文本的脚本
+ * 用于计算纯文本的长度和拷贝纯文本值到脚本引擎中的脚本结构体,比如有如下复杂值
+ *     return 200 "I am $uri";
+ *
+ * 在计算复杂值中纯文本值("I am ")的长度时候,该结构体的code对应
+ *    code = (ngx_http_script_code_pt) ngx_http_script_copy_len_code;
+ * 而该方法的作用就是在引擎中跳过结构体,然后返回该结构体对应的len字段
+ *     ngx_http_script_copy_code_t  *code;
+ *
+ *     code = (ngx_http_script_copy_code_t *) e->ip;
+ *     e->ip += sizeof(ngx_http_script_copy_code_t);
+ *
+ *     return code->len;
+ *
+ *
+ * 在计算复杂值中纯文本("I am ")的实际文本值的时候,该结构体的code对应
+ *     code = ngx_http_script_copy_code
+ * 该方法的作用是在引擎中跳过该结构体和文本信息,然后将文本值拷贝到引擎中
+ *     code = (ngx_http_script_copy_code_t *) e->ip;
+ *
+ *     p = e->pos;
+ *
+ *     if (!e->skip) { // 文本信息拷贝到引擎中
+ *        e->pos = ngx_copy(p, e->ip + sizeof(ngx_http_script_copy_code_t), code->len);
+ *     }
+ *
+ *     e->ip += sizeof(ngx_http_script_copy_code_t) + ((code->len + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1));
  */
 typedef struct {
     ngx_http_script_code_pt     code;
@@ -187,12 +338,24 @@ typedef struct {
 } ngx_http_script_copy_code_t;
 
 
+/*
+ * 用来计算复杂值中变量值的脚本,比如有如下复杂值
+ *     return 200 "I am $uri";
+ *
+ * 在计算复杂值中变量("$uri")的长度时候,该结构体的code对应
+ *     code = (ngx_http_script_code_pt) ngx_http_script_copy_var_len_code;
+ * 此时code对应的方法用来计算变量("$uri")的长度(变量真正代表的值)
+ *
+ * 在计算复杂值中变量("$uri")的值的时候,该结构体的code对应
+ *     code = ngx_http_script_copy_var_code;
+ * 此时code对应的方法会将变量的索引值index从ngx中取出,然后将其拷贝到脚本引擎中
+ *
+ */
 typedef struct {
     ngx_http_script_code_pt     code;
 
     /*
      * 当前变量在cmcf->variables数组中的下标
-     *
      */
     uintptr_t                   index;
 } ngx_http_script_var_code_t;
