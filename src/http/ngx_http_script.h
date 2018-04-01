@@ -4,6 +4,133 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/*
+ * ngx中的脚本引擎
+ *
+ * -----------------------------------脚本引擎在复杂值中的使用-------------------------
+ * 1.ngx中的复杂值可以是文本、变量以他们的组合形式,比如下面的几个值都可以是一个复杂值
+ *     "I am a complex value"
+ *     "$complex_value"
+ *     "I am a complex $value"
+ *
+ * 2.在ngx中使用ngx_http_compile_complex_value_t结构体表示一个原生的复杂值,这个原生的结构体需要通过
+ *   ngx_http_compile_complex_value()方法把复杂值编译到ngx_http_complex_value_t结构体中,后续通
+ *   过脚本引擎去执行这段脚本就可以了
+ *
+ *
+ * -----------------------------------纯文本复杂值在脚本引擎中使用使用的例子-------------------------
+ *【设置复杂值脚本code】
+ * 1.有如下return指令
+ *     return 200 "I am a complex value";
+ *
+ * 2.ngx在解析到return指令后执行ngx_http_rewrite_return()方法,该方法会向lcf->codes中添加一个脚本code
+ *   ngx_http_script_return_code_t,这是一个专门为return指令设计的脚本code结构体,这个结构体包含了三个字段:
+ *      code: 一个ngx_http_script_code_pt类型的方法变量,ngx中每个脚本code结构体的第一个字段必须是它.
+ *            它在这里作用是执行return指令要做的动作,对应ngx_http_script_return_code()方法
+ *      status: 用来存放code方式执行后的一些返回状态码
+ *      text: 一个ngx_http_complex_value_t类型的变量,该字段的作用是存放return指令中复杂值编译后的值,因为
+ *            return的返回值使用这个字段中的脚本code实时计算出来的
+ *
+ * 3.把复杂值先用ngx_http_compile_complex_value_t结构体表示,然后在使用ngx_http_compile_complex_value()
+ *   方法把他编译到ngx_http_complex_value_t对象中
+ *
+ * 4.ngx中对复杂值是纯文本的编译是不需要生成脚本code的,所以编译后ngx_http_complex_value_t对象中的flushes、lengths
+ *   和values三个字段都是NULL,只有value字段代表这个纯文本值
+ *
+ *【执行复杂值脚本code】
+ * 1.return指令的执行是通过ngx_http_rewrite_handler()方法触发的,该方法通过脚本引擎执行lcf->codes中的脚本code
+ *
+ * 2.return指令放到lcf->codes中的脚本code是ngx_http_script_return_code_t对象,该对象中code字段对应的方法是
+ *   ngx_http_script_return_code(),在该方法中会调用ngx_http_send_response()方法,并把编译好的脚本code传递给
+ *   这个方法.(脚本code就是【设置复杂值脚本code】中第3步的ngx_http_complex_value_t对象)
+ *
+ * 3.在ngx_http_send_response()方法中通过调用ngx_http_complex_value()方法来获取真正的复杂值
+ *
+ * 4.因为当前复杂值是纯文本值,所以ngx_http_complex_value()方法会直接返回该文本值
+ *
+ *
+ * -----------------------------------混合复杂值在脚本引擎中使用使用的例子-------------------------
+ *【设置复杂值脚本code】
+ * 1.有如下return指令
+ *     return 200 "I am a complex $value";
+ *
+ * 2.ngx在解析到return指令后执行ngx_http_rewrite_return()方法,该方法会向lcf->codes中添加一个脚本code
+ *   ngx_http_script_return_code_t.
+ *
+ * 3.复杂值先用ngx_http_compile_complex_value_t结构体表示,然后需要使用ngx_http_compile_complex_value()
+ *   方法把他编译到ngx_http_complex_value_t对象中
+ *
+ * 4.编译的时候会把这个复杂值分成两部分,分别是
+ *     "I am a complex "
+ *     "$value"
+ *   这两个部分都会对应各自的脚本code
+ *      ngx_http_script_copy_code_t 对应文本值脚本code
+ *      ngx_http_script_var_code_t  对应变量值脚本code
+ *   其中每种脚本code都会被放到complex_value_t对象lengths字段和values字段中.
+ *
+ *   lengths中的脚本code对应的方法是用来计算复杂值的长度
+ *   values中的脚本code对应的方法是用来计算复杂值的实际数据
+ *
+ *【执行复杂值脚本code】
+ * 1.return指令的执行是通过ngx_http_rewrite_handler()方法触发的,该方法通过脚本引擎执行lcf->codes中的脚本code
+ *
+ * 2.return指令放到lcf->codes中的脚本code是ngx_http_script_return_code_t对象,该对象中code字段对应的方法是
+ *   ngx_http_script_return_code(),在该方法中会调用ngx_http_send_response()方法,并把编译好的脚本code传递给
+ *   这个方法.(脚本code就是【设置复杂值脚本code】中第3步的ngx_http_complex_value_t对象)
+ *
+ * 3.在ngx_http_send_response()方法中通过调用ngx_http_complex_value()方法来获取真正的复杂值
+ *
+ * 4.ngx_http_complex_value()方法通过执行脚本引擎来获取复杂值,用脚本引擎执行complex_value->lengths中的脚本code
+ *   计算出复杂值的长度,然后用脚本引擎执行complex_value->values中的脚本code计算出复杂值的实际值
+ *
+ *
+ * -------------------------------------总结-----------------------------------
+ * ngx在编译复杂值的时候,会把复杂值分成几种不同的成分,然后每种成分都会对应一个生成脚本code的方法,比如
+ *     ngx_http_script_add_copy_code(): 生成复杂值中纯文本脚本code(ngx_http_script_copy_code_t)的方法
+ *     ngx_http_script_add_var_code(): 生成复杂值中变量脚本code(ngx_http_script_var_code_t)的方法
+ *     ngx_http_script_add_args_code():
+ *     ngx_http_script_add_capture_code(): 复杂值中包含正则的子捕获时,使用这个方法生成对应的脚本code
+ *     ngx_http_script_add_full_name_code():
+ * 然后每个code()方法又会对应相关的脚本code结构体,比如
+ *     ngx_http_script_add_copy_code()对应的ngx_http_script_copy_code_t结构体
+ *     ngx_http_script_add_var_code()对应的ngx_http_script_var_code_t结构体
+ *
+ *
+ * 复杂值的编译ngx_http_compile_complex_value()方法发起,最终由ngx_http_script_compile()方法来完成
+ * 一个复杂值中的文本值
+ *    *sc->lengths
+ *       ngx_http_script_copy_code_t
+ *           code = (ngx_http_script_code_pt) ngx_http_script_copy_len_code; // 计算文本值长度
+ *           len = len; // 文本值的长度
+ *
+ *    *sc->values
+ *       ngx_http_script_copy_code_t + len + xxx
+ *           code = ngx_http_script_copy_code  // 文本值拷贝到脚本引擎中
+ *           len = len;
+ *
+ * 一个复杂值中的变量值
+ *    *sc->lengths
+ *       ngx_http_script_var_code_t
+ *           code = (ngx_http_script_code_pt) ngx_http_script_copy_var_len_code; // 计算变量值长度(变量真正代表值的长度)
+ *           index = index // 变量在ngx中的索引值
+ *
+ *   *sc->values
+ *       ngx_http_script_var_code_t
+ *           code = ngx_http_script_copy_var_code;  // 通过变量索引获取变量值,然后将变量值拷贝到脚本引擎中
+ *           index = (uintptr_t) index; // 变量在ngx中的索引值 *
+ *
+ *
+ * -----------------------------------------------------其它--------------------------------------
+ * rewrite模块中的大部分指令是用脚本执行的
+ *     ngx_http_script_break_code(): 执行break指令的脚本code
+ *     ngx_http_script_return_code(): 执行return指令的脚本code
+ *     ngx_http_script_if_code(): 执行if指令的脚本code
+ *     ngx_http_script_regex_start_code(): 执行rewrite指令的时候会用到这个脚本code
+ *
+ *
+ *
+ *
+ */
 
 #ifndef _NGX_HTTP_SCRIPT_H_INCLUDED_
 #define _NGX_HTTP_SCRIPT_H_INCLUDED_

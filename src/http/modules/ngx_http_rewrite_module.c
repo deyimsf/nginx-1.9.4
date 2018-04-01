@@ -297,6 +297,9 @@ ngx_http_rewrite_handler(ngx_http_request_t *r)
 }
 
 
+/*
+ * 返回未初始化变量的值
+ */
 static ngx_int_t
 ngx_http_rewrite_var(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     uintptr_t data)
@@ -1185,8 +1188,22 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     	/*
     	 * 自定义变量会走这个逻辑,比如:
     	 * 		set $a aaa;
-    	 *
-    	 * TODO 这个方法是干嘛的
+    	 * 为变量设置一个默认取值方法,当ngx中使用了未初始化的变量的时候会调用这个方法,比如下面的配置
+    	 *     location / {
+    	 *         set $b "$a";
+    	 *         set $a "hello";
+    	 *         return 200 "$b";
+    	 *     }
+    	 * 当访问该location的时候返回值为空字符串(""),并且后台日志会打印一个警告值
+    	 *     using uninitialized "a" variable
+    	 * 执行过程是这样的,上面的三个指令会按照配置顺序依次执行
+    	 * 1.执行第一个set指令的时候通过ngx_http_get_flushed_variable()方法去获取变量"$a"的值,
+    	 *   由于是第一使用,所以在请求的r->variables中是没有该变量缓存值的,所以需要调用变量"$a"的get_handler()
+    	 *   方法获取该变量值,该变量的get_handler()就是ngx_http_rewrite_var()方法,这个返回会打印一个警告,并
+    	 *   返回空字符("").
+    	 * 2.执行变量"$b"对应的脚本方法,把脚本引擎中的空字符赋值给该变量
+    	 * 3.执行第二set指令的脚本code,步骤同1和2
+    	 * 4.执行return对应的脚本code,然后返回变量"$b"的值,也就是空字符
     	 */
         v->get_handler = ngx_http_rewrite_var;
         v->data = index;
@@ -1199,10 +1216,25 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * 执行完该代码后lcf->codes数组中存放的就是ngx_http_script_value_code_t
      *
      * 该方法还会处理复杂变量值(set $a $bb$cc)
+     *
+     * 这个方法会把
+     *    set $a $bb$cc
+     * 中的复杂值编译到lcf->codes中
      */
     if (ngx_http_rewrite_value(cf, lcf, &value[2]) != NGX_CONF_OK) {
         return NGX_CONF_ERROR;
     }
+
+    /*
+     * 下面的逻辑会把
+     *    set $a $bb$cc
+     * 中定义的变量
+     *    $a
+     * 对应的执行脚本放到lcf->codes中,对应的脚本会执行ngx_http_script_var_set_handler_code()方法
+     * 或者ngx_http_script_set_var_code()方法,这两个方法都是在设置变量($a)的值,他们会用到上一个脚本生成的值,
+     * 上一个脚本生成的值会放到脚本引擎e->sp中,比如ngx_http_script_value_code()方法或者
+     * ngx_http_script_complex_value_code()方法.
+     */
 
     if (v->set_handler) {
         vhcode = ngx_http_script_start_code(cf->pool, &lcf->codes,

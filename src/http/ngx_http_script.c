@@ -5,6 +5,7 @@
  */
 
 
+
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -93,6 +94,9 @@ ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val,
 
     len = 0;
 
+    /*
+     * 计算复杂值总长度
+     */
     while (*(uintptr_t *) e.ip) {
         lcode = *(ngx_http_script_len_code_pt *) e.ip;
         len += lcode(&e);
@@ -106,13 +110,58 @@ ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val,
 
     e.ip = val->values;
     e.pos = value->data;
+    /*
+     * 这一步相当于数据结构体拷贝,只不过是个浅拷贝,拷贝完成后结构如下
+     *      value
+     *      -----
+     *      | * |
+     *      -----
+     *         \                     e.buf
+     *         ---------------   ---------------
+     *         | len | *data |   | len | *data |
+     *         ---------------   ---------------
+     *                      \           /
+     *                       ----------- <--- e.pos
+     *                       |         |
+     *                       -----------
+     *                       |         |
+     *                       -----------
+     *                       |   ...   |
+     *                       -----------
+     *						 |         |
+     *						 -----------
+     */
     e.buf = *value;
 
+    /*
+     * 计算复杂值的实际数据,执行完毕后不会再存在变量了,执行完毕后结构可能如下(假设整个复杂值是"I am a complex value")
+     *      value
+     *      -----
+     *      | * |
+     *      -----
+     *         \                     e.buf
+     *         ---------------   ---------------
+     *         | len | *data |   | len | *data |
+     *         ---------------   ---------------
+     *                      \           /
+     *                       -----------
+     *                       |   'I'   |
+     *                       -----------
+     *                       |   ' '   |
+     *                       -----------
+     *                       |   ...   |
+     *                       -----------
+     *						 |   'e'   |
+     *						 -----------  <--- e.pos
+     */
     while (*(uintptr_t *) e.ip) {
         code = *(ngx_http_script_code_pt *) e.ip;
         code((ngx_http_script_engine_t *) &e);
     }
 
+    /*
+     * 再拷贝回来,主要是怕上面的脚本引擎执行完毕后,会改变e.buf中的len和data字段值
+     */
     *value = e.buf;
 
     return NGX_OK;
@@ -870,9 +919,48 @@ ngx_http_script_done(ngx_http_script_compile_t *sc)
 }
 
 
+/*
+ * 用来为脚本分配连续内存空间的方法(利用ngx中数组动态扩容的方式实现)
+ *
+ * 这里的codes使用了两个星号,目的是为了从方法里面改变入参codes的二级指针值,如果使用一个星号是不行的,比如
+ *      void *
+ *      start_code(ngx_array_t *codes)
+ *      {
+ *          codes = yyy;
+ *      }
+ * 对于上面的方法定义有如下的使用方式
+ *     void *codes;
+ *     codes = xxx;
+ *     start_codes(codes);
+ * 上面的代码执行完毕后,codes变量的值仍然是xxx,所以这种参数定义方式无法修改外部变量codes的值
+ *
+ * 看使用两个星号定义入参的形式,伪代码如下
+ *     void *
+ *     start_code(ngx_array_t **codes)
+ *     {
+ *         *codes = yyy;
+ *     }
+ * 对于上面的方法定义有如下的使用方式
+ *     void *codes;
+ *     codes = xxx;
+ *     start_codes(&codes);
+ * 上面的代码执行完毕后,codes变量的值就变成了yyy了
+ */
 void *
 ngx_http_script_start_code(ngx_pool_t *pool, ngx_array_t **codes, size_t size)
 {
+	/*
+	 * 变量codes的内存结构如下
+	 *     codes
+	 *     -----
+	 *     | * |
+	 *     -----
+	 *       \ *codes
+	 *       -----
+	 *       | * |
+	 *       -----
+	 */
+
     if (*codes == NULL) {
         *codes = ngx_array_create(pool, 256, 1);
         if (*codes == NULL) {
@@ -1726,6 +1814,9 @@ ngx_http_script_full_name_code(ngx_http_script_engine_t *e)
 }
 
 
+/*
+ * 执行return指令的脚本code
+ */
 void
 ngx_http_script_return_code(ngx_http_script_engine_t *e)
 {
@@ -1748,6 +1839,9 @@ ngx_http_script_return_code(ngx_http_script_engine_t *e)
 }
 
 
+/*
+ * 执行break指令的脚本code
+ */
 void
 ngx_http_script_break_code(ngx_http_script_engine_t *e)
 {
@@ -1757,6 +1851,9 @@ ngx_http_script_break_code(ngx_http_script_engine_t *e)
 }
 
 
+/*
+ * 执行if指令的脚本code
+ */
 void
 ngx_http_script_if_code(ngx_http_script_engine_t *e)
 {
@@ -2020,8 +2117,6 @@ ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
 
 
 /*
- * 该方法可以理解为引擎的指令,会基于栈(e->sp)来操作
- *
  * 取出变量值将其赋值给e->sp->data,比如有如下指令:
  * 		set $a $bb$cc
  * 在该方法的作用就是将变量值($bb$cc)赋值给e->sp->data
