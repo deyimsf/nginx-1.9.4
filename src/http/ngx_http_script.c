@@ -702,6 +702,9 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
         sc->size += name.len;
 
         /*
+         *
+         * ----------------------------文本值  文本值  文本值-------------------------
+         *
          * sc.cf = ccv->cf;
          * sc.source = v;
          * sc.flushes = &pf;

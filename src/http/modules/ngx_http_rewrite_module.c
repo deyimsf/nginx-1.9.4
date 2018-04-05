@@ -24,66 +24,41 @@
 
 typedef struct {
 	/*
-	 * typedef struct {
-     *	  ngx_http_script_code_pt     code;
-     *	  uintptr_t                   value;
-     *	  uintptr_t                   text_len;
-     *	  // 变量的值,这里把变量值指针转换为了long
-     *	  uintptr_t                   text_data;
-	 * } ngx_http_script_value_code_t;
-	 *
-	 * 存放处理变量值的结构体(ngx_http_script_value_code_t),比如:
-	 *  set $name zhangsan
-	 *
-	 * 那么此时,对于变量name来说,codes的第一个元素就是ngx_http_script_value_code_t:
-	 *  	zhangsan
-	 *  (实际上codes中放的元素大小是1个字节,结构体ngx_http_script_value_code_t有多大,就占多少个元素)
-	 *
-	 *
-	 * 假设有两个set指令,分别是
-	 * 	set $a	aa;
-	 * 	set $b 	bbc;
-	 * 那么最终codes的部分内存结构如下:
-	 *   ------------------------------------ <--- ngx_http_script_value_code_t
-	 *   |code = ngx_http_script_value_code |
-	 * 	 ------------------------------------
-	 * 	 |value = 0							|
-	 * 	 ------------------------------------
-	 * 	 |text_len = 2						|
-	 * 	 ------------------------------------
-	 * 	 |text_data = aa					|
-	 * 	 ------------------------------------ <--- ngx_http_script_var_code_t
-	 * 	 |code=ngx_http_script_set_var_code |
-	 *	 ------------------------------------
-	 *	 |index = 1							|
-	 *	 ------------------------------------ <--- ngx_http_script_value_code_t
-	 *   |code = ngx_http_script_value_code |
-	 * 	 ------------------------------------
-	 * 	 |value = 0							|
-	 * 	 ------------------------------------
-	 * 	 |text_len = 3						|
-	 * 	 ------------------------------------
-	 * 	 |text_data = bbc					|
-	 * 	 ------------------------------------ <--- ngx_http_script_var_code_t
-	 * 	 |code=ngx_http_script_set_var_code |
-	 *	 ------------------------------------
-	 *	 |index = 2							|
-	 *	 ------------------------------------
-	 *
+	 * 看ngx_http_script.h中的注释
+	 * 看set指令对应的方法ngx_http_rewrite_set()
 	 *
 	 * 假设有个set指令如下:
-	 *	 set $a $bb$cc
-	 * 那么codes的部分内存结构如下 (TODO ?)
+	 *	 set $a "I am value"
+	 * 那么codes的部分内存结构如下
 	 *   codes
 	 *   -----
 	 *   | * |
 	 *   -----
-	 *   	\   ngx_http_script_complex_value_code_t
-	 *   	----------------------------------------------
-	 *   	|code = ngx_http_script_complex_value_code() |
-	 *   	----------------------------------------------
-	 *   	|				   *lengths					 |
-	 *		----------------------------------------------
+	 *   	\
+	 *   	--------------------------------
+	 *   	| ngx_http_script_value_code_t |  把变量值放到脚本引擎中
+	 *   	--------------------------------
+	 *   	| ngx_http_script_var_code_t   |  把变量值赋值给变量$a
+	 *		--------------------------------
+	 *
+	 *
+	 * 如果set指令是如下形式:
+	 *   set $a "I am $uri";
+	 * 那么codes的部分内存结构如下:
+	 *   codes
+	 *   -----
+	 *   | * |
+	 *   -----
+	 *     \
+	 *     ----------------------------------------
+	 *     | ngx_http_script_complex_value_code_t | 计算复杂值("I am $uri")的长度,并在脚本引擎中为该复杂值分配内存空间
+	 *     ----------------------------------------
+	 *     | ngx_http_script_copy_code_t          | 将复杂值("I am $uri")中的纯文本("I am ")放到脚本引擎中
+	 *     ----------------------------------------
+	 *     | ngx_http_script_copy_var_code        | 将复杂值("I am $uri")中的变量值("$uri")追加到脚本引擎中
+	 *     ----------------------------------------
+	 *     | ngx_http_script_var_code_t           | 把脚本引擎中的变量值赋值给变量$a
+	 *     ----------------------------------------
 	 *
 	 */
     ngx_array_t  *codes;        /* uintptr_t */
