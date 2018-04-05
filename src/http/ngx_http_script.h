@@ -128,6 +128,20 @@
  *     ngx_http_script_regex_start_code(): 执行rewrite指令的时候会用到这个脚本code
  *
  *
+ * ---------------------------------------set指令设置脚本code概要------------------------------------
+ * ngx中的set指令格式如下:
+ *     set $a "I am $uri";
+ * 其中指令第一个参数叫做变量,第二个参数叫变量值
+ *
+ * ngx中return语句用一个脚本code来执行他的行为,而set指令则用了三个脚本code,分别是
+ *    ngx_http_script_value_code_t  变量值中不包含变量(比如 "I am uri")
+ *    ngx_http_script_complex_value_code_t 变量值中包含变量(比如 "I am $uri")
+ *    ngx_http_script_var_code_t
+ * 其中value_code_t这个脚本code用来表示变量值中不包含变量的形式,比如
+ *    set $a "I am uri";
+ * complex_value_code_t这个脚本code用来表示变量值中包含变量的形式,比如
+ *    set $a "I am $uri";
+ * 而var_code_t这个脚本code则用来表示set中的变量,主要用来为这个变量赋值
  *
  *
  */
@@ -160,6 +174,15 @@ typedef struct {
     /*
      * 引擎执行过程中携带当前变量值
      * 相当于基于栈的指令中的栈,ngx_http_rewrite_loc_conf_t->stack_size表示栈大小
+     *
+     * 假设有如下指令
+     *   set $a "I am value";
+     * 这个指令在执行过程中会先把
+     *   "I am value"
+     * 放到栈sp中,然后在执行变量
+     *   $a
+     * 对应的脚本code的时候会从栈sp中取出这个变量值,然后赋值给变量
+     *   $a
      */
     ngx_http_variable_value_t  *sp;
 
@@ -477,6 +500,12 @@ typedef struct {
  *     code = ngx_http_script_copy_var_code;
  * 此时code对应的方法会将变量的索引值index从ngx中取出,然后将其拷贝到脚本引擎中
  *
+ *
+ * 在为set指令的变量赋值时也会用到这个脚本code,比如
+ *    set $a "I am $uri";
+ * 在计算变量$a的时候会用到该脚本code,在ngx_http_rewrite_set()方法中用到如下代码
+ *    vcode->code = ngx_http_script_set_var_code;
+ *    vcode->index = (uintptr_t) index;
  */
 typedef struct {
     ngx_http_script_code_pt     code;
@@ -488,8 +517,17 @@ typedef struct {
 } ngx_http_script_var_code_t;
 
 
+/*
+ * 当对应的变量(ngx_http_variable_value_t)设置了set_handler字段,那么在设置变量时就会使用这个变量脚本
+ *
+ * 看ngx_http_script_var_set_handler_code()方法
+ */
 typedef struct {
     ngx_http_script_code_pt     code;
+
+    /*
+     * 变量(ngx_http_variable_value_t)对应的set_handler()方法
+     */
     ngx_http_set_variable_pt    handler;
     uintptr_t                   data;
 } ngx_http_script_var_handler_code_t;
@@ -625,23 +663,37 @@ typedef struct {
 
 
 /*
- * 复杂变量值,如: set $a $bb$cc
- *
- * 如果变量值中存在其它变量,则使用该结构体代替变量值
- * 变量值中没有其它变量才会使用ngx_http_script_value_code_t结构体
- *
+ * set指令会用到这个脚本code,比如
+ *   set $a "I am $uri"
+ * 则该结构体代表set指令中的
+ *   "I am $uri"
+ * 如果set指令是如下形式
+ *   set $a "I am value";
+ * 则使用
+ *   ngx_http_script_value_code_t
  */
 typedef struct {
 	/*
 	 * 用户处理复杂变量值的脚本函数(如:ngx_http_script_complex_value_code)
 	 */
     ngx_http_script_code_pt     code;
+
+    /*
+     * 存放用来计算变量值长度的脚本
+     */
     ngx_array_t                *lengths;
 } ngx_http_script_complex_value_code_t;
 
 
 /*
- * 脚本引擎中的值
+ * 目前在ngx中只有set指令用到,且代表set指令中不带变量的值,比如
+ *     set $a "I am value";
+ * 则代表
+ *     "I am value";
+ * 如果set指令是如下形式
+ *    set $a "I am $uri"
+ * 则set中的变量值不用下面这个脚本code,而是用
+ *    ngx_http_script_complex_value_code_t
  */
 typedef struct {
 	/*
@@ -653,20 +705,20 @@ typedef struct {
      * 变量值中变量的个数,0代表没有变量,比如：
      * 	 set $a bb;
      * 则value等于0,如果：
-     * 	 set $a $cc
-     * 则value等于1
-     *
      */
     uintptr_t                   value;
 
     /*
-     * 纯变量值长度,比如 set $a bb;
-     * 则该值为2
+     * 纯变量值长度,比如
+     *    set $a "I am value";
+     * 则该值为10
      */
     uintptr_t                   text_len;
     /*
-     * 纯变量值,比如 set $a bb;
-     * 则该值为bb
+     * 纯变量值,比如
+     *    set $a "I am value";
+     * 则该值为
+     *   "I am value"
      */
     uintptr_t                   text_data;
 } ngx_http_script_value_code_t;

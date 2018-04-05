@@ -646,6 +646,7 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
             sc->variables++;
 
             /*
+             * --------------------------变量 变量 变量-------------------
              * 添加一个计算变量值的脚本,比如
              *    "I am $uri"
              * 中的
@@ -1155,7 +1156,17 @@ ngx_http_script_copy_len_code(ngx_http_script_engine_t *e)
 
 
 /*
- * 拷贝复杂值中的文本值?
+ * 该方法对应ngx_http_script_copy_code_t脚本code中的code字段,用来将文本值拷贝到脚本引擎中
+ * 比如如下的复杂值
+ *     return 200 "I am $uri";
+ * 那么复杂值中的
+ *     "I am "
+ * 会对应ngx_http_script_copy_code_t脚本code,而复杂之中的
+ *     "$uri"
+ * 会对应ngx_http_script_var_code_t脚本code
+ * 而该方法会和copy_code_t脚本code对应起来,作用就是拷贝"I am "这个文本到引擎中
+ *
+ * 最终ngx_http_complex_value()方法会调用脚本引擎来执行复杂值
  */
 void
 ngx_http_script_copy_code(ngx_http_script_engine_t *e)
@@ -1189,10 +1200,16 @@ ngx_http_script_copy_code(ngx_http_script_engine_t *e)
 /*
  * 这是一个用来添加计算变量值的脚本方法,也就是说该方法生成了一个脚本,这个脚本用来动态计算变量值的,比如
  *    return  200 "I am $uri";
- * 其中"I am $uri"在ngx中是一个复杂值,这个值的计算会被编译成脚本,对于纯文本值"I am "会使用
- * ngx_http_script_add_copy_code()方法来生成计算脚本,而对于"$uri"这个变量则需要使用
- * ngx_http_script_add_var_code()方法来生成计算脚本,最后通过脚本引擎执行脚本的形式把整个复杂值
- * 给事实的计算出来
+ * 其中
+ *    "I am $uri"
+ * 在ngx中是一个复杂值,这个值的计算会被编译成脚本,对于纯文本值
+ *    "I am "
+ * 会使用ngx_http_script_add_copy_code()方法来生成计算脚本,而对于
+ *    "$uri"
+ * 这个变量则需要使用ngx_http_script_add_var_code()方法来生成计算脚本,最后通过脚本引擎执行脚本的
+ * 形式把整个复杂值给实时的计算出来
+ *
+ * 最终ngx_http_complex_value()方法会调用脚本引擎来执行复杂值
  */
 static ngx_int_t
 ngx_http_script_add_var_code(ngx_http_script_compile_t *sc, ngx_str_t *name)
@@ -2074,6 +2091,17 @@ true_value:
 }
 
 
+/*
+ * 假设有如下指令
+ *    set $a "I am $uri";
+ * 那么该方法的作用是计算变量值
+ *    "I am $uri"
+ * 的长度,并且为该变量值分配一块内存空间,该空间用来存放该变量值的实际值
+ *
+ * 变量的实际值有
+ *   sc.values = &lcf->codes;
+ * 中的脚本负责计算
+ */
 void
 ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
 {
@@ -2096,6 +2124,13 @@ ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
     le.request = e->request;
     le.quote = e->quote;
 
+    /*
+     * 这个循环用来计算复杂值长度,比如
+     *    set $a "I am $uri";
+     * 则用来计算
+     *    "I am $uri"
+     * 这个复杂值的长度
+     */
     for (len = 0; *(uintptr_t *) le.ip; len += lcode(&le)) {
         lcode = *(ngx_http_script_len_code_pt *) le.ip;
     }
@@ -2108,6 +2143,11 @@ ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
         return;
     }
 
+    /*
+     * 把为该变量值分配的空间赋值给脚本引擎,在执行完ngx_http_script_complex_value_code_t脚本code对应的
+     * 当前方法后,就会执行计算变量实际值的脚本code(ngx_http_script_var_code_t),计算完毕后脚本引擎e->pos
+     * 中就存放了计算后的变量值
+     */
     e->pos = e->buf.data;
 
     e->sp->len = e->buf.len;
@@ -2118,37 +2158,50 @@ ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
 
 /*
  * 取出变量值将其赋值给e->sp->data,比如有如下指令:
- * 		set $a $bb$cc
- * 在该方法的作用就是将变量值($bb$cc)赋值给e->sp->data
+ * 		set $a "I am value"
+ * 在该方法的作用就是将变量值
+ *      "I am value"
+ * 赋值给e->sp->data
  */
 void
 ngx_http_script_value_code(ngx_http_script_engine_t *e)
 {
     ngx_http_script_value_code_t  *code;
 
-    // 该结构体存放了变量的值
     code = (ngx_http_script_value_code_t *) e->ip;
 
-    // 做相应的偏移,脚本引擎可以继续执行后续的代码
+    /*
+     * 做相应的偏移,脚本引擎可以继续执行后续的代码
+     */
     e->ip += sizeof(ngx_http_script_value_code_t);
 
+    /*
+     * sp是一个变量值指针
+     *    ngx_http_variable_value_t
+     */
     e->sp->len = code->text_len;
     e->sp->data = (u_char *) code->text_data;
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
                    "http script value: \"%v\"", e->sp);
 
-    // 压栈(栈顶数据为空)
+    /*
+     * 压栈(栈顶数据为空)
+     */
     e->sp++;
 }
 
 
 /*
- * 该方法可以理解为引擎的指令,会基于栈(e->sp)来操作
+ * 该方法用来为set指令中的变量赋值,会基于栈(e->sp)来操作
  *
  * 为变量赋值,如有如下指令:
- * 		set $a $bb$cc
- * 则该方法的作用是为变量$a赋值(e->sp->data),其中e->sp->data中存放的就是$bb$cc解析后的值
+ * 		set $a "I am $uri"
+ * 则该方法的作用是为变量
+ *      $a
+ * 赋值(e->sp->data),其中e->sp->data中存放的就是
+ *      "I am $uri"
+ * 解析后的值
  */
 void
 ngx_http_script_set_var_code(ngx_http_script_engine_t *e)
@@ -2156,10 +2209,11 @@ ngx_http_script_set_var_code(ngx_http_script_engine_t *e)
     ngx_http_request_t          *r;
     ngx_http_script_var_code_t  *code;
 
-    // 该结构体存放了变量在variables中的下标
     code = (ngx_http_script_var_code_t *) e->ip;
 
-    // 做相应的偏移,脚本引擎可以继续执行后续的代码
+    /*
+     * 做相应的偏移,脚本引擎可以继续执行后续的代码
+     */
     e->ip += sizeof(ngx_http_script_var_code_t);
 
     r = e->request;
@@ -2172,11 +2226,20 @@ ngx_http_script_set_var_code(ngx_http_script_engine_t *e)
      */
     e->sp--;
 
+    /*
+     * 假设有如下指令
+     *    set $a "I am $uri";
+     * 则code->index代表变量
+     *    $a
+     * 在cmcf->variables中下标
+     */
     r->variables[code->index].len = e->sp->len;
     r->variables[code->index].valid = 1;
     r->variables[code->index].no_cacheable = 0;
     r->variables[code->index].not_found = 0;
-    // 设置变量值
+    /*
+     * 设置变量值
+     */
     r->variables[code->index].data = e->sp->data;
 
 #if (NGX_DEBUG)
@@ -2195,6 +2258,17 @@ ngx_http_script_set_var_code(ngx_http_script_engine_t *e)
 }
 
 
+/*
+ * 变量(ngx_http_variable_value_t)本身已经定义了set_handler()方法的时候,会使用这个方法,比如
+ *    set $a "I am $uri";
+ * 假设在set指令之前已经有别的指令把变量
+ *    $a
+ * 放入到了cmcf->variables_keys数组中,并且也为该变量设置好了set_handler()方法,那么当解析到set
+ * 指令的时候对应的脚本code就是ngx_http_script_var_handler_code_t,该脚本code对应的方法就是该
+ * 方法.
+ *
+ * 该方法的作用就是修改脚本引擎e->ip这个指针,并且执行对应变量的set_handler()方法
+ */
 void
 ngx_http_script_var_set_handler_code(ngx_http_script_engine_t *e)
 {
@@ -2209,6 +2283,13 @@ ngx_http_script_var_set_handler_code(ngx_http_script_engine_t *e)
 
     e->sp--;
 
+    /*
+     * e->sp是变量值,比如
+     *   set $a "I am $uri";
+     * 则e->sp则表示整个
+     *   "I am $uri"
+     * 的实际值(其中$uri是实际值)
+     */
     code->handler(e->request, e->sp, code->data);
 }
 

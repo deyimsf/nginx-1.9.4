@@ -1211,32 +1211,43 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     /*
-     * 把变量值(ngx_http_script_value_code_t)放入到lcf->codes中
+     * 这个方法会把set指令的行为编译编译到lcf->codes中
      *
-     * 执行完该代码后lcf->codes数组中存放的就是ngx_http_script_value_code_t
-     *
-     * 该方法还会处理复杂变量值(set $a $bb$cc)
-     *
-     * 这个方法会把
-     *    set $a $bb$cc
-     * 中的复杂值编译到lcf->codes中
+     * 假设当前set指令是如下形式
+     *     set $a "I am $uri";
+     * 下面方法的作用是把
+     *     "I am $uri"
+     * 这个复杂值变成脚本code
+     *     ngx_http_script_complex_value_code_t
+     * 如果set指令的变量值不包含变量,则脚本code就是
+     *     ngx_http_script_value_code_t
      */
     if (ngx_http_rewrite_value(cf, lcf, &value[2]) != NGX_CONF_OK) {
         return NGX_CONF_ERROR;
     }
 
     /*
+     * 当set指令的变量值编译完毕后开始编译变量
+     *
      * 下面的逻辑会把
-     *    set $a $bb$cc
+     *    set $a "I am $uri"
      * 中定义的变量
      *    $a
-     * 对应的执行脚本放到lcf->codes中,对应的脚本会执行ngx_http_script_var_set_handler_code()方法
-     * 或者ngx_http_script_set_var_code()方法,这两个方法都是在设置变量($a)的值,他们会用到上一个脚本生成的值,
-     * 上一个脚本生成的值会放到脚本引擎e->sp中,比如ngx_http_script_value_code()方法或者
-     * ngx_http_script_complex_value_code()方法.
+     * 对应的执行脚本(ngx_http_script_var_handler_code_t)放到lcf->codes中,对应的脚本会执行
+     * ngx_http_script_var_set_handler_code()方法或者ngx_http_script_set_var_code()方法,
+     * 这两个方法都是在设置变量($a)的值,他们会用到上一个脚本生成的值.
+     *
+     * 上一个脚本生成的值会放到脚本引擎e->sp中,比如用ngx_http_script_value_code()方法或者
+     * ngx_http_script_complex_value_code()方法生成的值.
+     *
      */
 
     if (v->set_handler) {
+
+    	/*
+    	 * 如果要设置的变量存在set_handler()方法,则使用下面的脚本code
+    	 */
+
         vhcode = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                    sizeof(ngx_http_script_var_handler_code_t));
         if (vhcode == NULL) {
@@ -1251,17 +1262,16 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     /*
-     * 把变量(ngx_http_script_var_code_t)放入到lcf->codes中
+     * 走到这里说明变量v还没有设置set_handler()方法,比如
+     *    set $a "I am $uri";
      *
-     * 从这里可以看到对于指令 set $a $bb$cc,ngx会先把变量值放入到脚本数组中(lcf->codes),
-     * 然后把变量放入到脚本数组中,这样ngx脚本引擎在执行的时候就会先获取变量值,然后在给变量赋值了
+     * 把脚本code(ngx_http_script_var_code_t)放入到lcf->codes中
      *
-     * 也就是说,在脚本引擎设计中
-     *  ngx_http_script_value_code_t结构体负责存储脚本值信息
-     *  ngx_http_script_var_code_t结构体负责存储处理脚本信息的方法
+     * 从这里可以看到对于指令
+     *    set $a "I am $uri"
+     * ngx会先把变量值放入到脚本数组中(lcf->codes),然后把变量放入到脚本数组中,这样ngx脚本引擎在执行的
+     * 时候就会先获取变量值,然后在给变量赋值了
      *
-     * 对于这两个结构体,如果从他们携带的方法角度描述的话可以这两样理解,第一个结构体的方法负责取变量值,
-     * 第二个结构体的方法负责为变量赋值。
      */
     vcode = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                        sizeof(ngx_http_script_var_code_t));
@@ -1269,7 +1279,9 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    // 设置为变量赋值的方法
+    /*
+     * 设置为变量赋值的方法
+     */
     vcode->code = ngx_http_script_set_var_code;
     vcode->index = (uintptr_t) index;
 
@@ -1280,9 +1292,16 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 /**
  * 将变量值放入到lcf->codes中
  *
- * 对于复杂变量值使用ngx_http_script_complex_value_code_t来处理
+ * 这个方法会把set指令的行为编译编译到lcf->codes中
  *
- * TODO 如果value等于 $http_xxx该如何处理
+ * 假设当前set指令是如下形式
+ *     set $a "I am $uri";
+ * 下面方法的作用是把
+ *     "I am $uri"
+ * 这个复杂值变成脚本code
+ *     ngx_http_script_complex_value_code_t
+ * 如果set指令的变量值不包含变量,则脚本code就是
+ *     ngx_http_script_value_code_t
  */
 static char *
 ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
@@ -1293,6 +1312,15 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     ngx_http_script_value_code_t          *val;
     ngx_http_script_complex_value_code_t  *complex;
 
+    /*
+     * 计算变量值中是包含变量的个数,比如
+     *    set $a "I am uri";
+     * 则n的值是零,如果是
+     *    set $a "I am $uri";
+     * 则n的值是1,表示变量值
+     *    "I am $uri"
+     * 中有一个变量
+     */
     n = ngx_http_script_variables_count(value);
 
     if (n == 0) {
@@ -1312,8 +1340,10 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
 
         val->code = ngx_http_script_value_code;
         val->value = (uintptr_t) n;
+        /*
+         * 将变量值放到对应的脚本code对象中
+         */
         val->text_len = (uintptr_t) value->len;
-        // 变量值放入到val->text_data中
         val->text_data = (uintptr_t) value->data;
 
         return NGX_CONF_OK;
@@ -1321,9 +1351,9 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
 
     /*
      * 走到这里说明变量值中存在其它变量,比如:
-     * 	set $a $bb$cc$dd
+     * 	  set $a "I am $uri";
      *
-     * 该函数的作用是向lcf->codes数组中添加ngx_http_script_complex_value_code_t结构体
+     * 该函数的作用是向lcf->codes数组中添加ngx_http_script_complex_value_code_t脚本code
      */
     complex = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                  sizeof(ngx_http_script_complex_value_code_t));
@@ -1337,15 +1367,24 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     ngx_memzero(&sc, sizeof(ngx_http_script_compile_t));
 
     sc.cf = cf;
-    // 复杂变量值,如 set $a $bb 中的$bb
+    /*
+     * 复杂变量值,如
+     *    set $a "I am $uri"
+     * 中的
+     *    "I am $uri"
+     */
     sc.source = value;
     sc.lengths = &complex->lengths;
     sc.values = &lcf->codes;
-    // 复杂变量值中,变量个数
+    /*
+     * 复杂变量值中,变量个数
+     */
     sc.variables = n;
     sc.complete_lengths = 1;
 
-    // 解析变量值中的变量
+    /*
+     * 编译变量值,最终变量的长度脚本会被编译到sc.lengths中,变量的实际值会被编译到sc.values中
+     */
     if (ngx_http_script_compile(&sc) != NGX_OK) {
         return NGX_CONF_ERROR;
     }

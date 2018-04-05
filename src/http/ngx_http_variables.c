@@ -422,6 +422,8 @@ ngx_http_variable_value_t  ngx_http_variable_true_value =
  *
  * ngx_http_variables_add_core_vars()方法把http核心模块的内置变量放到cmcf->variables_keys数组中,是
  * 专门为http核心模块写的
+ *
+ * 在添加的时候,如果变量已经存在并且这个变量被标记为可以改变,那么就直接返回这个变量代表的ngx_http_variable_t对象
  */
 ngx_http_variable_t *
 ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
@@ -2671,12 +2673,19 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
 
 /*
  * 该函数主要处理cmcf中的两个字段:
- *	cmcf->variables
- *	cmcf->variables_keys
- * variables_keys: 存放ngx中的变量,可以使用ngx_http_add_variable()方法向该数组中添加变量,最终该数组中的数据会放到hash结构中
- * variables: 存放ngx中的变量,可以使用ngx_http_get_variable_index()方法向该数组中添加变量,用来索引ngx中的所有变量
- * 	set $a bbb;
- * 	set $b $http_host;
+ *   cmcf->variables_keys
+ *	 cmcf->variables
+ * variables_keys:
+ *   存放ngx中所有被定义的变量,可以使用ngx_http_add_variable()方法向该数组中添加变量,最终该数组中的数据会放到hash结构中
+ *   在解释配置文件的时候ngx各个模块的内置变量不关有没有被使用都会放到该数组中,该数组类似于一个系统的环境变量,说他类似是因为
+ *   刚开始他包含了ngx中所有定义变量(包括set指令定义的或者其他模块的内置变量),但在实际的运行中该数组是不存在的,运行之前就被
+ *   销毁了,最终这些变量如果在ngx中被用到了,那么会被转移到variables数组中
+ * variables:
+ *    存放ngx中所用实际被使用到的变量,可以使用ngx_http_get_variable_index()方法向该数组中添加变量,用来索引ngx中的所有变量
+ *
+ * 对于如下变量值
+ * 	 set $a bbb;
+ * 	 set $b $http_host;
  * 其中变量$http_host是一个内置变量,他在解析http指令之前就已经放入到了variables_keys中,另外两个$a和$b都是外部变量,set指令在解析
  * 到他们的时候,首先会调用ngx_http_add_variable()方法将其放入到variables_keys中,然后调用ngx_http_get_variable_index()方
  * 法将其放入到variables中.
@@ -2685,8 +2694,8 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
  * 的第三个参数flags没有设置成NGX_HTTP_VAR_CHANGEABLE,并且variables_keys中已存在该变量名,则添加失败并打印 the duplicate \"%V\" variable
  *
  * 最终目的:
- *  通过variables_keys集合为variables集合赋值(比如设置get_handler()方法)
- *  为variables中的内置变量赋值(比如设置get_handler()方法)
+ *   通过variables_keys集合为variables集合赋值(比如设置get_handler()方法)
+ *   为variables中的内置变量赋值(比如设置get_handler()方法)
  */
 ngx_int_t
 ngx_http_variables_init_vars(ngx_conf_t *cf)

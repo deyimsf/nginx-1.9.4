@@ -4,15 +4,13 @@
 
 
 
-ngx_http_script_set_var_code
+TODO 
+ 
+    看if指令解析? 
+      ngx_http_rewrite_if
 
-TODO 看set如何解析变量,比如
-    set $a “I am $uri”
-
-
-rewrite阶段脚本引擎执行方法
-    ngx_http_rewrite_handler()
-
+    看rewrite指令解析?
+      ngx_http_rewrite
 
 
 
@@ -23,19 +21,6 @@ rewrite阶段脚本引擎执行方法
 
 
 
-
-
-
-
-
-limit_req_zone $uri zone=cookie__jda:10m  rate=51r/s;
-
-location / {
-
-		limit_req zone=cookie__jda nodelay;
-}
-
-这个好像只对proxy_pass指令起作用啊。。。
 
 
 
