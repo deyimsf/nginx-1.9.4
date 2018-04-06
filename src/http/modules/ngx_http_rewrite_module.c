@@ -6,6 +6,9 @@
 
 
 /*
+ * 关于脚本看ngx_http_script.h文件中的注释,里面有关于set指令和return指令生成脚本的解释
+ *
+ *
  * 该模块涉及了三个阶段
  * 	NGX_HTTP_SERVER_REWRITE_PHASE  负责执行脚本引擎
  * 	NGX_HTTP_REWRITE_PHASE 负责执行脚本引擎
@@ -14,6 +17,9 @@
  *
  * rewrite指令中的第三个参数会终止该模块的脚本引擎执行,所以该模块任何使用脚本引擎执行的指令都会被终止
  *
+ *
+ * if语句在server{}块中就是if语句
+ * if语句在location{}块中才可以当成一个location来看
  *
  */
 
@@ -816,13 +822,22 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     cf->ctx = ctx;
 
     if (pclcf->name.len == 0) {
+    	/*
+    	 * 在server{}中的if
+    	 *
+    	 * 目前在ngx中不支持在 "if in server" 中匹配location,而且能够出现在这种情况下的指令也不多,
+    	 * 比如rewrite模块的break、return等相关指令
+    	 *
+    	 * 也就是说if语句在server{}块中他就是if语句,只有在location中的if语句才可以看成是location
+    	 */
         if_code->loc_conf = NULL;
-        // 在server{}中的if
         cf->cmd_type = NGX_HTTP_SIF_CONF;
 
     } else {
+    	/*
+    	 * 在locatoin{}中的if
+    	 */
         if_code->loc_conf = ctx->loc_conf;
-        // 在locatoin{}中的if
         cf->cmd_type = NGX_HTTP_LIF_CONF;
     }
 
@@ -836,10 +851,31 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
     if (elts != lcf->codes->elts) {
+    	/*
+    	 * 两个不相等代表lcf->codes数组扩容了,这里是计算出改变地址后的if_code对象的地址
+    	 */
         if_code = (ngx_http_script_if_code_t *)
                    ((u_char *) if_code + ((u_char *) lcf->codes->elts - elts));
     }
 
+    /*
+     * 假如if语句是如下形式
+     *    if ($uri) {
+     *        return 200 "----";
+     *    }
+     * 计算出	该if_code脚本code管辖的边界值,假设此时lcf->codes的内存结构如下
+     *     lcf->codes->elts
+     *         -----------------------
+     *         | xxx | if_code | yyy |
+     *         -----------------------
+     * 此时if_code->next表示yyy对象加上if_code对象所占的字节数,而yyy中所占字节个数是当前if语句下面的
+     * return语句产生的脚本字节数
+     *
+     * 所以有上面的例子可以得知,if_code->next表示当前if语句所产生的所有脚本code使用的字节数
+     *
+     * 所以在ngx_http_script_if_code()方法中,如果匹配成功则执行if语句中产生的脚本code,如果if语句
+     * 匹配失败,则跳过整个语句产生的脚本code
+     */
     if_code->next = (u_char *) lcf->codes->elts + lcf->codes->nelts
                                                 - (u_char *) if_code;
 
@@ -851,6 +887,28 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/*
+ * 如果if是如下形式
+ *    if ($uri) {
+ *
+ *    }
+ * 则该方法的作用是通过ngx_http_rewrite_variable()方法把变量
+ *    $uri
+ * 对应到ngx_http_script_var_code_t脚本code,并把脚本code放到
+ *    lcf->codes
+ * 中去,而该脚本对应的code方法
+ *    ngx_http_script_var_code()
+ * 会在脚本引擎执行的时候把变量值放入到引擎栈(e->sp)中,而后续的脚本code
+ *    ngx_http_script_if_code_t
+ * 是调用对应的code方法
+ *    ngx_http_script_if_code()
+ * 把对应的配置上下文变成到请求对象中的,如下
+ *    e->request->loc_conf = code->loc_conf;
+ *
+ *
+ *
+ *
+ */
 static char *
 ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
 {
@@ -874,9 +932,38 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
     }
 
     if (value[1].len == 1) {
+    	/*
+    	 * 当if指令是如下形式时会走到这里
+    	 *    if ( $uri ) {
+    	 *
+    	 *    }
+    	 * 此时的if指令有四部分组成分别是
+    	 *    if
+    	 *    (
+    	 *    $uri
+    	 *    )
+    	 * 其中value值如下
+    	 *    value[0]: "if"
+    	 *    value[1]: "("
+    	 *    value[2]: "$uri"
+    	 *    value[3]: ")"
+    	 */
         cur = 2;
 
     } else {
+
+    	/*
+    	 * 假设此时if指令为如下
+    	 *    if ($uri) {
+    	 *
+    	 *    }
+    	 * 则此时value[1]的值是
+    	 *    ($uri)
+    	 * 当执行完下面的操作后变成了
+    	 *    $uri)
+    	 * 结果就是去掉了一个左括号( '(' )
+    	 *
+    	 */
         cur = 1;
         value[1].len--;
         value[1].data++;
@@ -1071,6 +1158,10 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
 }
 
 
+/*
+ * 向脚本数组中添加一个脚本code(ngx_http_script_var_code_t),后续该脚本复杂把变量内容放到
+ * 引擎栈中
+ */
 static char *
 ngx_http_rewrite_variable(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     ngx_str_t *value)

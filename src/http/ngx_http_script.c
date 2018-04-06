@@ -1305,6 +1305,11 @@ ngx_http_script_copy_var_len_code(ngx_http_script_engine_t *e)
 }
 
 
+/*
+ * 把变量的实际内容拷贝到引擎中(e->pos)
+ *
+ * 而ngx_http_script_var_code()方法则是把变量实际内容放到引擎栈(e->sp)中
+ */
 void
 ngx_http_script_copy_var_code(ngx_http_script_engine_t *e)
 {
@@ -2297,6 +2302,11 @@ ngx_http_script_var_set_handler_code(ngx_http_script_engine_t *e)
 }
 
 
+/*
+ * 把变量实际内容放到引擎栈(e->sp)中
+ *
+ * 而ngx_http_script_copy_var_code()方法则是把变量的实际内容拷贝到引擎中
+ */
 void
 ngx_http_script_var_code(ngx_http_script_engine_t *e)
 {
@@ -2322,6 +2332,11 @@ ngx_http_script_var_code(ngx_http_script_engine_t *e)
         return;
     }
 
+    /*
+     * 如果是一个不存在的变量,比如
+     *     $arg_name
+     * url中没有name这个参数,那么就会走到这里
+     */
     *e->sp = ngx_http_variable_null_value;
     e->sp++;
 }

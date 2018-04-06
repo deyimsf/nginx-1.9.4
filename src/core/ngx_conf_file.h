@@ -248,7 +248,7 @@ typedef char *(*ngx_conf_handler_pt)(ngx_conf_t *cf,
 
 
 /*
- * 解析配置文件是会用到该结构体
+ * 解析配置文件时会用到该结构体
  * 贯穿整个文件解析过程中的一个信息载体
  */
 struct ngx_conf_s {

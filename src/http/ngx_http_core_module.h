@@ -317,6 +317,8 @@ typedef struct {
      * 变量值存放在ngx_http_rewrite_loc_conf_t->codes中,最终有ngx_http_rewrite_handler()方法
      * 启动引擎来为r->variables中用到的变量赋值
      *
+	 * 被使用的变量都在这里
+	 * 被定义的变量都在variables_keys中
      */
     ngx_array_t                variables;       /* ngx_http_variable_t */
     ngx_uint_t                 ncaptures;
@@ -339,6 +341,9 @@ typedef struct {
 	 * 它的作用基本就是防止变量重复定义,以及为variables中用到的内置变量设置get_handler方法
 	 *
 	 * 把variables字段设置完毕后,该字段内存就会被回收
+	 *
+	 * 被定义的变量都在这里
+	 * 被使用的变量都在variables中
 	 */
     ngx_hash_keys_arrays_t    *variables_keys;
 
@@ -862,12 +867,12 @@ typedef struct {
     ngx_queue_t                      queue;
     /*
 	 * 1.如果location是精确匹配(=)
-	 * 2.如果location是正则匹配(~|~*)
+	 * 2.如果location是正则匹配(~ or ~*)
 	 * 3.如果location是@匹配
 	 */
     ngx_http_core_loc_conf_t        *exact;
     /*
-     * 如果location是一般匹配(无修饰符|^~)
+     * 如果location是一般匹配(无修饰符 or ^~)
      */
     ngx_http_core_loc_conf_t        *inclusive;
     // location名字

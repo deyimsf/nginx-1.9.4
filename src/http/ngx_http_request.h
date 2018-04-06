@@ -672,6 +672,9 @@ struct ngx_http_request_s {
 
     /*
      * 每个请求都有cmcf->variables.nelts个变量值
+     *
+     * 其中cmcf->variables中存放的是在ngx配置文件中出现的所有变量的名字(ngx_http_variable_t)
+     * 这个字段保证了每个请求的变量都是项目独立的
      */
     ngx_http_variable_value_t        *variables;
 

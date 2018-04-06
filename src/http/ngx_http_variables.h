@@ -92,7 +92,7 @@ struct ngx_http_variable_s {
     /*
      * NGX_HTTP_VAR_CHANGEABLE:  该变量可重复设置,也就是说该变量值可变
      * NGX_HTTP_VAR_NOCACHEABLE: 该变量不可缓存(每次都调用get_handler())
-     * NGX_HTTP_VAR_INDEXED: 该变量需要用索引来读取
+     * NGX_HTTP_VAR_INDEXED: 该变量可以用索引来读取
      * NGX_HTTP_VAR_NOHASH:  该变量没有hash到hash结构中 ?
      */
     ngx_uint_t                    flags;

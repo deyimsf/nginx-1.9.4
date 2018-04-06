@@ -12,14 +12,22 @@
  *  cmcf->variables是ngx配置中用到的变量的收集。
  *
  *  rewrite模块是用set指令来定义变量,通过set指令的ngx_http_rewrite_set()方法,设置引擎数据ngx_http_rewrite_loc_conf_t->codes,
- *  codes字段,这里面存放了脚本引擎执行时需要的数据:
- *  	每个变量值有两个结构体来表示,ngx_http_script_value_code_t和ngx_http_script_var_code_t
- * 		第一个用来保存变量值,第二个用来保存变量在cmcf->variables中的下标
+ *  codes字段,这里面存放了脚本引擎执行时需要的数据,假设ngx中的set指令格式如下:
+ *      set $a "I am $uri";
+ *  其中指令第一个参数叫做变量,第二个参数叫变量值
  *
- * 		第一个结构体中的ngx_http_script_value_code()方法将变量值压入栈(ngx_http_script_engine_t->sp++)
- * 		第二个结构体中的ngx_http_script_set_var_code()方法将变量值从栈(ngx_http_script_engine_t->sp--)取出,并对r-variables中对应的变量赋值
+ *  ngx中return语句用一个脚本code来执行他的行为,而set指令则用了三个脚本code,分别是
+ *     ngx_http_script_value_code_t  变量值中不包含变量(比如 "I am uri")
+ *     ngx_http_script_complex_value_code_t 变量值中包含变量(比如 "I am $uri")
+ *     ngx_http_script_var_code_t
+ *  其中value_code_t这个脚本code用来表示变量值中不包含变量的形式,比如
+ *     set $a "I am uri";
+ *  complex_value_code_t这个脚本code用来表示变量值中包含变量的形式,比如
+ *    set $a "I am $uri";
+ *  而var_code_t这个脚本code则用来表示set中的变量,主要用来为这个变量赋值
  *
- *  最终引擎(ngx_http_script_engine_t)有ngx_http_rewrite_handler()方法执行,执行的过程就是对r->variables中的变量值(ngx_variable_value_t)赋值的过程。
+ *  最终引擎(ngx_http_script_engine_t)由ngx_http_rewrite_handler()方法执行,执行的过程就是对r->variables中的
+ *  变量值(ngx_variable_value_t)赋值的过程。
  *
  *  上面介绍的是rewrite模块实现变量的方式,所以当然可以有其它实现变量的方式,实现方式都是围绕
  *  	cmcf->variables_keys
@@ -28,22 +36,49 @@
  *  这三个数据结构
  *
  *
- *  脚本引擎关于set指令始终围绕ngx_http_script_value_code_t和ngx_http_script_var_code_t这两个结构体来执行
+ *
+ * 假设有个set指令如下:
+ *	 set $a "I am value"
+ * 那么codes的部分内存结构如下
+ *   codes
+ *   -----
+ *   | * |
+ *   -----
+ *   	\
+ *   	--------------------------------
+ *   	| ngx_http_script_value_code_t |  把变量值放到脚本引擎中
+ *   	--------------------------------
+ *   	| ngx_http_script_var_code_t   |  把变量值赋值给变量$a
+ *		--------------------------------
+ *
+ *
+ * 如果set指令是如下形式:
+ *   set $a "I am $uri";
+ * 那么codes的部分内存结构如下:
+ *   codes
+ *   -----
+ *   | * |
+ *   -----
+ *     \
+ *     ----------------------------------------
+ *     | ngx_http_script_complex_value_code_t | 计算复杂值("I am $uri")的长度,并在脚本引擎中为该复杂值分配内存空间
+ *     ----------------------------------------
+ *     | ngx_http_script_copy_code_t          | 将复杂值("I am $uri")中的纯文本("I am ")放到脚本引擎中
+ *     ----------------------------------------
+ *     | ngx_http_script_copy_var_code        | 将复杂值("I am $uri")中的变量值("$uri")追加到脚本引擎中
+ *     ----------------------------------------
+ *     | ngx_http_script_var_code_t           | 把脚本引擎中的变量值赋值给变量$a
+ *     ----------------------------------------
+ *
+ *
+ * 脚本引擎关于set指令始终围绕codes中的脚本code执行的
  *     while (*(uintptr_t *) e->ip) {
  *			code = *(ngx_http_script_code_pt *) e->ip;
  *			code(e);
- *
- *			// ngx_http_script_value_code_t->ngx_http_script_value_code()
- *			// ngx_http_script_var_code_t->ngx_http_script_set_var_code()
- *			// ngx_http_script_return_code_t->ngx_http_script_return_code()
  *		}
- *	ngx_http_script_value_code_t结构体负责存储脚本值信息,结构体的方法(ngx_http_script_value_code)负责取变量值
- *	ngx_http_script_var_code_t结构体负责存储处理脚本信息的方法,结构体的方法(ngx_http_script_set_var_code)负责为变量赋值
  *
- *  脚本引擎关于return指令则是围绕ngx_http_script_return_code_t结构体
  *
- *  总结:
- *  	从脚本引擎的循环语句中可以看到,不管是哪种结构体,核心都是在执行ngx_http_script_code_pt()方法
+ * 从脚本引擎的循环语句中可以看到,不管是哪种结构体,核心都是在执行ngx_http_script_code_pt()方法
  *
  *
  * 变量支持以下字符:
@@ -56,6 +91,37 @@
  * 关于http模块的6个动态变量(http_、sent_http_ 等):
  *   ngx配置中用的到动态变量,都需要放入到cmcf->variabls数组中,最后ngx_http_variables_init_vars()方法
  *   会为cmcf->variabls数组中的动态变量设置get_handler()方法
+ *
+ *
+ *
+ * ngx中使用了未定义的变量时系统无法启动,比如如下ngx配置
+ *    server {
+ *       location / {
+ *           return 200 "$a"
+ *       }
+ *    }
+ * 当试图启动ngx的时候会打印如下错误日志
+ *    nginx: [emerg] unknown "a" variable
+ * 明确说明这是一个未定义的变量,解决这个问题可以在ngx配置文件中加一个该变量的定义,比如
+ *    server {
+ *       location / {
+ *           return 200 "$a";
+ *       }
+ *
+ *       location /a {
+ *           set $a "I am a";
+ *           return 200 "$a"
+ *       }
+ *    }
+ * 这时候ngx是可以正常启动的,此时我们访问"/a"
+ *    curl http://127.0.0.1/a
+ * ngx会打印出
+ *    I am a
+ * 如果访问"/"会怎么样呢?
+ *    curl http://127.0.0.1/
+ * 后台打印空字符,但是后台日志则会发出一条警告
+ *    [warn] using uninitialized "a" variable,
+ * ngx告诉我们此时a是一个未初始化的变量,是一个非法的变量,因为变量在请求级别是相互隔离的
  *
  */
 
@@ -2713,15 +2779,19 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
      */
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
-    // variables集合中的变量
+    /*
+     * variables集合中的变量都是被使用的(出现在ngx配置文件中)
+     */
     v = cmcf->variables.elts;
-    // variables_keys集合中的变量
+    /*
+     * variables_keys集合中的变量都是被定义的
+     */
     key = cmcf->variables_keys->keys.elts;
 
     for (i = 0; i < cmcf->variables.nelts; i++) {
 
     	/*
-    	 * 在ngx中如果变量被用到(比如set指令的第二个参数是变量)都会试着向variables集合中放一份,如果变量
+    	 * 在ngx中如果变量被用到(比如set指令的第二个参数是变量)都会向variables集合中放一份表示该变量被使用了,如果变量
     	 * 已经存在于该集合则返回其下标,否则放入到该集合中。
     	 *
     	 * 如果用到的是内置变量或者动态变量,这些变量是没有事先定义的,所以这些变量的get_handler()方法也不会存在于variabls集合
@@ -2730,6 +2800,11 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
     	 */
 
         for (n = 0; n < cmcf->variables_keys->keys.nelts; n++) {
+        	/*
+        	 * 在已经被定义的变量中匹配配置文件中使用的变量,如果配置文件中使用了未定义的变量,那么该打印
+        	 *   unknown \"%V\" variable
+        	 * 并返回错误
+        	 */
 
             av = key[n].value;
 
@@ -2741,6 +2816,9 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
                 v[i].get_handler = av->get_handler;
                 v[i].data = av->data;
 
+                /*
+                 * 加上可索引标记,表示该变量是可索引的
+                 */
                 av->flags |= NGX_HTTP_VAR_INDEXED;
                 v[i].flags = av->flags;
 
@@ -2748,7 +2826,10 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
                 av->index = i;
 
                 if (av->get_handler == NULL) {
-                	// TODO 为什么等于NULL就break
+                	/*
+                	 * 在ngx的已定义变量集合中找到这个变量了,但是他没有设置对应的get_handler()方法,那么说明该变量可能
+                	 * 是动态变量(以http_、arg_等开头的变量),则直接跳过该循环去设置对应的信息就行了
+                	 */
                     break;
                 }
 

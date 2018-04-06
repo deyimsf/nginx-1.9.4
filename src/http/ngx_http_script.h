@@ -501,11 +501,26 @@ typedef struct {
  * 此时code对应的方法会将变量的索引值index从ngx中取出,然后将其拷贝到脚本引擎中
  *
  *
+ *
  * 在为set指令的变量赋值时也会用到这个脚本code,比如
  *    set $a "I am $uri";
  * 在计算变量$a的时候会用到该脚本code,在ngx_http_rewrite_set()方法中用到如下代码
  *    vcode->code = ngx_http_script_set_var_code;
  *    vcode->index = (uintptr_t) index;
+ *
+ *
+ *
+ * 在为if指令生成脚本code的时候会用到,比如
+ *    if ($uri) {
+ *
+ *    }
+ * 在解析出if中的
+ *    $uri
+ * 的时候会调用ngx_http_rewrite_variable()方法把该脚本code放到lcf->codes数组中,
+ * 并且该脚本code对应的方法为
+ *    ngx_http_script_var_code
+ * 该方法的作用是把当前变量值(ngx_http_variable_value_t)取出,并放到脚本引擎的栈(e->sp)中
+ *
  */
 typedef struct {
     ngx_http_script_code_pt     code;
@@ -652,6 +667,44 @@ typedef struct {
  */
 typedef struct {
     ngx_http_script_code_pt     code;
+
+    /*
+     * 整个if语句所产生的脚本code所用字节数的大小,也可以理解为if语句脚本code的边界值
+     *
+     * 假如if语句是如下形式
+     *    if ($uri) {
+     *        return 200 "----";
+     *    }
+     * 计算出	该if_code脚本code管辖的边界值,假设此时lcf->codes的内存结构如下
+     *     lcf->codes->elts
+     *         -----------------------
+     *         | xxx | if_code | yyy |
+     *         -----------------------
+     * 此时if_code->next表示yyy对象加上if_code对象所占的字节数,而yyy中所占字节个数是当前if语句下面的
+     * return语句产生的脚本字节数
+     *
+     * 所以有上面的例子可以得知,if_code->next表示当前if语句所产生的所有脚本code使用的字节数
+     *
+     * 所以在ngx_http_script_if_code()方法中,如果匹配成功则执行if语句中产生的脚本code,如果if语句
+     * 匹配失败,则跳过整个语句所产生的脚本code
+     *
+     *
+     * 再举一个例子,假设有如下语句
+     *    if ($uri) {
+     *        set $a "I am $uri";
+     *
+     *        return 200 "$a";
+     *    }
+     * 当前这个if语句所产生的所有脚本code都会放在父级别的lcf->codes中,那么当前这个if语句用了多少字节来放置
+     * 这些脚本code,则next字段就是多少,假设代表set语句的脚本code是10个字节,return语句是8个字节,则lcf->codes如下
+     *    lcf->codes->elts
+     *    -----------------------------------
+     *    | $uri | if_code | 10 | 8 | ...
+     *    -----------------------------------
+     * 从上图计算出next字段值为
+     *    sizeof(if_code结构体) + 10 + 8
+     * 则该值就代表这个if语句在lcf->codes中占用的字节个数
+     */
     uintptr_t                   next;
     /*
      * 如果当前if指令存在于一个locaton{}中,那么该字段就有值

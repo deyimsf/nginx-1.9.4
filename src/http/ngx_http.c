@@ -2032,11 +2032,10 @@ ngx_http_create_locations_list(ngx_queue_t *locations, ngx_queue_t *q)
  * 创建完全二叉树
  *
  * 完全二叉树(Complete Binary Tree):
- * 		若设二叉树的深度为h,除第h层外,其它各层的结点数都到达最大个数,并且第h层的节点都连续
- * 		集中在最左边。
+ *    若设二叉树的深度为h,除第h层外,其它各层的结点数都到达最大个数,并且第h层的节点都连续集中在最左边。
  *
- * 		    完全二叉树:					满二叉树:
- * 						A						A
+ * 	        完全二叉树:					满二叉树:
+ * 	                    A						A
  * 					   / \					   / \
  * 					  /   \					  /   \
  * 					 B     C				 B     C
