@@ -379,7 +379,19 @@ typedef struct {
 
 /*
  * 代表一个server{}块
+ *
+ * server{}块下的location都放到哪里了呢? ngx为了节省资源直接利用了下面的结构体
+ *    ngx_http_core_loc_conf_t clcf = ngx_http_get_module_loc_conf(ctx, ngx_http_core_module)
+ * http核心模块在server块也会放一个loc_conf_t级别的结构体,而这个结构体中又有一个字段
+ *    *locations
+ * ngx使用该字段来收集server块下的location,从ngx_http_core_location()方法中可以看到
+ *    pclcf = pctx->loc_conf[ngx_http_core_module.ctx_index];
+ * 先是从上下文中取出http核心模块的loc级别结构体,然后在调用如下的方法
+ *    ngx_http_add_location(cf, &pclcf->locations, clcf)
+ * 把代表当前location的结构体clcf放入到父级别结构体(pclcf)对应的locations字段中
+ *
  */
+
 typedef struct {
     /* array of the ngx_http_server_name_t, "server_name" directive */
 	/*

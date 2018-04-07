@@ -471,9 +471,14 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             last = 1;
 
         } else if (ngx_strcmp(value[3].data, "break") == 0) {
-        	// 无视uri的改变
+        	/*
+        	 * 有这个标记后就不会重新匹配uri了
+        	 * 后续的代码可以看到修改后的uri,但并不会重新走NGX_HTTP_FIND_CONFIG_PHASE阶段
+        	 */
             regex->break_cycle = 1;
-            // 向脚本引擎codes中添加终止标志,当脚本引擎检查到该标志后就不会继续向下执行了
+            /*
+             * 向脚本引擎codes中添加终止标志,当脚本引擎检查到该标志后就不会继续向下执行了
+             */
             last = 1;
 
         } else if (ngx_strcmp(value[3].data, "redirect") == 0) {
@@ -888,9 +893,11 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
 /*
+ * 编译if指令中的条件表达式
+ *
  * 如果if是如下形式
  *    if ($uri) {
- *
+ *        return 200;
  *    }
  * 则该方法的作用是通过ngx_http_rewrite_variable()方法把变量
  *    $uri
@@ -906,7 +913,16 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
  *    e->request->loc_conf = code->loc_conf;
  *
  *
- *
+ * if指令中的条件表达式有两种形式
+ *    比较表达式
+ *    检查表达式
+ * 其中比较表达式必须以变量开头,比如
+ *    if ($uri) {}
+ *    if ($uri = "uri") {}
+ * 检查表达式必须以"-"或"!-"开头,比如
+ *    if (-f /ngx.conf) {}
+ *    if (!-f /ngx.conf) {}
+ * 其它形式都是非法的
  *
  */
 static char *
@@ -925,6 +941,9 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
     value = cf->args->elts;
     last = cf->args->nelts - 1;
 
+    /*
+     * if指令后面的第一个参数字符必须是左括号,如果不是就报错
+     */
     if (value[1].len < 1 || value[1].data[0] != '(') {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "invalid condition \"%V\"", &value[1]);
@@ -947,6 +966,10 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
     	 *    value[1]: "("
     	 *    value[2]: "$uri"
     	 *    value[3]: ")"
+    	 *
+    	 * cur表示变量
+    	 *    $uri
+    	 * 在value中的坐标
     	 */
         cur = 2;
 
@@ -963,12 +986,18 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
     	 *    $uri)
     	 * 结果就是去掉了一个左括号( '(' )
     	 *
+    	 * cur表示变量
+    	 *    $uri
+    	 * 在value中的坐标
     	 */
         cur = 1;
         value[1].len--;
         value[1].data++;
     }
 
+    /*
+     * if指令最后一个参数字符必须是右括号
+     */
     if (value[last].len < 1 || value[last].data[value[last].len - 1] != ')') {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "invalid condition \"%V\"", &value[last]);
@@ -976,6 +1005,14 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
     }
 
     if (value[last].len == 1) {
+    	/*
+    	 * 如果if指令的右括号跟变量是分开的会走这里,比如
+    	 *    if ($uri ) {
+    	 *
+    	 *    }
+    	 * 其中右括号和变量之间有一个空格字符
+    	 */
+
         last--;
 
     } else {
@@ -999,20 +1036,47 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
         }
 
         if (cur == last) {
+
+        	/*
+        	 * 走到这里说明if指令中只有一个变量,则条件分析到此结束
+        	 */
+
             return NGX_CONF_OK;
         }
+
+        /*
+         * 走到这里说明if指令中的条件是一个比较表达式,比如
+         *    if ($uri = "/abc") {}
+         */
 
         cur++;
 
         len = value[cur].len;
         p = value[cur].data;
 
+        /*
+         * 此时len表示比较表达式字符的长度,比如比较表达式可以是
+         *    "="、"!="、"~"、"~*"、"!~"、"!~*"
+         */
+
         if (len == 1 && p[0] == '=') {
 
+        	/*
+        	 * if是这种形式的
+        	 *    if ($uri = "I am $uri") {
+        	 *
+        	 *    }
+        	 * 那下面的方法就是把
+        	 *    "I am $uri"
+        	 * 这个复杂值编译到lcf->codes中
+        	 */
             if (ngx_http_rewrite_value(cf, lcf, &value[last]) != NGX_CONF_OK) {
                 return NGX_CONF_ERROR;
             }
 
+            /*
+             * 这个脚本code用来对比连个表达式是否相等,实际上就是比较脚本引擎栈中的先后两个变量值是否相等
+             */
             code = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                               sizeof(uintptr_t));
             if (code == NULL) {
@@ -1026,6 +1090,15 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
 
         if (len == 2 && p[0] == '!' && p[1] == '=') {
 
+        	/*
+        	 * if是这种形式的
+        	 *    if ($uri != "I am $uri"){
+        	 *
+        	 *    }
+        	 * 那下面的方法就是把
+        	 *    "I am $uri"
+        	 * 这个复杂值编译到lcf->codes中
+        	 */
             if (ngx_http_rewrite_value(cf, lcf, &value[last]) != NGX_CONF_OK) {
                 return NGX_CONF_ERROR;
             }
