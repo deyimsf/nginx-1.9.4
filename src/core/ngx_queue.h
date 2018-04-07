@@ -11,27 +11,27 @@
  *
  * 例子：
  *  创建一个容器并初始化
- * 	ngx_queue_t container;
- * 	ngx_queue_init(&container);
+ *  ngx_queue_t container;
+ *  ngx_queue_init(&container);
  *
- * 	此后container就代表容器的sentinel(哨兵),也就是容器本身.
+ *  此后container就代表容器的sentinel(哨兵),也就是容器本身.
  *
  *
  *  任何一个想使用本队列的结构体，只要他们本身包含一个ngx_queue_t就可以,例如:
  *  typedef struct {
- *  	ngx_queue_t nqt;
+ *      ngx_queue_t nqt;
  *
- *  	u_char *name;
- *  	int age;
+ *      u_char *name;
+ *      int age;
  *  } my_node;
  *
  *
- *	之后就可以以容器container对象为入参来使用,nginx为队列提供的各种方法了,比如:
- *	my_node node;
- *	node.name = "张三";
- *	node.age = 15;
+ *  之后就可以以容器container对象为入参来使用,nginx为队列提供的各种方法了,比如:
+ *  my_node node;
+ *  node.name = "张三";
+ *  node.age = 15;
  *
- *	ngx_queue_insert_head(&container,&node.nqt);将node添加到队列头部
+ *  ngx_queue_insert_head(&container,&node.nqt);将node添加到队列头部
  *
  *
  */
@@ -109,7 +109,7 @@ struct ngx_queue_s {
  * 获取容器的第一个元素
  *
  * h: 容器本身的指针
- *	容器本身的指针本身不代表任何元素,只是一个sentinel(哨兵),所以容器的next指向的就是链表的第一个元素
+ *  容器本身的指针本身不代表任何元素,只是一个sentinel(哨兵),所以容器的next指向的就是链表的第一个元素
  */
 #define ngx_queue_head(h)                                                     \
     (h)->next
@@ -119,7 +119,7 @@ struct ngx_queue_s {
  * 获取容器的最后一个元素
  *
  * h: 容器本身的指针
- *	容器本身的指针本身不代表任何元素,只是一个sentinel(哨兵),容器prev指向的就是链表的最后一个元素
+ *  容器本身的指针本身不代表任何元素,只是一个sentinel(哨兵),容器prev指向的就是链表的最后一个元素
  */
 #define ngx_queue_last(h)                                                     \
     (h)->prev
@@ -230,8 +230,8 @@ ngx_queue_t *ngx_queue_middle(ngx_queue_t *queue);
 /**
  * 对容器中的元素排序
  *
- *	*queue: 容器本身指针
- *	*cmp: 比较方法
+ *  *queue: 容器本身指针
+ *  *cmp: 比较方法
  */
 void ngx_queue_sort(ngx_queue_t *queue,
     ngx_int_t (*cmp)(const ngx_queue_t *, const ngx_queue_t *));

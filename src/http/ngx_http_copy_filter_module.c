@@ -10,10 +10,10 @@
  * 这个过滤器的主要作用是处理如何读取文件中的数据,具体逻辑看/src/core/ngx_output_chain.c文件中方法
  *
  * 基本逻辑有以下几种情况:
- * 	1.如果数据在文件中,并且不支持sendfile方式,那么就要把文件读取到内存中,然后才能发出去,copy_filter的
- * 	  大部分逻辑都是在做这个事
- * 	2.如果数据在文件中,并且支持sendfile方式,那么就直接把对应的chian和buf传递到下一个过滤器发出去就可以了
- * 	3.如果数据在内存中,那就直接把对应的chian和buf传递到下一个过滤器发出去就可以了
+ *     1.如果数据在文件中,并且不支持sendfile方式,那么就要把文件读取到内存中,然后才能发出去,copy_filter的
+ *       大部分逻辑都是在做这个事
+ *     2.如果数据在文件中,并且支持sendfile方式,那么就直接把对应的chian和buf传递到下一个过滤器发出去就可以了
+ *     3.如果数据在内存中,那就直接把对应的chian和buf传递到下一个过滤器发出去就可以了
  * 这个过滤器依赖于ngx_output_chain_ctx_t结构体,作为当前request的上下文来处理上面的逻辑
  *
  */
@@ -29,19 +29,19 @@ typedef struct {
 
 
 #if (NGX_HAVE_FILE_AIO)
-	static void ngx_http_copy_aio_handler(ngx_output_chain_ctx_t *ctx,
-		ngx_file_t *file);
-	static void ngx_http_copy_aio_event_handler(ngx_event_t *ev);
-	#if (NGX_HAVE_AIO_SENDFILE)
-		static ssize_t ngx_http_copy_aio_sendfile_preload(ngx_buf_t *file);
-		static void ngx_http_copy_aio_sendfile_event_handler(ngx_event_t *ev);
-	#endif
+    static void ngx_http_copy_aio_handler(ngx_output_chain_ctx_t *ctx,
+        ngx_file_t *file);
+    static void ngx_http_copy_aio_event_handler(ngx_event_t *ev);
+    #if (NGX_HAVE_AIO_SENDFILE)
+        static ssize_t ngx_http_copy_aio_sendfile_preload(ngx_buf_t *file);
+        static void ngx_http_copy_aio_sendfile_event_handler(ngx_event_t *ev);
+    #endif
 #endif
 
 #if (NGX_THREADS)
-	static ngx_int_t ngx_http_copy_thread_handler(ngx_thread_task_t *task,
-		ngx_file_t *file);
-	static void ngx_http_copy_thread_event_handler(ngx_event_t *ev);
+    static ngx_int_t ngx_http_copy_thread_handler(ngx_thread_task_t *task,
+        ngx_file_t *file);
+    static void ngx_http_copy_thread_event_handler(ngx_event_t *ev);
 #endif
 
 static void *ngx_http_copy_filter_create_conf(ngx_conf_t *cf);
@@ -52,9 +52,9 @@ static ngx_int_t ngx_http_copy_filter_init(ngx_conf_t *cf);
 
 static ngx_command_t  ngx_http_copy_filter_commands[] = {
 
-		/*
-		 * 这个指令只为从硬盘读取数据时候才会用到,也就是说当读文件时不支持sendfile方法才会用到他
-		 */
+        /*
+         * 这个指令只为从硬盘读取数据时候才会用到,也就是说当读文件时不支持sendfile方法才会用到他
+         */
     { ngx_string("output_buffers"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE2,
       ngx_conf_set_bufs_slot,
@@ -188,7 +188,7 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
 #endif
 
         if (in && in->buf && ngx_buf_size(in->buf)) {
-        	// TODO 干啥的
+            // TODO 干啥的
             r->request_output = 1;
         }
     }
@@ -395,9 +395,9 @@ ngx_http_copy_filter_merge_conf(ngx_conf_t *cf, void *parent, void *child)
 static ngx_int_t
 ngx_http_copy_filter_init(ngx_conf_t *cf)
 {
-	/*
-	 * 注册过滤器
-	 */
+    /*
+     * 注册过滤器
+     */
 
     ngx_http_next_body_filter = ngx_http_top_body_filter;
     ngx_http_top_body_filter = ngx_http_copy_filter;

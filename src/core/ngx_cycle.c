@@ -56,8 +56,8 @@ static ngx_connection_t  dumb;
  *
  *
  * *old_cycle: 如果是master-worker形式,并且是在运行时,那么当做reload操作时
- * 			   在/src/os/unix/ngx_process_cycle.c/ngx_master_process_cycle方法中
- * 			   会用到这个方法,这个时候传入的cycle对应就是一个老的cycle。
+ *             在/src/os/unix/ngx_process_cycle.c/ngx_master_process_cycle方法中
+ *             会用到这个方法,这个时候传入的cycle对应就是一个老的cycle。
  *
  */
 ngx_cycle_t *
@@ -181,7 +181,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
 
     } else {
-    	// nginx第一次启动,默认open_files链表大小为20
+        // nginx第一次启动,默认open_files链表大小为20
         n = 20;
     }
 
@@ -236,14 +236,14 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     /*
      * 分配后cycle->conf_ctx的内存空间图如下:
-	 *	conf_ctx
-	 *	-----
-	 *	| * |
-	 *	-----
-	 *	 \
-	 *	  ---------------------------
-	 *	  | *# | *# | *# |  总共有ngx_max_moudle个(目前都是NULL值)
-	 *	  ---------------------------
+     *  conf_ctx
+     *  -----
+     *  | * |
+     *  -----
+     *   \
+     *    ---------------------------
+     *    | *# | *# | *# |  总共有ngx_max_moudle个(目前都是NULL值)
+     *    ---------------------------
      */
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
@@ -276,16 +276,16 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     /*
      *  调用所有核心模块的create_conf方法,为核心模块创建配置信息结构体
      *  nginx的核心模块包括,但是并不是所有的核心模块有create_conf方法。
-     *		nginx.c
-	 *		ngx_log.c
-	 *		ngx_regex.c
-	 *		ngx_thread_pool.c
-	 *		ngx_event.c
-	 *		ngx_event_openssl.c
-	 *		ngx_http.c
-	 *		ngx_google_perftools_module.c
-	 *		ngx_stream.c
-	 */
+     *      nginx.c
+     *      ngx_log.c
+     *      ngx_regex.c
+     *      ngx_thread_pool.c
+     *      ngx_event.c
+     *      ngx_event_openssl.c
+     *      ngx_http.c
+     *      ngx_google_perftools_module.c
+     *      ngx_stream.c
+     */
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
@@ -294,10 +294,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         /*
          * 定义核心模块的接口上下文如下:
          *  typedef struct {
-    	 *		ngx_str_t          name;
-    	 *		void               *(*create_conf)(ngx_cycle_t *cycle);
-    	 *		char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
-		 *	} ngx_core_module_t;
+         *      ngx_str_t          name;
+         *      void               *(*create_conf)(ngx_cycle_t *cycle);
+         *      char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+         *  } ngx_core_module_t;
          *
          * 每个核心模块的接口,比如核心事件模块接口ngx_events_module_ctx、核心http模块接口ngx_http_module_ctx
          * ngx_modules[i]->ctx中的ctx就是定义各个模块行为的约束(可以看成一种协议)
@@ -306,9 +306,9 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
         /*
          *  执行所有核心模块的create_conf方法,但是不是所有的核心模块都有该方法。
-         *	比如核心事件模块(ngx_events_module)的上下文结构体(ngx_events_module_ctx)就没有定义create_conf方法。
-         *	比如核心http模块(ngx_http_module)的上下文结构体(ngx_http_module_ctx)也没有定义create_conf方法。
-         *	所以这两个核心模块在 cycle->conf_ctx的第二层指针变量的值仍然是空。
+         *  比如核心事件模块(ngx_events_module)的上下文结构体(ngx_events_module_ctx)就没有定义create_conf方法。
+         *  比如核心http模块(ngx_http_module)的上下文结构体(ngx_http_module_ctx)也没有定义create_conf方法。
+         *  所以这两个核心模块在 cycle->conf_ctx的第二层指针变量的值仍然是空。
          */
         if (module->create_conf) {
             rv = module->create_conf(cycle);
@@ -320,26 +320,26 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             /*
              *  目前只用到了第二层指针
              *  核心模块对****conf_ctx的使用如下:
-			 *  conf_ctx
-			 *	+---+
-			 *	| * |
-			 *	+---+
-			 *	\
-			 *	 -------------------
-			 *	 | * | *# | * | ...
-			 *	 -------------------
-			 *	  \ 真正的结构体
-			 *	   -------------------
-			 *	   | ngx_core_conf_t |
-			 *	   -------------------
-			 *
-			 *  从上图可以看到,对变量****conf_ctx,核心模块只用到了前两层指针,使用时强转成两层指针就可以了
-			 *  所以 *(ngx_core_conf_t **)conf_ctx 就是指向ngx_core_conf_t的指针
-			 *  以此类推,拿第二个核心模块的配置指针需要这样:
-			 *  	   *(ngx_xxx_conf_t **)(conf_ctx+1)
-			 *  实际上如果不关心指针类型,只关心指针的值是不需要强转的,像这样:
-			 *  	   *(conf_ctx + 1)
-			 *  和强转之后效果一样
+             *  conf_ctx
+             *  +---+
+             *  | * |
+             *  +---+
+             *   \
+             *   -------------------
+             *   | * | *# | * | ...
+             *   -------------------
+             *    \ 真正的结构体
+             *     -------------------
+             *     | ngx_core_conf_t |
+             *     -------------------
+             *
+             *  从上图可以看到,对变量****conf_ctx,核心模块只用到了前两层指针,使用时强转成两层指针就可以了
+             *  所以 *(ngx_core_conf_t **)conf_ctx 就是指向ngx_core_conf_t的指针
+             *  以此类推,拿第二个核心模块的配置指针需要这样:
+             *      *(ngx_xxx_conf_t **)(conf_ctx+1)
+             *  实际上如果不关心指针类型,只关心指针的值是不需要强转的,像这样:
+             *      *(conf_ctx + 1)
+             *  和强转之后效果一样
              */
             cycle->conf_ctx[ngx_modules[i]->index] = rv;
         }
@@ -370,18 +370,18 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
      * 此时conf_ctx实际上已经用到了两层指针(比如核心模块ngx_core_module在第二层有一个指向ngx_core_conf_t的指针)
      *
      * 所以conf.ctx(cycle->conf_ctx)的目前实际内存分配是这样:
-     *		 ctx|cycle->conf_ctx
-     *		-----
-     *		| * |
-     *		-----
-     *		\
-     *		 ------------------
-     *		 | * | * | * | ngx_max_module个
-     *		 -------------------
-     *		 \
-     *		  -----------------
-     *		  |ngx_core_conf_t|
-     *		  -----------------
+     *   ctx|cycle->conf_ctx
+     *      -----
+     *      | * |
+     *      -----
+     *       \
+     *       ------------------
+     *       | * | * | * | ngx_max_module个
+     *       -------------------
+     *        \
+     *        -----------------
+     *        |ngx_core_conf_t|
+     *        -----------------
      */
     conf.ctx = cycle->conf_ctx;
     conf.cycle = cycle;
@@ -430,10 +430,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
      *
      * 核心模块的上下文接口规则如下:
      *  typedef struct {
-     *		ngx_str_t             name;
-     *		void               *(*create_conf)(ngx_cycle_t *cycle);
-     *		char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
-	 *	} ngx_core_module_t;
+     *      ngx_str_t             name;
+     *      void               *(*create_conf)(ngx_cycle_t *cycle);
+     *      char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+     *  } ngx_core_module_t;
      */
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
@@ -447,7 +447,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             if (module->init_conf(cycle, cycle->conf_ctx[ngx_modules[i]->index])
                 == NGX_CONF_ERROR)
             {
-            	// TODO
+                // TODO
                 environ = senv;
                 ngx_destroy_cycle_pools(&conf);
                 return NULL;
@@ -472,16 +472,16 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     if (ngx_test_config) {
 
-    	// 测试pid文件,多worker下各个worker可以通过该文件获取到master的pid
+        // 测试pid文件,多worker下各个worker可以通过该文件获取到master的pid
         if (ngx_create_pidfile(&ccf->pid, log) != NGX_OK) {
             goto failed;
         }
 
     } else if (!ngx_is_init_cycle(old_cycle)) {
-    	/*
-    	 * 如果是ngx第一次启动,则不会进这里,因为第一次启动时穿过来的old_cycle什么也没有
-    	 * 如果是reload会走这里,这一步骤为了确保生成正确的pid文件
-    	 */
+        /*
+         * 如果是ngx第一次启动,则不会进这里,因为第一次启动时穿过来的old_cycle什么也没有
+         * 如果是reload会走这里,这一步骤为了确保生成正确的pid文件
+         */
 
         /*
          * we do not create the pid file in the first ngx_init_cycle() call
@@ -493,11 +493,11 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         if (ccf->pid.len != old_ccf->pid.len
             || ngx_strcmp(ccf->pid.data, old_ccf->pid.data) != 0)
         {
-        	// 如果新进程的pid文件路径和老的进程文件pid不一致,则创建新进程的pid文件,然后删除老的。
+            // 如果新进程的pid文件路径和老的进程文件pid不一致,则创建新进程的pid文件,然后删除老的。
 
             /* new pid file name */
 
-        	// 创建pid文件,多worker下各个worker可以通过该文件获取到master的pid
+            // 创建pid文件,多worker下各个worker可以通过该文件获取到master的pid
             if (ngx_create_pidfile(&ccf->pid, log) != NGX_OK) {
                 goto failed;
             }
@@ -678,7 +678,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
          *    sp = (ngx_slab_pool_t *) zn->shm.addr;
          * 并通过ngx_slab_init(sp)方法初始化sp对象中的值
          * 所以这里有一个潜规则:
-         * 	 共享内存的大小不能小于ngx_slab_pool_t结构体的大小
+         *    共享内存的大小不能小于ngx_slab_pool_t结构体的大小
          */
         if (ngx_init_zone_pool(cycle, &shm_zone[i]) != NGX_OK) {
             goto failed;
@@ -707,13 +707,13 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     if (old_cycle->listening.nelts) {
         ls = old_cycle->listening.elts;
         for (i = 0; i < old_cycle->listening.nelts; i++) {
-        	/*
-        	 * 0表示不需要保留当前文件描述,1表示要保留当前文件描述符
-        	 *
-        	 * 这里暂时把所有老的监听连接设置为不需要保留,下面的循环会和新要打开的连接作比较,
-        	 * 如果一致则将老的赋值给新的,然后remain标记为1,表示保留老的连接,如果不一致则后续
-        	 * 会把老的描述符给关掉。
-        	 */
+            /*
+             * 0表示不需要保留当前文件描述,1表示要保留当前文件描述符
+             *
+             * 这里暂时把所有老的监听连接设置为不需要保留,下面的循环会和新要打开的连接作比较,
+             * 如果一致则将老的赋值给新的,然后remain标记为1,表示保留老的连接,如果不一致则后续
+             * 会把老的描述符给关掉。
+             */
             ls[i].remain = 0;
         }
 
@@ -737,10 +737,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                                      ls[i].sockaddr, ls[i].socklen, 1)
                     == NGX_OK)
                 {
-                	/*
-                	 * 如果这老的监听连接描述符的ip和端口号跟新的要监听的相同,则直接将老的监听文件描述符
-                	 * 赋值给新的监听连接结构体ngx_listening_t
-                	 */
+                    /*
+                     * 如果这老的监听连接描述符的ip和端口号跟新的要监听的相同,则直接将老的监听文件描述符
+                     * 赋值给新的监听连接结构体ngx_listening_t
+                     */
 
                     nls[n].fd = ls[i].fd;
                     // 指向的是老的ngx_listening_t结构体,没看明白这个是干啥的 TODO
@@ -816,7 +816,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             }
 
             if (nls[n].fd == (ngx_socket_t) -1) {
-            	// 设置标志,升级失败回滚时会用到,表示不可以关闭这个文件描述符 TODO
+                // 设置标志,升级失败回滚时会用到,表示不可以关闭这个文件描述符 TODO
                 nls[n].open = 1;
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
                 if (nls[n].accept_filter) {
@@ -834,7 +834,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     } else {
         ls = cycle->listening.elts;
         for (i = 0; i < cycle->listening.nelts; i++) {
-        	// 将open置为1,表示不可以关闭这个文件描述符,回滚时会用到 TODO
+            // 将open置为1,表示不可以关闭这个文件描述符,回滚时会用到 TODO
             ls[i].open = 1;
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
             if (ls[i].accept_filter) {
@@ -946,7 +946,7 @@ old_shm_zone_done:
 
     /* close the unnecessary listening sockets */
 
-	/* 关闭和新配置不一致的socket描述符 */
+    /* 关闭和新配置不一致的socket描述符 */
     ls = old_cycle->listening.elts;
     for (i = 0; i < old_cycle->listening.nelts; i++) {
 
@@ -1010,7 +1010,7 @@ old_shm_zone_done:
     ngx_destroy_pool(conf.temp_pool);
 
     if (ngx_process == NGX_PROCESS_MASTER || ngx_is_init_cycle(old_cycle)) {
-    	// TODO
+        // TODO
 
         /*
          * perl_destruct() frees environ, if it is not the same as it was at
@@ -1146,8 +1146,8 @@ ngx_destroy_cycle_pools(ngx_conf_t *conf)
  * 并通过ngx_slab_init(sp)方法初始化sp对象中的值
  *
  * 所以这里有一个潜规则:
- * 	 共享内存的大小不能小于ngx_slab_pool_t结构体的大小
- * 	 大部分模块都要求共享内存不小于8个ngx_pagesize
+ *   共享内存的大小不能小于ngx_slab_pool_t结构体的大小
+ *   大部分模块都要求共享内存不小于8个ngx_pagesize
  */
 static ngx_int_t
 ngx_init_zone_pool(ngx_cycle_t *cycle, ngx_shm_zone_t *zn)
@@ -1509,9 +1509,9 @@ ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)
     shm_zone = part->elts;
 
     for (i = 0; /* void */ ; i++) {
-    	/*
-    	 * 这个循环用来从cycle->shared_memory寻找和name相同的共享内存,如果找到则返回,找不到则跳过循环
-    	 */
+        /*
+         * 这个循环用来从cycle->shared_memory寻找和name相同的共享内存,如果找到则返回,找不到则跳过循环
+         */
 
         if (i >= part->nelts) {
             if (part->next == NULL) {

@@ -420,12 +420,12 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 int  reuseport = 1;
 
                 /*
-				 * 为这个套接字设置一些参数
-				 * 在SOL_SOCKET层设置SO_REUSEPORT的值为reuseport
-				 *
-				 * SO_REUSEPORT: TODO 这个选项还是不太明白
-				 *
-				 */
+                 * 为这个套接字设置一些参数
+                 * 在SOL_SOCKET层设置SO_REUSEPORT的值为reuseport
+                 *
+                 * SO_REUSEPORT: TODO 这个选项还是不太明白
+                 *
+                 */
                 if (setsockopt(ls[i].fd, SOL_SOCKET, SO_REUSEPORT,
                                (const void *) &reuseport, sizeof(int))
                     == -1)
@@ -461,9 +461,9 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
              * 调用系统函数socket创建一个套接字
              *
              * int socket(int domain, int type, int protocol)
-             * 	domain: AF_INET(因特网)
-             * 	type: SOCK_STREAM(因特网的一个端点)
-             * 	protocal: 0
+             *   domain: AF_INET(因特网)
+             *   type: SOCK_STREAM(因特网的一个端点)
+             *   protocal: 0
              */
             s = ngx_socket(ls[i].sockaddr->sa_family, ls[i].type, 0);
 
@@ -502,12 +502,12 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 reuseport = 1;
 
                 /*
-				 * 为这个套接字设置一些参数
-				 * 在SOL_SOCKET层设置SO_REUSEPORT的值为reuseport
-				 *
-				 * SO_REUSEPORT: TODO 这个选项还是不太明白
-				 *
-				 */
+                 * 为这个套接字设置一些参数
+                 * 在SOL_SOCKET层设置SO_REUSEPORT的值为reuseport
+                 *
+                 * SO_REUSEPORT: TODO 这个选项还是不太明白
+                 *
+                 */
                 if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT,
                                (const void *) &reuseport, sizeof(int))
                     == -1)
@@ -548,7 +548,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 
             if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
 
-            	/* 在这里把监听套接字设置为非阻塞的 */
+                /* 在这里把监听套接字设置为非阻塞的 */
                 if (ngx_nonblocking(s) == -1) {
                     ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
                                   ngx_nonblocking_n " %V failed",
@@ -706,12 +706,12 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
-    	/*
-    	 * logp有具体模块设置,比如:
-    	 * 	/http/ngx_http.c:1883:    ls->logp = clcf->error_log;
-    	 * 	/mail/ngx_mail.c:362:            ls->logp = cscf->error_log;
-    	 * 	/stream/ngx_stream.c:377:            ls->logp = cscf->error_log;
-    	 */
+        /*
+         * logp有具体模块设置,比如:
+         *   /http/ngx_http.c:1883:    ls->logp = clcf->error_log;
+         *   /mail/ngx_mail.c:362:            ls->logp = cscf->error_log;
+         *   /stream/ngx_stream.c:377:            ls->logp = cscf->error_log;
+         */
         ls[i].log = *ls[i].logp;
 
         // 设置连接的数据接收缓冲区大小
@@ -843,13 +843,13 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
 #endif
 
         if (ls[i].listen) {
-        	/*
-        	 * 如果该监听连接处于监听状态,则可以通过再次调用listen方法来改变等待队列(backlog)大小,
-        	 * 其实就是把所有的监听连接重新调用了一遍listen方法
-        	 *
-        	 * 比如reload的时候,如果新的监听连接和老的监听连接的backlog不相等,则重新调用listen方法
-        	 * 设置backlog大小。
-        	 */
+            /*
+             * 如果该监听连接处于监听状态,则可以通过再次调用listen方法来改变等待队列(backlog)大小,
+             * 其实就是把所有的监听连接重新调用了一遍listen方法
+             *
+             * 比如reload的时候,如果新的监听连接和老的监听连接的backlog不相等,则重新调用listen方法
+             * 设置backlog大小。
+             */
 
             /* change backlog via listen() */
 
@@ -1054,7 +1054,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     c = ngx_cycle->free_connections;
 
     if (c == NULL) {
-    	// 如果空闲连接已经耗尽了，则试图从ngx_cycle->reusable_connections_queue队列中获取一个连接
+        // 如果空闲连接已经耗尽了，则试图从ngx_cycle->reusable_connections_queue队列中获取一个连接
         ngx_drain_connections();
         c = ngx_cycle->free_connections;
     }
@@ -1114,8 +1114,8 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
      * 表示可以向该连接写数据了,但是并不代表该连接代表的socket描述符真的可以写数据了(可以理解为业务上的可以)
      *
      * 必须发生了可写事件才可以真正的写数据:
-     * 	wev->active = 1: 些时间存在于事件驱动器中(比如epoll)
-     *	该事件已经就绪: 从事件驱动器(比如epoll)中返回了该事件对应的连接
+     *    wev->active = 1: 些时间存在于事件驱动器中(比如epoll)
+     *    该事件已经就绪: 从事件驱动器(比如epoll)中返回了该事件对应的连接
      */
     wev->write = 1;
 

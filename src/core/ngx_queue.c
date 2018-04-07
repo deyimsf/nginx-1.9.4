@@ -55,8 +55,8 @@ ngx_queue_middle(ngx_queue_t *queue)
 /**
  * 对容器中的元素排序
  *
- *	*queue: 容器本身指针
- *	*cmp: 比较方法
+ *   *queue: 容器本身指针
+ *   *cmp: 比较方法
  *
  * 排完之后的结果是升序
  */

@@ -39,7 +39,7 @@ typedef void (*ngx_connection_handler_pt)(ngx_connection_t *c);
  *  NGX_ERROR: Operation failed.(操作失败)
  *  NGX_AGAIN: Operation incomplete; call the function again.(操作未完成,会被再次调用)
  *  NGX_DECLINED: Operation rejected, for example, because it is disabled in the configuration.
- * 		This is never an error.(操作被拒绝. 比如它在配置中是被禁用的,但它绝对不是一个错误.)
+ *      This is never an error.(操作被拒绝. 比如它在配置中是被禁用的,但它绝对不是一个错误.)
  *  NGX_BUSY: Resource is not available.(没有可用的资源.)
  *  NGX_DONE: Operation complete or continued elsewhere. Also used as an alternative success code.
  *  NGX_ABORT: Function was aborted. Also used as an alternative error code.

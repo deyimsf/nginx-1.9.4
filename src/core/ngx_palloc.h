@@ -49,8 +49,8 @@ struct ngx_pool_large_s {
 
 //pool中用于实际存放内存的数据结构
 typedef struct {
-	//指向未被分配出去地址的首地址,如果将来需要使用这个data块分配内存,
-	//则last指向的地址，就是分配出去地址的首地址
+    //指向未被分配出去地址的首地址,如果将来需要使用这个data块分配内存,
+    //则last指向的地址，就是分配出去地址的首地址
     u_char               *last;
     //当着这个pool_data的边界地址;比如创建pool时指定的size是10,地址从0开始,
     //那么整个pool_data就会管理1~9的地址,end则等于10
@@ -63,7 +63,7 @@ typedef struct {
 
 
 struct ngx_pool_s {
-	// 实际存放数据的地方
+    // 实际存放数据的地方
     ngx_pool_data_t       d;
     // 每个ngx_pool_data_t可容纳的空间大小
     size_t                max;
@@ -85,7 +85,7 @@ struct ngx_pool_s {
 
 // 关闭fd用的数据结构
 typedef struct {
-	//文件描述符
+    //文件描述符
     ngx_fd_t              fd;
     //文件名字
     u_char               *name;

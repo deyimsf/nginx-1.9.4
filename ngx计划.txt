@@ -1,6 +1,14 @@
 
-注释空格替换
-  core/ngx_conf_file.c/ 结束
+
+TODO  下周
+  注释空格替换
+  /src/http/ngx_http_core_module.c/ 3601
+
+  写一个文章目录和预期
+  然后开始写文章
+  用git写文章?
+
+
 
 
 

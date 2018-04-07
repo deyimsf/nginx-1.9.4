@@ -442,7 +442,7 @@ static ngx_command_t  ngx_http_core_commands[] = {
       offsetof(ngx_http_core_loc_conf_t, send_timeout),
       NULL },
 
-	// This directive is ignored on Linux, Solaris, and Windows.
+    // This directive is ignored on Linux, Solaris, and Windows.
     { ngx_string("send_lowat"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_size_slot,
@@ -856,7 +856,7 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
     // r->phase_handler指定的就是ph中的数组下标
     while (ph[r->phase_handler].checker) { // 首先检查是否存在checker方法
 
-    	// 调用cheker方法，并将模块自定义的handler方法传入其中
+        // 调用cheker方法，并将模块自定义的handler方法传入其中
         rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
 
         // 成功则直接反回，这一步会将控制权限交给nginx事件框架
@@ -890,39 +890,39 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
     /*
      * 阶段引擎:
-     * 	ph = cmcf->phase_engine.handlers;
-     *	while (ph[r->phase_handler].checker) {
-     *   	rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
-	 *
-     *   	if (rc == NGX_OK) {
-     *       	return;
-     *   	}
-     *	}
+     *     ph = cmcf->phase_engine.handlers;
+     *    while (ph[r->phase_handler].checker) {
+     *       rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
+     *
+     *       if (rc == NGX_OK) {
+     *           return;
+     *       }
+     *    }
      */
 
     if (rc == NGX_OK) {
-    	/*
-    	 * rc == NGX_OK
-    	 * 代表本阶段执行结束,交给脚本引擎去执行下一个阶段
-    	 */
+        /*
+         * rc == NGX_OK
+         * 代表本阶段执行结束,交给脚本引擎去执行下一个阶段
+         */
         r->phase_handler = ph->next;
         return NGX_AGAIN;
     }
 
     if (rc == NGX_DECLINED) {
-    	/*
-    	 * rc == NGX_DECLINED
-    	 * 代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
-    	 */
+        /*
+         * rc == NGX_DECLINED
+         * 代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
+         */
         r->phase_handler++;
         return NGX_AGAIN;
     }
 
     if (rc == NGX_AGAIN || rc == NGX_DONE) {
-    	/*
-    	 * rc == NGX_AGAIN || rc == NGX_DONE
-    	 * 表示当前方法未执行完毕,需要暂定本次阶段引擎的执行,等待下次事件到来后继续执行当前方法(ph->handler(r))
-    	 */
+        /*
+         * rc == NGX_AGAIN || rc == NGX_DONE
+         * 表示当前方法未执行完毕,需要暂定本次阶段引擎的执行,等待下次事件到来后继续执行当前方法(ph->handler(r))
+         */
         return NGX_OK;
     }
 
@@ -938,8 +938,8 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
 /**
  * 下面两个阶段执行该方法
- * 	NGX_HTTP_SERVER_REWRITE_PHASE
- * 	NGX_HTTP_REWRITE_PHASE
+ *     NGX_HTTP_SERVER_REWRITE_PHASE
+ *     NGX_HTTP_REWRITE_PHASE
  * 这两个阶段都会执行ngx_http_rewrite_handler()方法来启动脚本引擎
  */
 ngx_int_t
@@ -956,7 +956,7 @@ ngx_http_core_rewrite_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     rc = ph->handler(r);
 
     if (rc == NGX_DECLINED) {
-    	// 让阶段引擎执行下一个方法
+        // 让阶段引擎执行下一个方法
         r->phase_handler++;
         return NGX_AGAIN;
     }
@@ -1185,10 +1185,10 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
     if (r != r->main) {
 
-    	/*
-    	 * 处理子请求的逻辑
-    	 * 也就是说子请求不处理该阶段的方法
-    	 */
+        /*
+         * 处理子请求的逻辑
+         * 也就是说子请求不处理该阶段的方法
+         */
         r->phase_handler = ph->next;
         return NGX_AGAIN;
     }
@@ -1201,19 +1201,19 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
     if (rc == NGX_DECLINED) {
 
-    	/*
-    	 * rc == NGX_DECLINED
-    	 * 代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
-    	 */
+        /*
+         * rc == NGX_DECLINED
+         * 代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
+         */
         r->phase_handler++;
         return NGX_AGAIN;
     }
 
     if (rc == NGX_AGAIN || rc == NGX_DONE) {
-       	/*
-		 * rc == NGX_AGAIN || rc == NGX_DONE
-		 * 表示当前方法未执行完毕,需要暂定本次阶段引擎的执行,等待下次事件到来后继续执行当前方法(ph->handler(r))
-		 */
+        /*
+         * rc == NGX_AGAIN || rc == NGX_DONE
+         * 表示当前方法未执行完毕,需要暂定本次阶段引擎的执行,等待下次事件到来后继续执行当前方法(ph->handler(r))
+         */
 
         return NGX_OK;
     }
@@ -1221,30 +1221,30 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
     /*
-     * 	Syntax:	satisfy all | any;
-	 *	Default:satisfy all;
-	 *	Context:http, server, location
+     * Syntax:satisfy all | any;
+     * Default:satisfy all;
+     * Context:http, server, location
      */
     if (clcf->satisfy == NGX_HTTP_SATISFY_ALL) {
-    	/*
-    	 * 必须在该阶段的所有方法都返回NGX_OK才算通过
-    	 */
+        /*
+         * 必须在该阶段的所有方法都返回NGX_OK才算通过
+         */
 
         if (rc == NGX_OK) {
 
-        	/*
-			 * rc == NGX_OK && clcf->satisfy == NGX_HTTP_SATISFY_ALL
-			 *
-			 * 必须在该阶段的所有注册方法都返回NGX_OK才算通过,所以需要继续执行本阶段的下一个方法
-			 */
+            /*
+             * rc == NGX_OK && clcf->satisfy == NGX_HTTP_SATISFY_ALL
+             *
+             * 必须在该阶段的所有注册方法都返回NGX_OK才算通过,所以需要继续执行本阶段的下一个方法
+             */
             r->phase_handler++;
             return NGX_AGAIN;
         }
 
     } else {
-    	/*
-    	 * satisfy指令对应any标记
-    	 */
+        /*
+         * satisfy指令对应any标记
+         */
 
         if (rc == NGX_OK) {
 
@@ -1256,20 +1256,20 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
             /*
              * 没有satisfy标记所以,只要有一个方法返回NGX_OK(表示通过),则表示可以通过该阶段,
-			 * 所以本阶段执行结束,交给脚本引擎去执行下一个阶段
-			 */
+             * 所以本阶段执行结束,交给脚本引擎去执行下一个阶段
+             */
             r->phase_handler = ph->next;
             return NGX_AGAIN;
         }
 
         if (rc == NGX_HTTP_FORBIDDEN || rc == NGX_HTTP_UNAUTHORIZED) {
-        	/*
-        	 * 当前handler不允许请求通过,但是satisfy指令对应any标记,表示只要有一个通过就算通过,
-        	 * 所以这里先记下不允许通过的原因(NGX_HTTP_FORBIDDEN|NGX_HTTP_UNAUTHORIZED),然后继续执行
-        	 * 本阶段的下一个方法,如果到最后本阶段的所有方法都没有通过,则当前请求会保留没有通过的原因(r->access_code),
-        	 * 到下一个阶段NGX_HTTP_POST_ACCESS_PHASE会根据该标记(r->access_code)来决定请求继续向下走,还是直接
-        	 * 返回。
-        	 */
+            /*
+             * 当前handler不允许请求通过,但是satisfy指令对应any标记,表示只要有一个通过就算通过,
+             * 所以这里先记下不允许通过的原因(NGX_HTTP_FORBIDDEN|NGX_HTTP_UNAUTHORIZED),然后继续执行
+             * 本阶段的下一个方法,如果到最后本阶段的所有方法都没有通过,则当前请求会保留没有通过的原因(r->access_code),
+             * 到下一个阶段NGX_HTTP_POST_ACCESS_PHASE会根据该标记(r->access_code)来决定请求继续向下走,还是直接
+             * 返回。
+             */
             if (r->access_code != NGX_HTTP_UNAUTHORIZED) {
                 r->access_code = rc;
             }
@@ -1307,9 +1307,9 @@ ngx_http_core_post_access_phase(ngx_http_request_t *r,
     access_code = r->access_code;
 
     if (access_code) {
-    	/*
-    	 * 访问标记大于零表示不允许当前请求继续执行后续的阶段
-    	 */
+        /*
+         * 访问标记大于零表示不允许当前请求继续执行后续的阶段
+         */
 
         if (access_code == NGX_HTTP_FORBIDDEN) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
@@ -1572,7 +1572,7 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
      * 如果是另一种方式则不关有没有配置指令,阶段引擎都会去执行对应的方法,对应的方法需要自行判断是否执行
      */
     if (r->content_handler) {
-    	// 先将写事件暂时设置为ngx_http_request_empty_handler方法,表示不再需要执行当前阶段的后续方法
+        // 先将写事件暂时设置为ngx_http_request_empty_handler方法,表示不再需要执行当前阶段的后续方法
         r->write_event_handler = ngx_http_request_empty_handler;
 
         /*
@@ -1580,12 +1580,12 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
          *
          * 如果r->content_handler(r)返回NGX_DECLINED,则下次就不走这块逻辑,而是直接走下面的逻辑
          * 因为ngx_http_finalize_request()方法有这样的逻辑:
-		 * 		if (rc == NGX_DECLINED) {
-		 *			r->content_handler = NULL;
-		 *			r->write_event_handler = ngx_http_core_run_phases;
-		 *			ngx_http_core_run_phases(r);
-		 *			return;
-		 *		}
+         *      if (rc == NGX_DECLINED) {
+         *          r->content_handler = NULL;
+         *          r->write_event_handler = ngx_http_core_run_phases;
+         *          ngx_http_core_run_phases(r);
+         *          return;
+         *      }
          */
         ngx_http_finalize_request(r, r->content_handler(r));
         return NGX_OK;
@@ -1602,8 +1602,8 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
      * 这种绑定方式是全局性质的,对所有的location都会起作用.
      *
      * 当匹配到的location{}块没有配置任何该阶段的指令的时候,所有使用这种方式注册的handler就会被执行,比如
-     * 		/src/http/modules/ngx_http_autoindex_module.c
-     * 		/src/http/modules/ngx_http_index_module.c
+     *         /src/http/modules/ngx_http_autoindex_module.c
+     *         /src/http/modules/ngx_http_index_module.c
      *
      */
     rc = ph->handler(r);
@@ -1630,7 +1630,7 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     ph++;
 
     if (ph->checker) {
-    	// 告诉阶段引擎去执行本阶段的下一个方法
+        // 告诉阶段引擎去执行本阶段的下一个方法
         r->phase_handler++;
         return NGX_AGAIN;
     }
@@ -1647,8 +1647,8 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
 
     /*
      * 一般绑定方法,并且没有发现任何 content handler
-     * 		一种情况是location{}块里面没有配置任何content阶段的指令。
-     *		另一种情况是location{}块中存在content阶段的指令,但是这些指令对应的方法都返回的是NGX_DECLINED。
+     *      一种情况是location{}块里面没有配置任何content阶段的指令。
+     *      另一种情况是location{}块中存在content阶段的指令,但是这些指令对应的方法都返回的是NGX_DECLINED。
      * 这两种情况都会导致阶段引擎无法正常结束.
      *
      */
@@ -1672,7 +1672,7 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
 
 /*
  * 对当前请求做一些配置操作,比如
- * 		r->content_handler = clcf->handler;
+ *     r->content_handler = clcf->handler;
  * 如果clcf->handler方法存在的话,就不会执行当前请求中内容阶段中的方法
  *
  */
@@ -1764,8 +1764,8 @@ ngx_http_update_location_config(ngx_http_request_t *r)
  * NGX_AGAIN -2  - inclusive match: TODO 貌似该方法不会返回该值,ngx_http_core_find_static_location()方法会返回该值
  * NGX_ERROR -1  - regex error
  * NGX_DECLINED -5 - no match: 注释很奇怪,其实并不是没有匹配,有下面几种情况会返回该结果
- * 					1.没有匹配到,这时不会设置r->loc_conf字段
- * 					2.匹配到一般匹配(无修饰符号|^~)这时会设置r->loc_conf字段
+ *                     1.没有匹配到,这时不会设置r->loc_conf字段
+ *                     2.匹配到一般匹配(无修饰符号|^~)这时会设置r->loc_conf字段
  *
  * 找到后会设置r->loc_conf
  */
@@ -1809,10 +1809,10 @@ ngx_http_core_find_location(ngx_http_request_t *r)
     /* rc == NGX_DECLINED or rc == NGX_AGAIN in nested location */
     /*
      * 走到这里有两种情况:
-     * 	rc == NGX_DECLINED: 在server{}中没有匹配成功,或者在嵌套中没有匹配成功
-     * 	rc == NGX_AGAIN: 在server{}中匹配成功,或者在嵌套中匹配成功
+     *     rc == NGX_DECLINED: 在server{}中没有匹配成功,或者在嵌套中没有匹配成功
+     *     rc == NGX_AGAIN: 在server{}中匹配成功,或者在嵌套中匹配成功
      *
-     * 	这两种都没有终止匹配作用,所以继续向下进行正则匹配
+     * 这两种都没有终止匹配作用,所以继续向下进行正则匹配
      */
 
 #if (NGX_PCRE)
@@ -1886,13 +1886,13 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
 
         /*
          * 比对不成功,比如:
-         * 	 uri = /3/asdeeeeeeeee
-         * 	 node->name = /4/abbbbbb
+         *      uri = /3/asdeeeeeeeee
+         *      node->name = /4/abbbbbb
          */
         if (rc != 0) {
-        	/*
-        	 * rc < 0 : 表示uri的排序在node->name的前面,所以应该去左边的树进行查找
-        	 */
+            /*
+             * rc < 0 : 表示uri的排序在node->name的前面,所以应该去左边的树进行查找
+             */
             node = (rc < 0) ? node->left : node->right;
 
             continue;
@@ -1900,8 +1900,8 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
 
         /*
          * 走到这里表示匹配成功,比如:
-         * 	 uri = /ab
-         * 	 node->name = /a
+         *      uri = /ab
+         *      node->name = /a
          */
         if (len > (size_t) node->len) {
 
@@ -1927,23 +1927,23 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
         if (len == (size_t) node->len) {
 
             if (node->exact) {
-            	/*
-            	 * 匹配到location的结果就是设置r->loc_conf字段
-            	 */
+                /*
+                 * 匹配到location的结果就是设置r->loc_conf字段
+                 */
 
-            	// 精确匹配(=), 则终止继续匹配,直接返回
+                // 精确匹配(=), 则终止继续匹配,直接返回
                 r->loc_conf = node->exact->loc_conf;
                 return NGX_OK;
 
             } else {
-            	/*
-            	 * 匹配到location的结果就是设置r->loc_conf字段
-            	 */
+                /*
+                 * 匹配到location的结果就是设置r->loc_conf字段
+                 */
 
-            	/*
-            	 * 成功匹配到,但当前是非精确匹配(^~|无修饰符),则继续向下匹配
-            	 * 但此时r->loc_conf已经被赋值,如果后续没有匹配到其它的,则这里匹配到的location就是匹配结果
-            	 */
+                /*
+                 * 成功匹配到,但当前是非精确匹配(^~|无修饰符),则继续向下匹配
+                 * 但此时r->loc_conf已经被赋值,如果后续没有匹配到其它的,则这里匹配到的location就是匹配结果
+                 */
                 r->loc_conf = node->inclusive->loc_conf;
                 return NGX_AGAIN;
             }
@@ -2063,9 +2063,9 @@ ngx_http_set_content_type(ngx_http_request_t *r)
 
 /*
  * 提取并设置请求uri的扩展名,比如
- * 	 uri = /index.html
+ *      uri = /index.html
  * 该方法执行完毕后,r->exten中存的字符串就变成了
- * 	 html
+ *      html
  */
 void
 ngx_http_set_exten(ngx_http_request_t *r)
@@ -2750,7 +2750,7 @@ ngx_http_gzip_quantity(u_char *p, u_char *last)
  * uri: 子请求要访问的sub_uri
  * args: 子请求的查询参数(querystring)
  * psr: 当前ngx_http_subrequest()方法创建好的子请求对象,是一个值-结果参数(value-result parameters)
- *		说明它既是入参就是出参,最终*psr指向的就是创建好的ngx_http_request_t对象(子请求)
+ *      说明它既是入参就是出参,最终*psr指向的就是创建好的ngx_http_request_t对象(子请求)
  * ps: 一个结构体,子请求处理完毕后需要回到的方法和一些携带的信息会放在这个结构体中
  * flags: TODO 一些标记
  *
@@ -2848,10 +2848,10 @@ ngx_http_subrequest(ngx_http_request_t *r,
     sr->uri = *uri;
 
     if (args) {
-    	/*
-    	 * 子请求默认并没有继承父请求的查询参数,而是由子请求发起方给出
-    	 * 如果发起方不主动设置查询参数,那么子请求会过滤掉父请求的查询参数
-    	 */
+        /*
+         * 子请求默认并没有继承父请求的查询参数,而是由子请求发起方给出
+         * 如果发起方不主动设置查询参数,那么子请求会过滤掉父请求的查询参数
+         */
         sr->args = *args;
     }
 
@@ -2876,9 +2876,9 @@ ngx_http_subrequest(ngx_http_request_t *r,
     // 设置子请求扩展名
     ngx_http_set_exten(sr);
 
-    sr->main = r->main;			// 原始请求(主请求)
-    sr->parent = r;				// 父请求
-    sr->post_subrequest = ps;	// ngx_http_post_subrequest_t结构体中放置着子请求结束后的回调方法
+    sr->main = r->main;            // 原始请求(主请求)
+    sr->parent = r;                // 父请求
+    sr->post_subrequest = ps;    // ngx_http_post_subrequest_t结构体中放置着子请求结束后的回调方法
     /*
      * 因为是子请求,所有需要读取的请求数据都已经在父请求中完成了,所以这里把子请求的读事件hanlder设置为empty_handler
      */
@@ -2886,8 +2886,8 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     /*
      * 设置子请求的write_event_handler方法为ngx_http_handler,该方法最终会调用:
-     * 		r->write_event_handler = ngx_http_core_run_phases;
-     * 		ngx_http_core_run_phases(r);
+     *     r->write_event_handler = ngx_http_core_run_phases;
+     *     ngx_http_core_run_phases(r);
      */
     sr->write_event_handler = ngx_http_handler;
 
@@ -2896,56 +2896,56 @@ ngx_http_subrequest(ngx_http_request_t *r,
      */
     if (c->data == r && r->postponed == NULL) {
 
-    	/*
-    	 * 我们假设一个父请求的作用就是直接发起三个子请求,发起的顺序是sub1、sub2、sub3,那么在向外界输出输出的时候肯定必须是先输出sub1
-    	 * 的数据在输出sub2的,最后输出sub3的.
-    	 *
-    	 * ngx中为了确保子请求的数据可以有序(有子请求的创建时机决定)向外输出,采用了一个数状结构,其中每个请求都会包含一个
-    	 * postponed字段,该字段是一个链表,用来存放这个父请求下的直接子请求,像这样:(链表中存放的是ngx_http_postponed_request_t对象)
-    	 *		      parent_req
-    	 *		  --------------------
-    	 *		  | *postponed | ... |
-    	 *		  --------------------
-	     *			 		  \ sub1_postpone	    		 sub2_postpone                  sub3_postpone
-		 *		 			  -------------------------      -------------------------      -------------------------
-		 *		 			  | *request |*out| *next | ---> | *request |*out| *next | ---> | *request |*out| *next |
-		 *		 			  -------------------------      -------------------------      -------------------------
-		 *		 			    \sub1_req						\sub2_req
-		 *					   +------------+					+------------+
-    	 *					   | *postponed |					| *postponed |
-    	 *					   +------------+					+------------+
-    	 * 从上图可以看到sub1_postpone对应的子请求是先发起的,所以他里面的数据应该先输出到客户端,所以此时c->data是sub1
-    	 * 如果此时sub1又发起了一个子请求sub4,根据上图可知sub4就应该是先输出数据的子请求,结构应该如下图:
-    	 *    	        parent_req
-    	 *		   --------------------
-    	 *		   | *postponed | ... |
-    	 *		   --------------------
-	     *			 		  \ sub1_postpone	    		 sub2_postpone                  sub3_postpone
-		 *		 			  -------------------------      -------------------------      -------------------------
-		 *		 			  | *request |*out| *next | ---> | *request |*out| *next | ---> | *request |*out| *next |
-		 *		 			  -------------------------      -------------------------      -------------------------
-		 *		 			    \sub1_req						 \sub2_req
-		 *					   --------------------				 --------------------
-    	 *					   | *postponed | ... |				 | *postponed | ... |
-    	 *					   --------------------				 --------------------
-    	 *					       \
-		 *					   ---------------------------
-		 *					   | *request | *out | *next |
-    	 *					   ---------------------------
-    	 *					   		\sub4_req
-    	 *						   +------------------+
-    	 *						   | *postponed | ... |
-    	 *						   +------------------+
-    	 *
-    	 * 一个疑问:
-    	 *    如果当前请求r也有数据要输出,并且也会发起一个子请求的,那么此时c->data肯定等于r
-    	 *    并且因为是第一次发送子请求,所以r->postponed肯定也是空的,那么后续ngx是如何决定
-    	 *    先把父请求的数据输出,然后再输出子请求数据的?
-    	 * 这种情况是不允许出现的,如果当前请求r有数据输出,那么必须等这些数据完全输出完毕或者已经完全存放到了r->out中
-    	 * 后才能再次发起子请求,不然的话数据的输出顺序是不可控的
-    	 */
+        /*
+         * 我们假设一个父请求的作用就是直接发起三个子请求,发起的顺序是sub1、sub2、sub3,那么在向外界输出输出的时候肯定必须是先输出sub1
+         * 的数据在输出sub2的,最后输出sub3的.
+         *
+         * ngx中为了确保子请求的数据可以有序(有子请求的创建时机决定)向外输出,采用了一个数状结构,其中每个请求都会包含一个
+         * postponed字段,该字段是一个链表,用来存放这个父请求下的直接子请求,像这样:(链表中存放的是ngx_http_postponed_request_t对象)
+         *            parent_req
+         *        --------------------
+         *        | *postponed | ... |
+         *        --------------------
+         *                   \ sub1_postpone                 sub2_postpone                  sub3_postpone
+         *                    -------------------------      -------------------------      -------------------------
+         *                    | *request |*out| *next | ---> | *request |*out| *next | ---> | *request |*out| *next |
+         *                    -------------------------      -------------------------      -------------------------
+         *                       \sub1_req                        \sub2_req
+         *                     +------------+                   +------------+
+         *                     | *postponed |                   | *postponed |
+         *                     +------------+                   +------------+
+         * 从上图可以看到sub1_postpone对应的子请求是先发起的,所以他里面的数据应该先输出到客户端,所以此时c->data是sub1
+         * 如果此时sub1又发起了一个子请求sub4,根据上图可知sub4就应该是先输出数据的子请求,结构应该如下图:
+         *             parent_req
+         *         --------------------
+         *         | *postponed | ... |
+         *         --------------------
+         *                    \ sub1_postpone                sub2_postpone                  sub3_postpone
+         *                    -------------------------      -------------------------      -------------------------
+         *                    | *request |*out| *next | ---> | *request |*out| *next | ---> | *request |*out| *next |
+         *                    -------------------------      -------------------------      -------------------------
+         *                       \sub1_req                         \sub2_req
+         *                     --------------------              --------------------
+         *                     | *postponed | ... |              | *postponed | ... |
+         *                     --------------------                 --------------------
+         *                        \
+         *                     ---------------------------
+         *                     | *request | *out | *next |
+         *                     ---------------------------
+         *                           \sub4_req
+         *                         +------------------+
+         *                         | *postponed | ... |
+         *                         +------------------+
+         *
+         * 一个疑问:
+         *    如果当前请求r也有数据要输出,并且也会发起一个子请求的,那么此时c->data肯定等于r
+         *    并且因为是第一次发送子请求,所以r->postponed肯定也是空的,那么后续ngx是如何决定
+         *    先把父请求的数据输出,然后再输出子请求数据的?
+         * 这种情况是不允许出现的,如果当前请求r有数据输出,那么必须等这些数据完全输出完毕或者已经完全存放到了r->out中
+         * 后才能再次发起子请求,不然的话数据的输出顺序是不可控的
+         */
 
-    	// 指定下次可以向客户端输出数据的子请求
+        // 指定下次可以向客户端输出数据的子请求
         c->data = sr;
     }
 
@@ -3389,53 +3389,53 @@ ngx_http_get_forwarded_addr_internal(ngx_http_request_t *r, ngx_addr_t *addr,
  *
  *
  * cf的值有ngx_http_block方法传递过来:
- * 	  cf->module_type = NGX_HTTP_MODULE
- * 	  cf->cmd_type = NGX_HTTP_MAIN_CONF
- * 	  cf->ctx: 一个指针,指向ngx_http_conf_ctx_t结构体,该结构体的整体位置如下:
- * 	  	 cycle->conf_ctx
- *	 	    -----
- *		 	| * |
- *		 	-----
- *	  		  \        ngx_http_module.index					 	 cf->ctx
- *		 	   ---------------------								  -----
- *		 	   | * | ... | * | ... | ngx_max_module个				  | * |
- *		       ---------------------								  -----
- *		     		 		\         ngx_http_conf_ctx_t				/
- *		     		 	   -----------------------------------------------
- *		     		 	   |  **main_conf  |  **srv_conf  |  **loc_conf  |
- *		 			 	   -----------------------------------------------
- *		  			    	 /           	      /                      \
- *		 			-------------		   -------------			   -------------
- *		 			| * |...| * |		   | * |...| * |			   | * |...| * | 都是ngx_http_max_module个
- *		 			-------------		   -------------			   -------------
- *		 			  |  					 |							 |
- *		    ---------------------------	  ---------------------------	--------------------------
- *		 	|ngx_http_core_main_conf_t|	  |ngx_http_core_main_conf_t|	|ngx_http_core_loc_conf_t|
- *		 	---------------------------	  ---------------------------	--------------------------
+ *    cf->module_type = NGX_HTTP_MODULE
+ *    cf->cmd_type = NGX_HTTP_MAIN_CONF
+ *    cf->ctx: 一个指针,指向ngx_http_conf_ctx_t结构体,该结构体的整体位置如下:
+ *    cycle->conf_ctx
+ *          -----
+ *          | * |
+ *          -----
+ *            \        ngx_http_module.index                          cf->ctx
+ *             ---------------------                                 ------
+ *             | * | ... | * | ... | ngx_max_module个                 | * |
+ *             ---------------------                                 ------
+ *                         \         ngx_http_conf_ctx_t                /
+ *                         -----------------------------------------------
+ *                         |  **main_conf  |  **srv_conf  |  **loc_conf  |
+ *                         -----------------------------------------------
+ *                            /                     /                   \
+ *                  -------------          -------------               -------------
+ *                  | * |...| * |          | * |...| * |               | * |...| * | 都是ngx_http_max_module个
+ *                  -------------          -------------               -------------
+ *                   |                       |                           |
+ *          ---------------------------      ---------------------------    --------------------------
+ *          |ngx_http_core_main_conf_t|      |ngx_http_core_main_conf_t|    |ngx_http_core_loc_conf_t|
+ *          ---------------------------      ---------------------------    --------------------------
  *
  *
  * cmd:对应指令的配置信息
- *	   { ngx_string("server"),
- *     	 NGX_HTTP_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
- *     	 ngx_http_core_server,
- *     	 0, //conf
+ *     { ngx_string("server"),
+ *       NGX_HTTP_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
+ *       ngx_http_core_server,
+ *       0, //conf
  *       0, //offset
  *       NULL }
  *
  *
  * dummy: /'dʌmi/ n 假人;傀儡;
- *		该方法不会用到这个这个变量。
- *		实际上走的是下面的逻辑:
- *			} else if (cf->ctx) {
- *				confp = *(void **) ((char *) cf->ctx + cmd->conf);
- *				if (confp) {
+ *      该方法不会用到这个这个变量。
+ *      实际上走的是下面的逻辑:
+ *          } else if (cf->ctx) {
+ *             confp = *(void **) ((char *) cf->ctx + cmd->conf);
+ *             if (confp) {
  *                   conf = confp[ngx_modules[i]->ctx_index];
  *              }
  *          }
  *
  *
  * 约定:
- * 		在图中,如果是用"+"表示的则表示在内存中是同一个结构体
+ *      在图中,如果是用"+"表示的则表示在内存中是同一个结构体
  *
  */
 static char *
@@ -3458,9 +3458,9 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
      * -----
      * | * |
      * -----
-     *	 \         ngx_http_conf_ctx_t
-     *	  -----------------------------------------
-     *	  | **main_conf | **srv_conf | **loc_conf |
+     *    \         ngx_http_conf_ctx_t
+     *    -----------------------------------------
+     *    | **main_conf | **srv_conf | **loc_conf |
      *    -----------------------------------------
      */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
@@ -3471,26 +3471,26 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
     /*
      * 执行完下面代码后,ctx结构如下:
-	 *						     cycle->conf_ctx
-	 *								-----
-	 *								| * |
-	 *								-----
-	 *	 ctx						  \   ngx_http_module.index				   cf->ctx | http_ctx
-	 *	-----					---------------------								 -----
-	 *	| * |					| * | ... | * | ... |ngx_max_module个				 | * |
-	 *	-----					---------------------								 -----
-	 *	 \	ngx_http_conf_ctx_t		        \            ngx_http_conf_ctx_t	       /
-	 *    ---------------------	 	       -----------------------------------------------
-	 *    | **main_conf | ... |	   	       |  **main_conf  |  **srv_conf  |  **loc_conf  |
-	 *    ---------------------		       -----------------------------------------------
-	 *				 \			 	 	   /           	      /                      \
-	 *				 ++-------------------++		   -------------			   -------------
-	 *				 | * |     ...     | * |		   | * |...| * |			   | * |...| * | 都是ngx_http_max_module个
-	 *				 ++-------------------++		   -------------			   -------------
-	 *				   |  					             |							 |
-	 *				+-------------------------+	   ---------------------------	  --------------------------
-	 *				|ngx_http_core_main_conf_t|	   |ngx_http_core_main_conf_t|	  |ngx_http_core_loc_conf_t|
-	 *				+-------------------------+	   ---------------------------	  --------------------------
+     *                          cycle->conf_ctx
+     *                              -----
+     *                              | * |
+     *                              -----
+     *   ctx                          \   ngx_http_module.index				   cf->ctx | http_ctx
+	 *	-----					---------------------					             ------
+     *  | * |                   | * | ... | * | ... |ngx_max_module个                 | * |
+     *  -----                   ---------------------                                ------
+     *     \ngx_http_conf_ctx_t             \            ngx_http_conf_ctx_t           /
+     *    ---------------------            -----------------------------------------------
+     *    | **main_conf | ... |            |  **main_conf  |  **srv_conf  |  **loc_conf  |
+     *    ---------------------            -----------------------------------------------
+     *               \                      /                     /                      \
+     *               ++-------------------++           -------------               -------------
+     *               | * |     ...     | * |           | * |...| * |               | * |...| * | 都是ngx_http_max_module个
+     *               ++-------------------++           -------------               -------------
+     *                 |                                 |                           |
+     *              +-------------------------+    ---------------------------    --------------------------
+     *              |ngx_http_core_main_conf_t|    |ngx_http_core_main_conf_t|    |ngx_http_core_loc_conf_t|
+     *              +-------------------------+    ---------------------------    --------------------------
      *
      */
     http_ctx = cf->ctx;
@@ -3500,22 +3500,22 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
     /*
      * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
-     * 	 			   ctx
-	 *				  -----
-	 *				  | * |
-	 *				  -----
-	 *	 			 	\	        ngx_http_conf_ctx_t
-	 *    				-----------------------------------------
-	 *    				| **main_conf | **srv_conf | **loc_conf |
-	 *    				-----------------------------------------
-	 *				 	/					|
-	 *		  ++-----------++			---------------
-	 *		  | * | ... | * |			| * | ... | * |  都是ngx_http_max_module个
-	 *		  ++-----------++			---------------
-	 *	        |
-	 *	  +-------------------------+
-	 *	  |ngx_http_core_main_conf_t| 和上图中带"+"边的在内存中是同一个结构体
-	 *	  +-------------------------+
+     *                 ctx
+     *                -----
+     *                | * |
+     *                -----
+     *                  \            ngx_http_conf_ctx_t
+     *                  -----------------------------------------
+     *                  | **main_conf | **srv_conf | **loc_conf |
+     *                  -----------------------------------------
+     *                  /                    |
+     *        ++-----------++            ---------------
+     *        | * | ... | * |            | * | ... | * |  都是ngx_http_max_module个
+     *        ++-----------++            ---------------
+     *          |
+     *    +-------------------------+
+     *    |ngx_http_core_main_conf_t| 和上图中带"+"边的在内存中是同一个结构体
+     *    +-------------------------+
      *
      */
     ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
@@ -3525,25 +3525,25 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
     /* the server{}'s loc_conf */
     /*
-	 * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
-	 * 	 			   ctx
-	 *				  -----
-	 *				  | * |
-	 *				  -----
-	 *	 			 	\	        ngx_http_conf_ctx_t
-	 *    				-----------------------------------------
-	 *    				| **main_conf | **srv_conf | **loc_conf |
-	 *    				-----------------------------------------
-	 *				 	/					|				  |
-	 *		  ++-----------++		 ---------------	 ---------------
-	 *		  | * | ... | * |		 | * | ... | * |  	 | * | ... | * | 都是ngx_http_max_module个
-	 *		  ++-----------++		 ---------------	 ---------------
-	 *	        |
-	 *	  +-------------------------+
-	 *	  |ngx_http_core_main_conf_t|
-	 *	  +-------------------------+
-	 *
-	 */
+     * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
+     *                 ctx
+     *                -----
+     *                | * |
+     *                -----
+     *                  \            ngx_http_conf_ctx_t
+     *                  -----------------------------------------
+     *                  | **main_conf | **srv_conf | **loc_conf |
+     *                  -----------------------------------------
+     *                  /                    |                |
+     *        ++-----------++        ---------------     ---------------
+     *        | * | ... | * |        | * | ... | * |     | * | ... | * | 都是ngx_http_max_module个
+     *        ++-----------++         ---------------     ---------------
+     *          |
+     *    +-------------------------+
+     *    |ngx_http_core_main_conf_t|
+     *    +-------------------------+
+     *
+     */
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
@@ -3569,25 +3569,25 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
             }
 
             /*
-			 * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
-			 * 	 			   			ctx
-			 *				  			-----
-			 *				  			| * |
-			 *				  			-----
-			 *	 			 				\	        ngx_http_conf_ctx_t
-			 *    							-----------------------------------------
-			 *    							| **main_conf | **srv_conf | **loc_conf |
-			 *    							-----------------------------------------
-			 *				 				/					|				  |
-			 *		  			++-----------++		 	---------------	 	---------------
-			 *		  			| * | ... | * |		 	| * | ... | * |  	| * | ... | * | 都是ngx_http_max_module个
-			 *		  			++-----------++		 	---------------	    ---------------
-			 *	       			  |						  |
-			 *	  +-------------------------+		---------------------------
-			 *	  |ngx_http_core_main_conf_t|		|ngx_http_core_srv_conf_t|
-			 *	  +-------------------------+		---------------------------
-			 *
-			 */
+             * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
+             *                           ctx
+             *                          -----
+             *                          | * |
+             *                          -----
+             *                              \            ngx_http_conf_ctx_t
+             *                              -----------------------------------------
+             *                              | **main_conf | **srv_conf | **loc_conf |
+             *                              -----------------------------------------
+             *                               /                 |                 |
+             *                  ++-----------++         ---------------     ---------------
+             *                  | * | ... | * |         | * | ... | * |     | * | ... | * | 都是ngx_http_max_module个
+             *                  ++-----------++         ---------------     ---------------
+             *                     |                          |
+             *      +-------------------------+        ---------------------------
+             *      |ngx_http_core_main_conf_t|        |ngx_http_core_srv_conf_t|
+             *      +-------------------------+        ---------------------------
+             *
+             */
             ctx->srv_conf[ngx_modules[i]->ctx_index] = mconf;
         }
 
@@ -3598,8 +3598,8 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
             }
 
             /*
-			 * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
-			 * 	 			   			ctx
+             * 分配完毕后ctx的结构如下:(全局结构看上面的,这里不再画出从cycle->conf_ctx开始的结构)
+             * 	 			   			ctx
 			 *				  			-----
 			 *				  			| * |
 			 *				  			-----

@@ -40,13 +40,13 @@ struct ngx_file_s {
      * 是否使用directio(aio)方式读取文件内容
      *
      * 一般情况下文件的读写,应用程序都只跟page cache打交道,当未命中cache的时候由底层去更新page cache,之后
-	 *	用户在跟page cache打交道
-	 *
-	 * direct-io的文件读写形式是,用户直接跟磁盘打交道,cache这一层有用户自己在用户态负责
-	 *
-	 * linux中的aio需要directio为打开状态,因为在linux中,如果不是用directio,那么应用程序是只跟page cache
-	 * 打交道的,也就是直接跟内存(page cache)玩,所以这种状态根本不需要异步操作; 但是当打开directio选项后,就是
-	 * 用户直接跟磁盘打交道了,这个时候当用户跟磁盘读写数据时开启异步io(aio)就非常有必要了
+     *   用户在跟page cache打交道
+     *
+     * direct-io的文件读写形式是,用户直接跟磁盘打交道,cache这一层有用户自己在用户态负责
+     *
+     * linux中的aio需要directio为打开状态,因为在linux中,如果不是用directio,那么应用程序是只跟page cache
+     * 打交道的,也就是直接跟内存(page cache)玩,所以这种状态根本不需要异步操作; 但是当打开directio选项后,就是
+     * 用户直接跟磁盘打交道了,这个时候当用户跟磁盘读写数据时开启异步io(aio)就非常有必要了
      *
      */
     unsigned                   directio:1;

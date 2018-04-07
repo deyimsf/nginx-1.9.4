@@ -9,22 +9,22 @@
  * 1，链表法:把散列到同一槽中的所有元素都放在一个链表中
  *
  * 2，开放寻址法(再散列方法?):开放寻址发中所有的元素都存放在散列表中；
- * 	 当插入一个元素时,可以连续的检查散列表的各项，直到找到一个空槽来放置待插入的关键字为止。
+ *   当插入一个元素时,可以连续的检查散列表的各项，直到找到一个空槽来放置待插入的关键字为止。
  *
- * 	 插入操作描述如下:
- * 	 HASH-INSERT(T,k)
- * 	 i = 0
- * 	 repeat j = h(k,i)
- * 	 	if T[j] = null
- * 	 		T[j] = k
- * 	 		return j;
- * 	 	else
- * 	 		i = i + 1;
- * 	 until i = m;
+ *   插入操作描述如下:
+ *   HASH-INSERT(T,k)
+ *   i = 0
+ *   repeat j = h(k,i)
+ *       if T[j] = null
+ *           T[j] = k
+ *           return j;
+ *       else
+ *           i = i + 1;
+ *   until i = m;
  *
- * 	 error "hash table overflow";
+ *   error "hash table overflow";
  *
- * 	 其中T:散列表；k:要插入的元素; h(k,i):散列函数
+ *   其中T:散列表；k:要插入的元素; h(k,i):散列函数
  *
  * 3，完全散列：采用两级散列表
  *   第一级于链表散列基本一致；与链表发不同的是，不会对散列到某个槽(桶)上的的关键字建立一个链表，
@@ -38,15 +38,15 @@
  *
  * 插入操作简单流程:
  *  0,先计算每个元素在每个桶的位置偏移量
- *	1,计算要插入元素的hash值,然后确定其桶的位置
- *	2,桶的起始位置 + 该元素在该桶中的偏移量 = elt
- *	3,将elt赋值 elt->value = 实际value的指针;
- *	           elt->name = key字符串的小写形式
+ *  1,计算要插入元素的hash值,然后确定其桶的位置
+ *  2,桶的起始位置 + 该元素在该桶中的偏移量 = elt
+ *  3,将elt赋值 elt->value = 实际value的指针;
+ *             elt->name = key字符串的小写形式
  *
  *
  *  初始方法在开始的时候,会计算ngx_hash_elt_t结构体所需占用内存的总共大小,其中包括
  *  name的总长度 + len这个字段占用的字节个数(sizeof(u_short)) + 指针*value占用的字节数(sizeof(void *))
- *	但是并不包含 value 指向的内容长度。
+ *  但是并不包含 value 指向的内容长度。
  *
  */
 
@@ -60,9 +60,9 @@
 
 
 typedef struct { //ngx_hash_t结构中实际存放的元素
-	/*
-	 * 键值对key对应的值value
-	 */
+    /*
+     * 键值对key对应的值value
+     */
     void             *value;
 
     u_short           len; //name的长度
@@ -108,7 +108,7 @@ typedef struct {
  * 支持通配符的散列表,只是对基本散列表做了一个简单的封装
  */
 typedef struct {
-	// 基本散列表
+    // 基本散列表
     ngx_hash_t        hash;
     // 用户可以使用这个指针来存储或传递一些东西
     void             *value;
@@ -117,7 +117,7 @@ typedef struct {
 
 //ngx_hash_t结构中的键值对
 typedef struct {
-	// 键值对中的键,ngx_hash_elt_t结构中的name来自这个key
+    // 键值对中的键,ngx_hash_elt_t结构中的name来自这个key
     ngx_str_t         key;
     // key的hash值
     ngx_uint_t        key_hash;
@@ -125,8 +125,8 @@ typedef struct {
     /*
      * 键值对中的原始值,ngx_hash_elt_t结构中的value指向该值
      *
-	 * 在http变量中存放的是ngx_http_variable_t结构体(cmcf->variables_keys)
-	 */
+     * 在http变量中存放的是ngx_http_variable_t结构体(cmcf->variables_keys)
+     */
     void             *value;
 } ngx_hash_key_t;
 
@@ -140,7 +140,7 @@ typedef ngx_uint_t (*ngx_hash_key_pt) (u_char *data, size_t len);
  * 该结构体包含三个散列表
  */
 typedef struct {
-	// 精确匹配的散列表
+    // 精确匹配的散列表
     ngx_hash_t            hash;
     // 匹配前置通配符的散列表,如：*.jd.com
     ngx_hash_wildcard_t  *wc_head;
@@ -154,7 +154,7 @@ typedef struct {
  * 当构造完*hash后就不需要了
  */
 typedef struct {
-	// 待初始化的hash结构,如果不指定则ngx_hash_init方法会自己创建该结构
+    // 待初始化的hash结构,如果不指定则ngx_hash_init方法会自己创建该结构
     ngx_hash_t       *hash;
     // key的hash函数,用来计算key的hash值并确定桶的位置
     ngx_hash_key_pt   key;
@@ -201,7 +201,7 @@ typedef struct {
  *
  */
 typedef struct {
-	// 各个散列表的桶的个数
+    // 各个散列表的桶的个数
     ngx_uint_t        hsize;
 
     ngx_pool_t       *pool;
@@ -223,14 +223,14 @@ typedef struct {
      * 和 .jd.com视为相同
      *
      * 这个机构类似于java中的HashMap,只不过是把链表换成数组
-     * 			keys_hash
-     * 			  -----
-     * 			  | * |
-     * 			  -----
-     * 			    \
-     * 			  ----------------------
-     * 			  | * | * | * | * |  HashMap中的数组
-     * 			  ----------------------
+     *          keys_hash
+     *            -----
+     *            | * |
+     *            -----
+     *             \
+     *            ----------------------
+     *            | * | * | * | * |  HashMap中的数组
+     *            ----------------------
      *              /            \
      *    ----------------      ----------------
      *    | 多个ngx_str_t |      | 多个ngx_str_t |
@@ -321,7 +321,7 @@ ngx_int_t ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
  *
  * *hinit: 用于构造hash结构的临时结构体
  * *names: hash机构中要存入的键值对,该入参是个键值对数组
- *		   全是带通配符的key,如 *.jd.com .jd.com www.jd.*
+ *           全是带通配符的key,如 *.jd.com .jd.com www.jd.*
  * nelts: 键值对个数,也就是names的个数
  *
  */
@@ -376,8 +376,8 @@ ngx_int_t ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type);
  * *key: 用户key,比如“www.jd.com”、“.jd.com”、"*.jd.com"、“www.jd.*”
  * *value: 用户值,比如“198.168.12.32”
  * flags: 一个位掩码
- * 		NGX_HASH_WILDCARD_KEY: 处理通配符
- * 		NGX_HASH_READONLY_KEY: 不把key转换为小写
+ *         NGX_HASH_WILDCARD_KEY: 处理通配符
+ *         NGX_HASH_READONLY_KEY: 不把key转换为小写
  *
  * 不允许存在相同的元素,如果存在返回NGX_BUSY
  *

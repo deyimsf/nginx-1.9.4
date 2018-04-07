@@ -98,10 +98,10 @@ struct io_event {
  * 用来存放epoll事件模块配置信息的结构体
  */
 typedef struct {
-	/*
-	 * 每次调用epoll_wait时可以返回的最大就绪事件个数,对应epoll_events指令(官方文档没有标出这个指令)
-	 * 默认是512
-	 */
+    /*
+     * 每次调用epoll_wait时可以返回的最大就绪事件个数,对应epoll_events指令(官方文档没有标出这个指令)
+     * 默认是512
+     */
     ngx_uint_t  events;
     // 对应worker_aio_requests指令
     ngx_uint_t  aio_requests;
@@ -158,7 +158,7 @@ static ngx_str_t      epoll_name = ngx_string("epoll");
 
 static ngx_command_t  ngx_epoll_commands[] = {
 
-	// 每次调用epoll_wait时可以返回的最大就绪事件个数
+    // 每次调用epoll_wait时可以返回的最大就绪事件个数
     { ngx_string("epoll_events"),
       NGX_EVENT_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_num_slot,
@@ -196,13 +196,13 @@ ngx_event_module_t  ngx_epoll_module_ctx = {
 #endif
         ngx_epoll_process_events,        /* process the events */
 
-	    /*
-	      fork出worker进程之后,在/src/event/ngx_event.c/ngx_event_process_init方法中,
-	      会调用该方法(actions.init)
-	    */
+       /*
+        *  fork出worker进程之后,在/src/event/ngx_event.c/ngx_event_process_init方法中,
+        * 会调用该方法(actions.init)
+        */
         ngx_epoll_init,                  /* init the events */
 
-		// 销毁epoll对象,目前没有模块在使用这个方法
+        // 销毁epoll对象,目前没有模块在使用这个方法
         ngx_epoll_done,                  /* done the events */
     }
 };
@@ -498,7 +498,7 @@ ngx_epoll_notify_handler(ngx_event_t *ev)
 static void
 ngx_epoll_done(ngx_cycle_t *cycle)
 {
-	// 关闭epoll对象
+    // 关闭epoll对象
     if (close(ep) == -1) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "epoll close() failed");
@@ -570,10 +570,10 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     events = (uint32_t) event;
 
     if (event == NGX_READ_EVENT) {
-    	/*
-    	 * 如果当前要添加的是读事件
-    	 * 因为还不确定写事件是否已经在epoll中,所以先把写事件和对应的写事件类型(EPOLLOUT)放入到相应的变量中
-    	 */
+        /*
+         * 如果当前要添加的是读事件
+         * 因为还不确定写事件是否已经在epoll中,所以先把写事件和对应的写事件类型(EPOLLOUT)放入到相应的变量中
+         */
         e = c->write;
         prev = EPOLLOUT;
 #if (NGX_READ_EVENT != EPOLLIN|EPOLLRDHUP)
@@ -582,10 +582,10 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 #endif
 
     } else {
-    	/**
-    	 * 如果当前要添加的是写事件
-    	 * 因为还不确定读事件是否已经在epoll中,所以先把读事件和对应的读事件类型(EPOLLIN|EPOLLRDHUP)放入到相应的变量中
-    	 */
+        /**
+         * 如果当前要添加的是写事件
+         * 因为还不确定读事件是否已经在epoll中,所以先把读事件和对应的读事件类型(EPOLLIN|EPOLLRDHUP)放入到相应的变量中
+         */
         e = c->read;
         prev = EPOLLIN|EPOLLRDHUP;
 #if (NGX_WRITE_EVENT != EPOLLOUT)
@@ -600,7 +600,7 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
      * e和prev这两个变量是为了记录,连接c在epoll中的旧事件
      */
     if (e->active) {
-    	// 如果连接c在epoll中存在旧事件,则这次的操作就是修改
+        // 如果连接c在epoll中存在旧事件,则这次的操作就是修改
         op = EPOLL_CTL_MOD;
         events |= prev;
 
@@ -675,20 +675,20 @@ ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     c = ev->data;
 
     if (event == NGX_READ_EVENT) {
-    	/*
-		 * 如果当前要删除的是读事件
-		 * 因为还不确定写事件是否已经在epoll中,所以先把写事件对象和对应的写事件类型(EPOLLOUT)放入到相应的变量中
-		 * 后续如果确定写事件在epoll中,那么就通过EPOLL_CTL_MOD来删除epoll中的读事件
-		 */
+        /*
+         * 如果当前要删除的是读事件
+         * 因为还不确定写事件是否已经在epoll中,所以先把写事件对象和对应的写事件类型(EPOLLOUT)放入到相应的变量中
+         * 后续如果确定写事件在epoll中,那么就通过EPOLL_CTL_MOD来删除epoll中的读事件
+         */
         e = c->write;
         prev = EPOLLOUT;
 
     } else {
-    	/*
-		 * 如果当前要删除的是写事件
-		 * 因为还不确定读事件是否已经在epoll中,所以先把读事件对象和对应的读事件类型(EPOLLIN|EPOLLRDHUP)放入到相应的变量中
-		 * 后续如果确定读事件在epoll中,那么就通过EPOLL_CTL_MOD来删除epoll中的写事件
-		 */
+        /*
+         * 如果当前要删除的是写事件
+         * 因为还不确定读事件是否已经在epoll中,所以先把读事件对象和对应的读事件类型(EPOLLIN|EPOLLRDHUP)放入到相应的变量中
+         * 后续如果确定读事件在epoll中,那么就通过EPOLL_CTL_MOD来删除epoll中的写事件
+         */
         e = c->read;
         prev = EPOLLIN|EPOLLRDHUP;
     }
@@ -700,14 +700,14 @@ ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
      * e和prev这两个变量是为了记录,连接c在epoll中的旧事件
      */
     if (e->active) {
-    	// 修改操作,保留原来的旧事件
+        // 修改操作,保留原来的旧事件
         op = EPOLL_CTL_MOD;
         // 保留原来在epoll中的事件,并增加一个flags标记(有可能是水平触发或者边沿触发)
         ee.events = prev | (uint32_t) flags;
         ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 
     } else {
-    	// 删除操作
+        // 删除操作
         op = EPOLL_CTL_DEL;
         ee.events = 0;
         ee.data.ptr = NULL;
@@ -874,14 +874,14 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 
     // 如果发生了错误
     if (err) {
-    	// 如果epoll_wait是被一个信号中断的则走这里
+        // 如果epoll_wait是被一个信号中断的则走这里
         if (err == NGX_EINTR) {
-        	/*
-        	 * 如果epoll_wait是被SIGALRM信号中断的,则走下面这段逻辑,因为目前ngx中只有该信号绑定的
-        	 * ngx_timer_signal_handler方法才会设置变量ngx_event_timer_alarm为1
-        	 */
+            /*
+             * 如果epoll_wait是被SIGALRM信号中断的,则走下面这段逻辑,因为目前ngx中只有该信号绑定的
+             * ngx_timer_signal_handler方法才会设置变量ngx_event_timer_alarm为1
+             */
             if (ngx_event_timer_alarm) {
-            	// 此次调用被中断的目的就是去更新缓存时间,而缓存时间的更新已经在上面做过了,所以直接返回NGX_OK。
+                // 此次调用被中断的目的就是去更新缓存时间,而缓存时间的更新已经在上面做过了,所以直接返回NGX_OK。
 
                 ngx_event_timer_alarm = 0;
                 return NGX_OK;
@@ -899,10 +899,10 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     }
 
     if (events == 0) {
-    	/*
-    	 * 如果epoll_wait设置的超时时间不是-1(NGX_TIMER_INFINITE),则说明是epoll_wait超时了
-    	 * 超时后什么也不做,直接返回NGX_OK
-    	 */
+        /*
+         * 如果epoll_wait设置的超时时间不是-1(NGX_TIMER_INFINITE),则说明是epoll_wait超时了
+         * 超时后什么也不做,直接返回NGX_OK
+         */
         if (timer != NGX_TIMER_INFINITE) {
             return NGX_OK;
         }
@@ -918,7 +918,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     /* 开始处理返回的就绪事件 */
 
     for (i = 0; i < events; i++) {
-    	// 取出这个事件对应的链接
+        // 取出这个事件对应的链接
         c = event_list[i].data.ptr;
 
         // 取出instance标记位,这个标记代表该事件对应的连接c是否被释放过,用它可以标记事件是否新鲜
@@ -974,13 +974,13 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                        c->fd, revents, event_list[i].data.ptr);
 
         if (revents & (EPOLLERR|EPOLLHUP)) {
-        	/*
-        	 * EPOLLERR: 连接发生错误
-        	 * EPOLLHUP: 连接被挂起
-        	 *
-        	 * 这两个事件不需要主动向epoll对象注册,默认就会存在这两个事件
-        	 *
-        	 */
+            /*
+             * EPOLLERR: 连接发生错误
+             * EPOLLHUP: 连接被挂起
+             *
+             * 这两个事件不需要主动向epoll对象注册,默认就会存在这两个事件
+             *
+             */
             ngx_log_debug2(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                            "epoll_wait() error on fd:%d ev:%04XD",
                            c->fd, revents);
@@ -1003,17 +1003,17 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
              * active handler
              */
 
-        	/*
-        	 * 事件对应的连接发生了错误,或者连接被挂起,并且返回的事件类型中也不存在EPOLLIN或EPOLLOUT
-        	 * 如果这里不做任何事情的话,后续方法就永远无法感知这个连接的错误,这个连接可能就永远无法的到释放。
-        	 *
-        	 * 这里解决的办法是假定EPOLLIN和EPOLLOUT,这两个事件都发生了,再通过判断哪一个事件在epoll中来
-        	 * 决定执行哪一个具体事件绑定的方法。
-        	 *
-        	 * 这个方法对用户屏蔽了EPOLLERR|EPOLLHUP这两个事件的存在,用户在具体执行自己的逻辑的时候才会感知到
-        	 * 连接发生了错误,然后用户就可以做逻辑在处理这个问题。
-        	 *
-        	 */
+            /*
+             * 事件对应的连接发生了错误,或者连接被挂起,并且返回的事件类型中也不存在EPOLLIN或EPOLLOUT
+             * 如果这里不做任何事情的话,后续方法就永远无法感知这个连接的错误,这个连接可能就永远无法的到释放。
+             *
+             * 这里解决的办法是假定EPOLLIN和EPOLLOUT,这两个事件都发生了,再通过判断哪一个事件在epoll中来
+             * 决定执行哪一个具体事件绑定的方法。
+             *
+             * 这个方法对用户屏蔽了EPOLLERR|EPOLLHUP这两个事件的存在,用户在具体执行自己的逻辑的时候才会感知到
+             * 连接发生了错误,然后用户就可以做逻辑在处理这个问题。
+             *
+             */
 
             revents |= EPOLLIN|EPOLLOUT;
         }
@@ -1023,7 +1023,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 
 #if (NGX_HAVE_EPOLLRDHUP)
             if (revents & EPOLLRDHUP) {
-            	// TODO 紧急数据
+                // TODO 紧急数据
                 rev->pending_eof = 1;
             }
 #endif
@@ -1044,7 +1044,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                 ngx_post_event(rev, queue);
 
             } else {
-            	// 调用读事件的回调方法(读事件包括新建立连接事件;ngx_event_accept)
+                // 调用读事件的回调方法(读事件包括新建立连接事件;ngx_event_accept)
                 rev->handler(rev);
             }
         }
@@ -1055,9 +1055,9 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
         if ((revents & EPOLLOUT) && wev->active) {
 
             if (c->fd == -1 || wev->instance != instance) {
-            	/*
-            	 * 和读做同样的判断，判断fd是否被关闭,以及事件是否新鲜
-            	 */
+                /*
+                 * 和读做同样的判断，判断fd是否被关闭,以及事件是否新鲜
+                 */
 
                 /*
                  * the stale event from a file descriptor
@@ -1077,7 +1077,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                 ngx_post_event(wev, &ngx_posted_events);
 
             } else {
-            	// 调用写事件的回调方法
+                // 调用写事件的回调方法
                 wev->handler(wev);
             }
         }

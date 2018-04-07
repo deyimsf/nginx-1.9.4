@@ -38,7 +38,7 @@ ngx_event_accept(ngx_event_t *ev)
 
     // TODO 这个超时是怎么产生的
     if (ev->timedout) {
-    	// TODO 超时之后为什么要再一次把监听连接放入到epoll中
+        // TODO 超时之后为什么要再一次把监听连接放入到epoll中
         if (ngx_enable_accept_events((ngx_cycle_t *) ngx_cycle) != NGX_OK) {
             return;
         }
@@ -50,7 +50,7 @@ ngx_event_accept(ngx_event_t *ev)
     ecf = ngx_event_get_conf(ngx_cycle->conf_ctx, ngx_event_core_module);
 
     if (!(ngx_event_flags & NGX_USE_KQUEUE_EVENT)) {
-    	// 设置本次是否可以尽可能多的获取新连接
+        // 设置本次是否可以尽可能多的获取新连接
         ev->available = ecf->multi_accept;
     }
 
@@ -76,10 +76,10 @@ ngx_event_accept(ngx_event_t *ev)
 
 #if (NGX_HAVE_ACCEPT4)
         if (use_accept4) {
-        	/*
-        	 * 从监听连接lc->fd中建立一个连接
-        	 *
-        	 */
+            /*
+             * 从监听连接lc->fd中建立一个连接
+             *
+             */
             s = accept4(lc->fd, (struct sockaddr *) sa, &socklen,
                         SOCK_NONBLOCK);
         } else {
@@ -108,7 +108,7 @@ ngx_event_accept(ngx_event_t *ev)
             level = NGX_LOG_ALERT;
 
             if (err == NGX_ECONNABORTED) {
-            	// "客户端"连接异常终止
+                // "客户端"连接异常终止
                 level = NGX_LOG_ERR;
 
             } else if (err == NGX_EMFILE || err == NGX_ENFILE) {
@@ -130,7 +130,7 @@ ngx_event_accept(ngx_event_t *ev)
 
             if (err == NGX_ECONNABORTED) {
                 if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {
-                	// 如果使用KQUEUE事件模块则执行这个操作
+                    // 如果使用KQUEUE事件模块则执行这个操作
                     ev->available--;
                 }
 
@@ -140,11 +140,11 @@ ngx_event_accept(ngx_event_t *ev)
             }
 
             if (err == NGX_EMFILE || err == NGX_ENFILE) {
-            	// 打开的文件描述符太多了,不能再建立新连接了,所以将监听连接事件从epoll中删除掉
+                // 打开的文件描述符太多了,不能再建立新连接了,所以将监听连接事件从epoll中删除掉
                 if (ngx_disable_accept_events((ngx_cycle_t *) ngx_cycle, 1)
                     != NGX_OK)
                 {
-                	// 没有删除成功则直接返回
+                    // 没有删除成功则直接返回
                     return;
                 }
 
@@ -152,7 +152,7 @@ ngx_event_accept(ngx_event_t *ev)
 
                 if (ngx_use_accept_mutex) {
                     if (ngx_accept_mutex_held) {
-                    	// 如果使用互斥锁了,并且当前进程持有锁,则释放锁
+                        // 如果使用互斥锁了,并且当前进程持有锁,则释放锁
                         ngx_shmtx_unlock(&ngx_accept_mutex);
                         ngx_accept_mutex_held = 0;
                     }
@@ -164,10 +164,10 @@ ngx_event_accept(ngx_event_t *ev)
                     ngx_accept_disabled = 1;
 
                 } else {
-                	/*
-                	 * 如果不是因为占用文件描述符过多造成的问题,则有可能是客户端连接暂时没有准备好,则把该事件
-                	 * 放入到时间事件驱动器中,并设置执行时间accept_mutex_delay
-                	 */
+                    /*
+                     * 如果不是因为占用文件描述符过多造成的问题,则有可能是客户端连接暂时没有准备好,则把该事件
+                     * 放入到时间事件驱动器中,并设置执行时间accept_mutex_delay
+                     */
                     ngx_add_timer(ev, ecf->accept_mutex_delay);
                 }
             }
@@ -207,7 +207,7 @@ ngx_event_accept(ngx_event_t *ev)
         // 为该连接创建一个连接池
         c->pool = ngx_create_pool(ls->pool_size, ev->log);
         if (c->pool == NULL) {
-        	// 失败则关闭该网络连接
+            // 失败则关闭该网络连接
             ngx_close_accepted_connection(c);
             return;
         }
@@ -215,7 +215,7 @@ ngx_event_accept(ngx_event_t *ev)
         // 为"客户端"网络描述符s分配内核socket地址空间
         c->sockaddr = ngx_palloc(c->pool, socklen);
         if (c->sockaddr == NULL) {
-        	// 失败则关闭该网络连接
+            // 失败则关闭该网络连接
             ngx_close_accepted_connection(c);
             return;
         }
@@ -226,7 +226,7 @@ ngx_event_accept(ngx_event_t *ev)
         // 为该连接创建一个日志对象
         log = ngx_palloc(c->pool, sizeof(ngx_log_t));
         if (log == NULL) {
-        	// 失败则关闭该网络连接
+            // 失败则关闭该网络连接
             ngx_close_accepted_connection(c);
             return;
         }
@@ -245,7 +245,7 @@ ngx_event_accept(ngx_event_t *ev)
 
         } else {
             if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
-            	// socket设置成非阻塞
+                // socket设置成非阻塞
                 if (ngx_nonblocking(s) == -1) {
                     ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_socket_errno,
                                   ngx_nonblocking_n " failed");
@@ -304,7 +304,7 @@ ngx_event_accept(ngx_event_t *ev)
         }
 
         if (ev->deferred_accept) {
-        	/* 这段逻辑啥意思 TODO */
+            /* 这段逻辑啥意思 TODO */
 
             rev->ready = 1;
 #if (NGX_HAVE_KQUEUE)
@@ -332,7 +332,7 @@ ngx_event_accept(ngx_event_t *ev)
 #endif
 
         if (ls->addr_ntop) {
-        	// 将内核socket对应的ip地址,转换成字符串形式地址
+            // 将内核socket对应的ip地址,转换成字符串形式地址
 
             c->addr_text.data = ngx_pnalloc(c->pool, ls->addr_text_max_len);
             if (c->addr_text.data == NULL) {
@@ -435,7 +435,7 @@ ngx_event_accept(ngx_event_t *ev)
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {
-        	// KQUEUE模块使用,epoll没用
+            // KQUEUE模块使用,epoll没用
             ev->available--;
         }
 
@@ -470,7 +470,7 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
 
         // 获取锁之后就把该worker中的所有监听连接都放入到事件驱动器中
         if (ngx_enable_accept_events(cycle) == NGX_ERROR) {
-        	// 添加事件是失败则释放锁
+            // 添加事件是失败则释放锁
             ngx_shmtx_unlock(&ngx_accept_mutex);
             return NGX_ERROR;
         }

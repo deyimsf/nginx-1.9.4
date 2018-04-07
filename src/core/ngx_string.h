@@ -29,15 +29,15 @@ typedef struct {
  * 表示变量值
  */
 typedef struct {
-	/*
-	 * 变量值长度(data字段标识的值的长度)
-	 *
-	 * 比如在get_handler()方法中设置正真变量值时如下:
-	 *    v->len = sizeof("hello");
-	 *    v->data = ngx_pnalloc(r->pool, v->len);
-	 *
-	 *    ngx_cpystrn(v->data, "hello", v->len);
-	 */
+    /*
+     * 变量值长度(data字段标识的值的长度)
+     *
+     * 比如在get_handler()方法中设置正真变量值时如下:
+     *    v->len = sizeof("hello");
+     *    v->data = ngx_pnalloc(r->pool, v->len);
+     *
+     *    ngx_cpystrn(v->data, "hello", v->len);
+     */
     unsigned    len:28;
 
     /*
@@ -108,11 +108,11 @@ void ngx_strlow(u_char *dst, u_char *src, size_t n);
 /*
  * 在字符串p中查找第一个等于c的字符,如果找到则返回c在字符串p中的地址
  * 比如:
- * 		p = 127.0.0.1:8080
- * 		c = :
- * 		last是字符串p最后一个字符之后的位置
+ *     p = 127.0.0.1:8080
+ *     c = :
+ *     last是字符串p最后一个字符之后的位置
  * 调用该方法后返回:
- * 		p = :8080
+ *     p = :8080
  */
 static ngx_inline u_char *
 ngx_strlchr(u_char *p, u_char *last, u_char c)

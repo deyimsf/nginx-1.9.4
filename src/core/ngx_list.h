@@ -29,7 +29,7 @@ typedef struct ngx_list_part_s  ngx_list_part_t;
 
 //用来存放元素的结构体(称为链表项)
 struct ngx_list_part_s {
-	// 元素起始地址
+    // 元素起始地址
     void             *elts;
     // 当前结构体中已经存放了nelts个元素(可以理解为已存储元素计数器)
     ngx_uint_t        nelts;
@@ -41,7 +41,7 @@ struct ngx_list_part_s {
 // 实际上ngx_list_t是一个数组加链表的结合体
 // 每个链表项自身是一个数组,并且每个链表项又可以指向下一个链表项
 typedef struct {
-	// 指向链表中的最后一个链表项
+    // 指向链表中的最后一个链表项
     ngx_list_part_t  *last;
     // 链表中的第一个链表项
     ngx_list_part_t   part;
@@ -66,7 +66,7 @@ ngx_list_t *ngx_list_create(ngx_pool_t *pool, ngx_uint_t n, size_t size);
 static ngx_inline ngx_int_t
 ngx_list_init(ngx_list_t *list, ngx_pool_t *pool, ngx_uint_t n, size_t size)
 {
-	// 为链表项part分配用于真正存放数据的内存
+    // 为链表项part分配用于真正存放数据的内存
     list->part.elts = ngx_palloc(pool, n * size);
     if (list->part.elts == NULL) {
         return NGX_ERROR;

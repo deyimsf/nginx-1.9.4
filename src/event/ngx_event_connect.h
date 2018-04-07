@@ -42,7 +42,7 @@ struct ngx_peer_connection_s {
      * Address of the upstream server to connect to; this is the output parameter of a load-balancing method.
      *
      * 下面这三个参数用来描述一个上游服务器的sockaddr地址和名字,比如:
-     * 		127.0.0.1:8080
+     *      127.0.0.1:8080
      */
     struct sockaddr                 *sockaddr;
     socklen_t                        socklen;
@@ -67,17 +67,17 @@ struct ngx_peer_connection_s {
      * 根据负载均衡规则获取一个上游服务器信息
      *
      * 该方法接收两个参数:
-     *	 1.一个ngx_peer_connection_t对象
-     *	 2.一个在ngx_http_upstream_srv_conf_t.peer.init()方法中创建的data数据
+     *     1.一个ngx_peer_connection_t对象
+     *     2.一个在ngx_http_upstream_srv_conf_t.peer.init()方法中创建的data数据
      *
      * 这个方法可以返回如下值:
      *   NGX_OK — Server was selected.
      *   NGX_ERROR — Internal error occurred.
      *   NGX_BUSY — no servers are currently available. This can happen due to many reasons, including:
-     *   			the dynamic server group is empty, all servers in the group are in the failed state, or
-     *   			all servers in the group are already handling the maximum number of connections.
+     *               the dynamic server group is empty, all servers in the group are in the failed state, or
+     *               all servers in the group are already handling the maximum number of connections.
      *   NGX_DONE — the underlying connection was reused and there is no need to create a new connection
-     *   			to the upstream server. This value is set by the keepalive module.
+     *               to the upstream server. This value is set by the keepalive module.
      */
     ngx_event_get_peer_pt            get;
 
@@ -85,7 +85,7 @@ struct ngx_peer_connection_s {
      * free(pc, data, state)
      * The method called when an upstream module has finished work with a particular server.
      * The state argument is the completion status of the upstream connection, a bitmask with the following possible values:
-     * 	  NGX_PEER_FAILED — Attempt was unsuccessful
+     *    NGX_PEER_FAILED — Attempt was unsuccessful
      *    NGX_PEER_NEXT — A special case when upstream server returns codes 403 or 404, which are not considered a failure.
      *    NGX_PEER_KEEPALIVE — Currently unused
      * This method also decrements the tries counter.

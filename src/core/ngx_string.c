@@ -183,17 +183,17 @@ ngx_vslprintf(u_char *buf, u_char *last, const char *fmt, va_list args)
          */
 
         if (*fmt == '%') {
-        	/*
-        	 * 开始匹配格式化字符,每匹配到一个就调用va_arg(args, type)方法取获取对应的可变参数,比如有如下可变参数
-        	 * 		fmt = " %V gap %v gap "
-        	 * 对应的ngx_slprintf方法的调用应该是这样:
-        	 *		ngx_slprintf(buf, last, " %V gap %v gap ", str1, str2);
-        	 * 其中%V对应str1,%v对应str2
-        	 *
-        	 * 基本匹配过程是匹配到第一个百分号后,看到紧跟其后是字符'V',那就用下面的语句取str1这个可变参数的值
-        	 * 		v = va_arg(args, ngx_str_t *);
-        	 * 然后把获取到的值v的内容拷贝到buf中,剩下的可变参数也按照这种套路处理
-        	 */
+            /*
+             * 开始匹配格式化字符,每匹配到一个就调用va_arg(args, type)方法取获取对应的可变参数,比如有如下可变参数
+             *     fmt = " %V gap %v gap "
+             * 对应的ngx_slprintf方法的调用应该是这样:
+             *     ngx_slprintf(buf, last, " %V gap %v gap ", str1, str2);
+             * 其中%V对应str1,%v对应str2
+             *
+             * 基本匹配过程是匹配到第一个百分号后,看到紧跟其后是字符'V',那就用下面的语句取str1这个可变参数的值
+             *     v = va_arg(args, ngx_str_t *);
+             * 然后把获取到的值v的内容拷贝到buf中,剩下的可变参数也按照这种套路处理
+             */
 
             i64 = 0;
             ui64 = 0;
@@ -495,9 +495,9 @@ ngx_vslprintf(u_char *buf, u_char *last, const char *fmt, va_list args)
             fmt++;
 
         } else {
-        	/*
-        	 * 比如对于fmt" [%V] "这样的格式,检查到的第一个字符是" "空格,不是"%"百分号,所以就直接拷贝到buf中
-        	 */
+            /*
+             * 比如对于fmt" [%V] "这样的格式,检查到的第一个字符是" "空格,不是"%"百分号,所以就直接拷贝到buf中
+             */
             *buf++ = *fmt++;
         }
     }

@@ -13,7 +13,7 @@
 
 /*
  * 根据负载均衡规则连接上游服务器所有数据准备好之后调用系统函数
- * 	 rc = connect(s, pc->sockaddr, pc->socklen);
+ *      rc = connect(s, pc->sockaddr, pc->socklen);
  * 来和上游真正建立连接
  *
  * 步骤如下:
@@ -47,7 +47,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
 
     /*
      * 根据负载均衡规则获取上游服务获取上游服务器的struct sockaddr信息
-     * 	 ngx_http_upstream_round_robin.c/ngx_http_upstream_get_round_robin_peer()
+     *      ngx_http_upstream_round_robin.c/ngx_http_upstream_get_round_robin_peer()
      * 这个方法是真正定位上游服务器的方法
      */
     rc = pc->get(pc, pc->data);

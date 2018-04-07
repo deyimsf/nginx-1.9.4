@@ -85,7 +85,7 @@ ngx_int_t             ngx_accept_disabled;
  * 如果没有开启master-worker模式,指针变量ngx_stat_accepted会指向ngx_stat_accepted0对应的地址
  *
  * 如果开启了master-worker模式,指针变量ngx_stat_accepted会指向共享内存地址:
- * 		ngx_stat_accepted = (ngx_atomic_t *) (shared + 3 * cl);
+ *     ngx_stat_accepted = (ngx_atomic_t *) (shared + 3 * cl);
  */
 ngx_atomic_t   ngx_stat_accepted0;
 ngx_atomic_t  *ngx_stat_accepted = &ngx_stat_accepted0;
@@ -128,7 +128,7 @@ static ngx_command_t  ngx_events_commands[] = {
  *
  */
 static ngx_core_module_t  ngx_events_module_ctx = {
-	// 模块名字
+    // 模块名字
     ngx_string("events"),
     NULL,
     ngx_event_init_conf
@@ -267,11 +267,11 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
         flags = 0;
 
     } else {
-    	/*
-    	 * 用户没有自定义更新ngx缓存时间的机制,那么就从事件定时器中查找一个最小的时间来决定
-    	 *
-    	 * 具体事件模块(比如epoll)使用NGX_UPDATE_TIME标志来决定收调用ngx_time_update方法
-    	 */
+        /*
+         * 用户没有自定义更新ngx缓存时间的机制,那么就从事件定时器中查找一个最小的时间来决定
+         *
+         * 具体事件模块(比如epoll)使用NGX_UPDATE_TIME标志来决定收调用ngx_time_update方法
+         */
         timer = ngx_event_find_timer();
         flags = NGX_UPDATE_TIME;
 
@@ -288,35 +288,35 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     // 处理负载和惊群问题
     if (ngx_use_accept_mutex) {
-    	// 处理负载问题
+        // 处理负载问题
         if (ngx_accept_disabled > 0) {
-        	/*
-        	 * 所有worker刚启动后不会走这个逻辑,因为刚开始ngx_accept_disabled肯定是负数。
-        	 *
-        	 * 如果当前负载值大于零,表示当前woker已经很忙了,所以就没必要再去获取锁了,获取不了锁
-        	 * 也就无法将监听连接对应的读事件放入epoll中,所以后续就只能处理普通连接的事件。
-        	 *
-        	 * 所以一旦处理的连接过多后,worker就不再去抢锁,不抢锁就不会有新连接去处理。
-        	 */
+            /*
+             * 所有worker刚启动后不会走这个逻辑,因为刚开始ngx_accept_disabled肯定是负数。
+             *
+             * 如果当前负载值大于零,表示当前woker已经很忙了,所以就没必要再去获取锁了,获取不了锁
+             * 也就无法将监听连接对应的读事件放入epoll中,所以后续就只能处理普通连接的事件。
+             *
+             * 所以一旦处理的连接过多后,worker就不再去抢锁,不抢锁就不会有新连接去处理。
+             */
             ngx_accept_disabled--;
 
         // 处理惊群问题
         } else {
-        	/*
-        	 * 所有woker刚启动的时候肯定没有负载问题,也就是说ngx_accept_disabled值肯定小于零
-        	 * 这时候第一个接收连接的worker肯定会获取到这个锁(ngx_accept_mutex_held=1)。
-        	 *
-        	 * 拿到互斥锁的worker会利用ngx_posted_accept_events和ngx_posted_events这两个队列,快速的释放锁。
-        	 * 其实就是把从epoll_wait中获取到的事件都放入到这两个队列中,而不是立即执行其对应的回调方法。
-        	 *
-        	 * 这里有另一需要注意的地方:
-        	 *  只要使用互斥锁,那么刚开始的时候,所有worker的epoll中都不会存在监听连接事件,
-        	 *  所以如果没有不去获取一次锁,则永远都不会有网络事件处理.
-        	 *
-        	 *  只有当一个worker获取锁后,才会开始去处理监听连接事件,只有处理过一次监听连接事件并建立起新连接后,
-        	 *  才会有普通连接事件。
-        	 *
-        	 */
+            /*
+             * 所有woker刚启动的时候肯定没有负载问题,也就是说ngx_accept_disabled值肯定小于零
+             * 这时候第一个接收连接的worker肯定会获取到这个锁(ngx_accept_mutex_held=1)。
+             *
+             * 拿到互斥锁的worker会利用ngx_posted_accept_events和ngx_posted_events这两个队列,快速的释放锁。
+             * 其实就是把从epoll_wait中获取到的事件都放入到这两个队列中,而不是立即执行其对应的回调方法。
+             *
+             * 这里有另一需要注意的地方:
+             *  只要使用互斥锁,那么刚开始的时候,所有worker的epoll中都不会存在监听连接事件,
+             *  所以如果没有不去获取一次锁,则永远都不会有网络事件处理.
+             *
+             *  只有当一个worker获取锁后,才会开始去处理监听连接事件,只有处理过一次监听连接事件并建立起新连接后,
+             *  才会有普通连接事件。
+             *
+             */
             if (ngx_trylock_accept_mutex(cycle) == NGX_ERROR) {
                 return;
             }
@@ -326,7 +326,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
                 flags |= NGX_POST_EVENTS;
 
             } else {
-            	// 获取锁失败后,后续在调用epoll_wait方法时,会设置超时时间是timer
+                // 获取锁失败后,后续在调用epoll_wait方法时,会设置超时时间是timer
                 if (timer == NGX_TIMER_INFINITE
                     || timer > ngx_accept_mutex_delay)
                 {
@@ -380,7 +380,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     // 2.处理时间事件
     if (delta) {
-    	// 处理时间事件
+        // 处理时间事件
         ngx_event_expire_timers();
     }
 
@@ -468,7 +468,7 @@ ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)
  *
  * *wev: 要添加的写事件
  * lowat: This directive is ignored on Linux, Solaris, and Windows.
- * 		./src/http/ngx_http_core_module.c中有send_lowat指令
+ *         ./src/http/ngx_http_core_module.c中有send_lowat指令
  */
 ngx_int_t
 ngx_handle_write_event(ngx_event_t *wev, size_t lowat)
@@ -552,7 +552,7 @@ ngx_handle_write_event(ngx_event_t *wev, size_t lowat)
 static char *
 ngx_event_init_conf(ngx_cycle_t *cycle, void *conf)
 {
-	// 检查事件模块的配置信息是否存在
+    // 检查事件模块的配置信息是否存在
     if (ngx_get_conf(cycle->conf_ctx, ngx_events_module) == NULL) {
         ngx_log_error(NGX_LOG_EMERG, cycle->log, 0,
                       "no \"events\" section in configuration");
@@ -612,12 +612,12 @@ ngx_event_module_init(ngx_cycle_t *cycle)
                       "getrlimit(RLIMIT_NOFILE) failed, ignored");
 
     } else {
-    	/**
-    	 * 如果用户指定的worker_connections数，大于当前进程允许打开的最大描述符,并且指令worker_rlimit_nofile也没有设置值;
-    	 * 或者说worker_rlimit_nofile指令设置值了,但是指令worker_connections的值要大于worker_rlimit_nofile的值
-    	 *
-    	 * 简单说明就是limit的值不能大于worker_connections和worker_rlimit_nofile两个指令中最大的那个的值
-    	 */
+        /**
+         * 如果用户指定的worker_connections数，大于当前进程允许打开的最大描述符,并且指令worker_rlimit_nofile也没有设置值;
+         * 或者说worker_rlimit_nofile指令设置值了,但是指令worker_connections的值要大于worker_rlimit_nofile的值
+         *
+         * 简单说明就是limit的值不能大于worker_connections和worker_rlimit_nofile两个指令中最大的那个的值
+         */
         if (ecf->connections > (ngx_uint_t) rlmt.rlim_cur
             && (ccf->rlimit_nofile == NGX_CONF_UNSET
                 || ecf->connections > (ngx_uint_t) ccf->rlimit_nofile))
@@ -640,10 +640,10 @@ ngx_event_module_init(ngx_cycle_t *cycle)
      * 后续代码是为多worker准备的,使用共享缓存来统计ngx的运行情况
      */
     if (ccf->master == 0) {
-    	/*
-    	 * 没有开启master-worker模块式,像ngx_stat_accepted、ngx_stat_handled等这样的指针变量,
-    	 * 则会直接指向ngx_stat_accepted0、ngx_stat_handled0这样的全局变量地址。
-    	 */
+        /*
+         * 没有开启master-worker模块式,像ngx_stat_accepted、ngx_stat_handled等这样的指针变量,
+         * 则会直接指向ngx_stat_accepted0、ngx_stat_handled0这样的全局变量地址。
+         */
         return NGX_OK;
     }
 
@@ -762,7 +762,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 static void
 ngx_timer_signal_handler(int signo)
 {
-	// 可以更新缓存时间
+    // 可以更新缓存时间
     ngx_event_timer_alarm = 1;
 
 #if 1
@@ -775,8 +775,8 @@ ngx_timer_signal_handler(int signo)
 
 /**
  * fork出woker进程之后调用(ngx_module_t->init_process)
- * 	/src/os/unix/ngx_process_cycle.c/ngx_single_process_cycle
- * 	/src/os/unix/ngx_process_cycle.c/ngx_worker_process_init
+ *     /src/os/unix/ngx_process_cycle.c/ngx_single_process_cycle
+ *     /src/os/unix/ngx_process_cycle.c/ngx_worker_process_init
  *
  * ngx_event_module_init方法则是fork出worker进程之前调用
  *
@@ -784,8 +784,8 @@ ngx_timer_signal_handler(int signo)
  * 2.选定具体事件模块
  * 3.分配ngx_connection_t连接池内存空间,总共connection_n个
  * 4.分配读写事件对象内存空间
- *		cycle->read_events
- *		cycle->write_events
+ *        cycle->read_events
+ *        cycle->write_events
  * 5.连接对象和读写事件对象关联起来
  * 6.初始化cycle->listening中的监听连接,比如设置连接中读事件的回调方法(rev->handler = ngx_event_accept)
  *
@@ -812,7 +812,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
      * accept_mutex: 明确指定是否开启互斥锁(是否使用负载均衡,默认不使用)
      */
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
-    	// 使用互斥锁
+        // 使用互斥锁
         ngx_use_accept_mutex = 1;
         // 0表示没有获取到互斥锁
         ngx_accept_mutex_held = 0;
@@ -826,7 +826,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         ngx_accept_mutex_delay = ecf->accept_mutex_delay;
 
     } else {
-    	// 不使用互斥锁
+        // 不使用互斥锁
         ngx_use_accept_mutex = 0;
     }
 
@@ -875,8 +875,8 @@ ngx_event_process_init(ngx_cycle_t *cycle)
          * 调用具体事件模块的init方法(对于ngx_epoll_module模块来说就是ngx_epoll_init方法)
          * 在ngx_epoll_init方法中会:
          *  1.创建epoll对象
-  	  	 * 	2.创建用于接收就绪事件的epoll_event数组
-  	  	 *	3.绑定ngx_event_actions变量,该变量中的方法用于操作事件驱动器中的事件
+         *  2.创建用于接收就绪事件的epoll_event数组
+         *  3.绑定ngx_event_actions变量,该变量中的方法用于操作事件驱动器中的事件
          */
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
             /* fatal */
@@ -896,7 +896,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
      * 该方法将全局变量ngx_event_timer_alarm设置为1,表示可以调用ngx_time_update方法更新缓存时间
      *
      * NGX_USE_TIMER_EVENT: eventport和kqueue模块会用到,epoll模块不会设置该标记
-     * 	(The event module handles periodic or absolute timer event by itself)
+     *     (The event module handles periodic or absolute timer event by itself)
      */
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
@@ -979,7 +979,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     // 为所有的读事件对象初始一些标记
     rev = cycle->read_events;
     for (i = 0; i < cycle->connection_n; i++) {
-    	// eventport和kqueue模块会用到
+        // eventport和kqueue模块会用到
         rev[i].closed = 1;
         // 设置它是怕有脏数据吗
         rev[i].instance = 1;
@@ -995,7 +995,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     // 为所有写事件对象初始化closed标记
     wev = cycle->write_events;
     for (i = 0; i < cycle->connection_n; i++) {
-    	// eventport和kqueue模块会用到
+        // eventport和kqueue模块会用到
         wev[i].closed = 1;
     }
 
@@ -1038,7 +1038,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     for (i = 0; i < cycle->listening.nelts; i++) {
 
 #if (NGX_HAVE_REUSEPORT)
-    	// reuseport(复用端口号?)
+        // reuseport(复用端口号?)
         if (ls[i].reuseport && ls[i].worker != ngx_worker) {
             continue;
         }
@@ -1148,10 +1148,10 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 #endif
            )
         {
-        	/*
-        	 * 如果使用互斥锁就不会将监听连接的读事件放入到事件驱动器中,
-        	 * 这样可以保证后续worker只有在获取到互斥锁的情况下才能处理新建连接。
-        	 */
+            /*
+             * 如果使用互斥锁就不会将监听连接的读事件放入到事件驱动器中,
+             * 这样可以保证后续worker只有在获取到互斥锁的情况下才能处理新建连接。
+             */
             continue;
         }
 
@@ -1227,34 +1227,34 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
  *
  *
  * cf的值最初是由ngx_init_cycle()方法调用ngx_conf_parse()方法传过来的,cf内容如下：
- * 	 cf->ctx: cycle->conf_ctx
- *	 cf->module_type = NGX_CORE_MODULE
- *	 cf->cmd_type = NGX_MAIN_CONF
+ *   cf->ctx: cycle->conf_ctx
+ *   cf->module_type = NGX_CORE_MODULE
+ *   cf->cmd_type = NGX_MAIN_CONF
  *
  *
  * cmd: 该指令的配置信息
- * 		{ ngx_string("events"),
- *     	  NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
- *     	  ngx_events_block,
- *     	  0,
- *     	  0,
- *     	  NULL }
+ *      { ngx_string("events"),
+ *        NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
+ *        ngx_events_block,
+ *        0,
+ *        0,
+ *        NULL }
  *
  * conf:
- * 		因为events指令有NGX_MAIN_CONF配置,所以conf值走的是ngx_conf_handler()方法的
- *			} else if (cmd->type & NGX_MAIN_CONF) {
- * 			conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
- *   	逻辑。
+ *      因为events指令有NGX_MAIN_CONF配置,所以conf值走的是ngx_conf_handler()方法的
+ *          } else if (cmd->type & NGX_MAIN_CONF) {
+ *          conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
+ *      逻辑。
  *
  * conf: 该值是核心事件模块在cycle->conf_ctx中第二层指针的位置的地址
  * (此时cycle->conf_ctx等于cf->ctx)
- *   cf->ctx      	     conf
- *   -----          	-----
- *	 | * |              | * |
- *	 -----              -----
- *	  \                 /
- *	   ------------------
- *	   | * |  ...  | *# | ngx_events_module.index
+ *   cf->ctx            conf
+ *   -----              -----
+ *   | * |              | * |
+ *   -----              -----
+ *    \                 /
+ *     ------------------
+ *     | * |  ...  | *# | ngx_events_module.index
  *     ------------------
  */
 static char *
@@ -1268,10 +1268,10 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     /*
      * 此时***ctx的内存结构如下:(*号代表指针类型;#号代表空;*#代表指针类型并且是空)
-     * 	   ctx
-     * 	  ------
-     * 	  | *# |
-     * 	  ------
+     *     ctx
+     *    ------
+     *    | *# |
+     *    ------
      *
      */
 
@@ -1309,13 +1309,13 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     /*
      * 分配完内存后ctx的结构如下
-     * 	ctx
-     * 	-----
-     * 	| * |
-     * 	-----
-     * 	\
-     * 	 -----
-     * 	 | * |
+     *  ctx
+     *  -----
+     *  | * |
+     *  -----
+     *  \
+     *   -----
+     *   | * |
      *   -----
      *    \
      *     ---------------
@@ -1330,22 +1330,22 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     /*
      * 直接 *conf=ctx 这样也行吧(是行，但是因为ctx是指针，*conf不是指针, 这样赋值不太好看)
      * 这样赋值后四层指针就全部用到了:其中cf->ctx 等于 cycle->conf_ctx
-     *   cf->ctx      	  		   conf
-	 *   -----           		  -----
-	 *	 | * |           		  | * |
-	 *	 -----           		  -----
-	 *	  \               		    /				     ctx
-	 *	   --------------------------------------	    -----
-	 *	   | * |  ...  |*ngx_events_module.index| 		| * |
-	 *     --------------------------------------		-----
-	 *     				  					  \          /
-	 *					   					 --------------
-	 *					   				     |     *      |
-	 *					   					 --------------
-	 *					   	  				   \
-	 *					   	   				    ---------------
-	 *					   	   				    | * | ... | * | 存放各个事件模块的配置结构体指针
-	 *					   	   				    ---------------
+     *   cf->ctx                  conf
+     *   -----                    -----
+     *   | * |                    | * |
+     *   -----                    -----
+     *      \                      /                     ctx
+     *     --------------------------------------       -----
+     *     | * |  ...  |*ngx_events_module.index|       | * |
+     *     --------------------------------------       -----
+     *                                        \          /
+     *                                       --------------
+     *                                       |     *      |
+     *                                       --------------
+     *                                          \
+     *                                          ---------------
+     *                                          | * | ... | * | 存放各个事件模块的配置结构体指针
+     *                                          ---------------
      */
     *(void **) conf = ctx;
 
@@ -1358,28 +1358,28 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         m = ngx_modules[i]->ctx;
 
         if (m->create_conf) {
-        	/* ctx的第三层指针存放的是各个事件模块的配置项结构体,指针图形如下:
-        	 *  cf->ctx|cycle->conf_ctx     conf
-			 *   -----           		   -----
-			 *	 | * |           		   | * |
-			 *	 -----           		   -----
-			 *	  \               		    /				      ctx
-			 *	   --------------------------------------	     -----
-			 *	   | * |  ...  |*ngx_events_module.index| 		 | * |
-			 *     --------------------------------------		 -----
-			 *     				  					 \            /
-			 *					   					 --------------
-			 *					   				     |     *      |
-			 *					   					 --------------
-			 *					   	  				   \
-			 *					   	   				    ---------------
-			 *					   	   				    | * | ... | * | 存放各个事件模块的配置结构体指针
-			 *					   	   				    ---------------
-			 *											 /			 \
-			 *					   	   		------------------	  ------------------
-			 *					   	   		|ngx_event_conf_t|	  |ngx_epoll_conf_t|
-        	 *								------------------	  ------------------
-        	 */
+            /* ctx的第三层指针存放的是各个事件模块的配置项结构体,指针图形如下:
+             *  cf->ctx|cycle->conf_ctx     conf
+             *   -----                     -----
+             *   | * |                     | * |
+             *   -----                     -----
+             *      \                       /                     ctx
+             *     --------------------------------------        -----
+             *     | * |  ...  |*ngx_events_module.index|        | * |
+             *     --------------------------------------        -----
+             *                                       \            /
+             *                                       --------------
+             *                                       |     *      |
+             *                                       --------------
+             *                                             \
+             *                                          ---------------
+             *                                          | * | ... | * | 存放各个事件模块的配置结构体指针
+             *                                          ---------------
+             *                                            /         \
+             *                              ------------------      ------------------
+             *                              |ngx_event_conf_t|      |ngx_epoll_conf_t|
+             *                              ------------------      ------------------
+             */
             (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);
             if ((*ctx)[ngx_modules[i]->ctx_index] == NULL) {
                 return NGX_CONF_ERROR;
@@ -1438,7 +1438,7 @@ ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_str_t  *value;
 
     if (ecf->connections != NGX_CONF_UNSET_UINT) {
-    	// 该指令不允许出现多次
+        // 该指令不允许出现多次
         return "is duplicate";
     }
 
@@ -1476,7 +1476,7 @@ ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_event_module_t   *module;
 
     if (ecf->use != NGX_CONF_UNSET_UINT) {
-    	// 该指令已经被设置过了,走到这里说明配置了多个use指令
+        // 该指令已经被设置过了,走到这里说明配置了多个use指令
         return "is duplicate";
     }
 
@@ -1500,15 +1500,15 @@ ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         // 开始对比用户选择是哪个具体事件模块
         module = ngx_modules[m]->ctx;
         if (module->name->len == value[1].len) {
-        	/*
-        	 * 比较具体事件模块名字
-        	 * epoll事件模块名字的定义:
-        	 * 		static ngx_str_t epoll_name = ngx_string("epoll");
-        	 *
-        	 */
+            /*
+             * 比较具体事件模块名字
+             * epoll事件模块名字的定义:
+             *      static ngx_str_t epoll_name = ngx_string("epoll");
+             *
+             */
             if (ngx_strcmp(module->name->data, value[1].data) == 0) {
 
-            	// 匹配成功则设置具体事件模块编号和名字
+                // 匹配成功则设置具体事件模块编号和名字
                 ecf->use = ngx_modules[m]->ctx_index;
                 ecf->name = module->name->data;
 
@@ -1746,7 +1746,7 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
 #if (NGX_HAVE_SELECT)
 
     if (module == NULL) {
-    	// 如果所有的高级事件驱动器都不支持则使用select
+        // 如果所有的高级事件驱动器都不支持则使用select
 
         module = &ngx_select_module;
     }
@@ -1755,9 +1755,9 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
 
     if (module == NULL) {
 
-    	/**
-    	 * 如果所有的宏定义都不存在,则从ngx_modules数组中选择第一个具体事件模块
-    	 */
+        /**
+         * 如果所有的宏定义都不存在,则从ngx_modules数组中选择第一个具体事件模块
+         */
 
         for (i = 0; ngx_modules[i]; i++) {
 
@@ -1769,7 +1769,7 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
 
             if (ngx_strcmp(event_module->name->data, event_core_name.data) == 0)
             {
-            	// 将事件核心模块排除掉,因为他不负责处理具体事件
+                // 将事件核心模块排除掉,因为他不负责处理具体事件
                 continue;
             }
 

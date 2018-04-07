@@ -26,33 +26,33 @@
  *
  *   http指令对应的方法是/src/http/ngx_http.c/ngx_http_block()
  *
- * 	 cycle->conf_ctx
+ *  cycle->conf_ctx
  *   -----
- *	 | * |
- *	 -----
- *	  \            ngx_http_module.index
- *	   -----------------
- *	   | * | * | * | * |
+ *   | * |
+ *   -----
+ *    \            ngx_http_module.index
  *     -----------------
- *    				 \
- *    			     -----------------------
- *    			     | ngx_http_conf_ctx_t |
- *			         -----------------------
+ *     | * | * | * | * |
+ *     -----------------
+ *                    \
+ *                   -----------------------
+ *                   | ngx_http_conf_ctx_t |
+ *                   -----------------------
  *
  *
  * 2.http核心模块(ngx_http_core_module)在遇到server指令后会创建ngx_http_conf_ctx_t结构体,
  *   同http{}区域一样,一个server{}区域也会对应一个ngx_http_conf_ctx_t结构体,不同的是可以有多个
  *   server{}区域,所以在server这一层有多少个server{}块就有多少个ngx_http_conf_ctx_t结构体。
  *
- *	 server指令对应的方法是/src/http/ngx_http_core_module.c/ngx_http_core_server()
- *	 TODO 内存结构图
+ *   server指令对应的方法是/src/http/ngx_http_core_module.c/ngx_http_core_server()
+ *   TODO 内存结构图
  *
  *
  * 3.http核心模块(ngx_http_core_module)在遇到location指令后会创建ngx_http_conf_ctx_t结构体,
  *   有多少个location{}区域就会创建多少个ngx_http_conf_ctx_t结构体。
  *
  *   location指令对应的方法是/src/http/ngx_http_core_module.c/ngx_http_core_location()
- *	 TODO 内存结构图
+ *   TODO 内存结构图
  *
  *
  * http核心模块(ngx_http_core_module)本身使用ngx_http_core_main_conf_t、ngx_http_core_srv_conf_t
@@ -62,33 +62,33 @@
  */
 typedef struct {
 
-	/*
-	 * 存储http模块在http{}区域的配置信息
-	 *
-	 *  main_conf
-	 *   -----
-	 *   | * |
-	 *   -----
-	 *    \
-	 *    -----------------
-	 *    | * | * | * | 各个http模块在main块位置存放各自配置信息结构体的下标
-	 *    -----------------
-	 *
-	 * 常规情况下,所有http指令,只要最深出现在http{}块中,那么该指令信息在解析后就应该存放在其对应的main级别
-	 * 的结构体中,比如如下配置:
-	 * 		http {
-	 * 			myhttp aa;
-	 *
-	 * 			server{
-	 *
-	 * 				location {
-	 * 					// something
-	 * 				}
-	 * 			}
-	 * 		}
-	 * 配置中的指令信息会存放在http{}块对应的myhttp_main_conf结构体中。
-	 *
-	 */
+    /*
+     * 存储http模块在http{}区域的配置信息
+     *
+     *  main_conf
+     *   -----
+     *   | * |
+     *   -----
+     *    \
+     *    -----------------
+     *    | * | * | * | 各个http模块在main块位置存放各自配置信息结构体的下标
+     *    -----------------
+     *
+     * 常规情况下,所有http指令,只要最深出现在http{}块中,那么该指令信息在解析后就应该存放在其对应的main级别
+     * 的结构体中,比如如下配置:
+     *        http {
+     *             myhttp aa;
+     *
+     *             server{
+     *
+     *                 location {
+     *                     // something
+     *                 }
+     *             }
+     *         }
+     * 配置中的指令信息会存放在http{}块对应的myhttp_main_conf结构体中。
+     *
+     */
     void        **main_conf;
 
     /*
@@ -96,17 +96,17 @@ typedef struct {
      *
      * 常规情况下,所有http指令,只要最深出现在server{}块中,那么该指令信息在解析后就都应该存放在其模块对应的srv
      * 级别的结构体中,比如如下配置:
-     * 		http {
-     * 			myhttp aa;
+     *         http {
+     *             myhttp aa;
      *
-     * 			server {
-     * 					myhttp bb;
+     *             server {
+     *                     myhttp bb;
      *
-     * 					location {
-     * 						// something
-     * 					}
-     * 			}
-     * 		}
+     *                     location {
+     *                         // something
+     *                     }
+     *             }
+     *         }
      * 对于上面出现的两条同样的指令,他们都会存放在各自myhttp_srv_conf结构体中。第一条指令信息存放在http{}
      * 块中对应的myhttp_srv_conf结构体中; 第二条指令存放在server{}块中对应对的myhttp_srv_conf结构体中;
      */
@@ -117,17 +117,17 @@ typedef struct {
      *
      * 常规情况下,所有的http指令,只要最深可以出现在location{}块中,那么该指令信息在解析后就都应该存放在其模块
      * 对应的loc级别的结构体中,比如有如下配置:
-     * 		http {
-     * 			myhttp aa;
+     *         http {
+     *             myhttp aa;
      *
-     * 			server {
-     * 				myhttp bb;
+     *             server {
+     *                 myhttp bb;
      *
-     * 				location {
-     * 					myhttp cc;
-     * 				}
-     * 			}
-     * 		}
+     *                 location {
+     *                     myhttp cc;
+     *                 }
+     *             }
+     *         }
      * 上面的配置总共出现了三条同样的指令,只是参数值不一样,但是因为该指令可以出现在locaton{}块中,所以解析后的信息
      * 都应该存放在loc级别的myhttp_loc_conf结构体中。
      * 所以,对于第一条指令信息,应该存放在http{}块对应的myhttp_loc_conf结构体中;第二条指令存放在server{}块对应
@@ -139,13 +139,13 @@ typedef struct {
 
 typedef struct {
 
-	/*
-	 * 在ngx_http_block()方法中,当调用完毕http{}块中涉及的create_main|srv|loc_conf()方法后调用该方法,
-	 * 此时只是创建了各个http模块在http{}块中的配置信息结构体,指令还没有开始解析
-	 *
-	 * 这一步发生在执行ngx_http_init_phases()方法之前,该方法用来初始化各个阶段用来存放注册handler的数组,
-	 * 所以向http各个阶段中注册自己的方法,在此时是行不通的.
-	 */
+    /*
+     * 在ngx_http_block()方法中,当调用完毕http{}块中涉及的create_main|srv|loc_conf()方法后调用该方法,
+     * 此时只是创建了各个http模块在http{}块中的配置信息结构体,指令还没有开始解析
+     *
+     * 这一步发生在执行ngx_http_init_phases()方法之前,该方法用来初始化各个阶段用来存放注册handler的数组,
+     * 所以向http各个阶段中注册自己的方法,在此时是行不通的.
+     */
     ngx_int_t   (*preconfiguration)(ngx_conf_t *cf);
     /*
      * 在ngx_http_block()方法中,当所有指令解析完毕,并且也初始化和合并完毕后执行.

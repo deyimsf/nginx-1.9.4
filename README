@@ -86,6 +86,11 @@ Documentation is available at http://nginx.org
 	* 实现原理
 	* 编写一个upstream
 
+# 负载均衡
+    * 默认轮训
+    * ip_hash
+    * 如何实现一个负载机制
+
 
 # proxy_pass实现
 	* 细致的讲

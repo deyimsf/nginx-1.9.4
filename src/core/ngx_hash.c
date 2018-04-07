@@ -35,7 +35,7 @@ ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
     }
 
     while (elt->value) {
-    	// 比较键的长度是否相同
+        // 比较键的长度是否相同
         if (len != (size_t) elt->len) {
             goto next;
         }
@@ -52,8 +52,8 @@ ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
 
     next:
 
-		// 当前元素键的名字的首地址 加上 当前元素键的名字的长度,按4字节对齐内存,
-		// 之后得出的结果就是下一个元素的首地址
+        // 当前元素键的名字的首地址 加上 当前元素键的名字的长度,按4字节对齐内存,
+        // 之后得出的结果就是下一个元素的首地址
         elt = (ngx_hash_elt_t *) ngx_align_ptr(&elt->name[0] + elt->len,
                                                sizeof(void *));
         continue;
@@ -115,9 +115,9 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
 #endif
 
     if (value) {
-    	/*
-    	 * 走到这里表示找到了
-    	 */
+        /*
+         * 走到这里表示找到了
+         */
 
         /*
          * the 2 low bits of value have the special meaning:
@@ -131,27 +131,27 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
          */
 
         if ((uintptr_t) value & 2) {
-        	/*
-        	 * 处理位掩码是10或11的情况
-        	 */
+            /*
+             * 处理位掩码是10或11的情况
+             */
 
             if (n == 0) {
-            	/*
-            	 * 表示请求的域名已经匹配完毕了
-            	 */
+                /*
+                 * 表示请求的域名已经匹配完毕了
+                 */
 
                 /* "example.com" */
 
                 if ((uintptr_t) value & 1) {
-                	/*
-                	 * 走到这里说明掩码是11
-                	 *
-                	 * 请求域名已经匹配完毕了仍然没有匹配到结果,比如请求域名是:
-                	 *     a.jd.com
-                	 * ngx中配置的通配符是:
-                	 *     *.m.a.jd.com
-                	 * 可以看到当请求域名匹配到字符"a"的时候仍然无法和ngx中配置的域名相匹配,所以这里直接返回NULL
-                	 */
+                    /*
+                     * 走到这里说明掩码是11
+                     *
+                     * 请求域名已经匹配完毕了仍然没有匹配到结果,比如请求域名是:
+                     *     a.jd.com
+                     * ngx中配置的通配符是:
+                     *     *.m.a.jd.com
+                     * 可以看到当请求域名匹配到字符"a"的时候仍然无法和ngx中配置的域名相匹配,所以这里直接返回NULL
+                     */
                     return NULL;
                 }
 
@@ -208,27 +208,27 @@ ngx_hash_find_wc_head(ngx_hash_wildcard_t *hwc, u_char *name, size_t len)
          * 处理掩码是00和01的情况
          */
         if ((uintptr_t) value & 1) {
-        	/*
-        	 * 掩码是01的情况
-        	 */
+            /*
+             * 掩码是01的情况
+             */
 
             if (n == 0) {
-            	/*
-            	 * 请求域名已经匹配完毕,但是仍然没有匹配成功
-            	 *
-            	 * 请求域名:
-            	 *     www.jd.com
-            	 * ngx配置是:
-            	 *     *.www.jd.com
-            	 * 也就是说模式
-            	 *     *.www.jd.com
-            	 * 匹配不了请求域名
-            	 *     www.jd.com
-            	 * 但是他可以匹配请求域名
-            	 *     .www.jd.com
-            	 *
-            	 * 掩码00和01的区分主要是为了这一步
-            	 */
+                /*
+                 * 请求域名已经匹配完毕,但是仍然没有匹配成功
+                 *
+                 * 请求域名:
+                 *     www.jd.com
+                 * ngx配置是:
+                 *     *.www.jd.com
+                 * 也就是说模式
+                 *     *.www.jd.com
+                 * 匹配不了请求域名
+                 *     www.jd.com
+                 * 但是他可以匹配请求域名
+                 *     .www.jd.com
+                 *
+                 * 掩码00和01的区分主要是为了这一步
+                 */
 
                 /* "example.com" */
 
@@ -382,8 +382,8 @@ ngx_hash_find_combined(ngx_hash_combined_t *hash, ngx_uint_t key, u_char *name,
  * } ngx_hash_elt_t;
  *
  * name: ngx_hash_key_t结构指针
- * 		入参是ngx_hash_key_t结构体而不是ngx_hash_elt_t,是因为刚开始的时候,数据信息都存放
- * 		在了ngx_hash_key_t结构体中
+ *       入参是ngx_hash_key_t结构体而不是ngx_hash_elt_t,是因为刚开始的时候,数据信息都存放
+ *       在了ngx_hash_key_t结构体中
  *
  * 计算方式如下：
  * 1. sizeof(void *): 代表结构体ngx_hash_elt_t中的第一个字段 void *value;
@@ -501,12 +501,12 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
      */
     for (size = start; size <= hinit->max_size; size++) {
 
-    	/*
-    	 * 初始化数组test前size个元素值为零
-    	 *
-    	 * 前面用ngx_alloc()方法为test分配了hinit->max_size个sizeof(u_short)大小的空间,但是这里只初始化
-    	 * 了size个,因为很有可能根本就不需要max_size个u_short大小的空间,所以这里能省就省了
-    	 */
+        /*
+         * 初始化数组test前size个元素值为零
+         *
+         * 前面用ngx_alloc()方法为test分配了hinit->max_size个sizeof(u_short)大小的空间,但是这里只初始化
+         * 了size个,因为很有可能根本就不需要max_size个u_short大小的空间,所以这里能省就省了
+         */
         ngx_memzero(test, size * sizeof(u_short));
 
         /*
@@ -514,9 +514,9 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
          */
         for (n = 0; n < nelts; n++) {
             if (names[n].key.data == NULL) {
-            	/*
-            	 * key不能为空
-            	 */
+                /*
+                 * key不能为空
+                 */
                 continue;
             }
 
@@ -550,14 +550,14 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         /*
          * 计算出了实际需要分配的桶的个数(小于等于指定的桶的数量)
          * 比如实际的计算结果如下:
-         * 			test
-         * 			-----
-         * 			| * |
-         * 			-----
-         * 			  \
-         * 			  ---------------------
-         * 			  | 20 | 40 | 40 | 30 |
-         * 			  ---------------------
+         *             test
+         *             -----
+         *             | * |
+         *             -----
+         *               \
+         *               ---------------------
+         *               | 20 | 40 | 40 | 30 |
+         *               ---------------------
          * 从上图可以看出size是4,每个桶的大小也不一样,总共需要130个字节来存储数据
          *
          */
@@ -583,14 +583,14 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
 
 found:
 
-	/* size为计算出的实际的桶的个数 */
+    /* size为计算出的实际的桶的个数 */
     for (i = 0; i < size; i++) {
-    	/*
-    	 * 全部初始化为一个指针大小,对于64为系统来说就是8
-    	 *
-    	 * 因为前面在计算桶大小的时候减掉一个指针大小,所以这里再加上来
-    	 *		bucket_size = hinit->bucket_size - sizeof(void *);
-    	 */
+        /*
+         * 全部初始化为一个指针大小,对于64为系统来说就是8
+         *
+         * 因为前面在计算桶大小的时候减掉一个指针大小,所以这里再加上来
+         *     bucket_size = hinit->bucket_size - sizeof(void *);
+         */
         test[i] = sizeof(void *);
     }
 
@@ -598,7 +598,7 @@ found:
      * 下面这个循环的目的是把之前算好的test的每个桶的大小都再加上一个指针大小
      *
      * 一个问题:
-     * 	 为啥不直接加,而是要重新计算一次啊,cpu计算不要钱吗?
+     *   为啥不直接加,而是要重新计算一次啊,cpu计算不要钱吗?
      */
     for (n = 0; n < nelts; n++) {
         if (names[n].key.data == NULL) {
@@ -620,30 +620,30 @@ found:
      * 计算出每个桶的大小,后续按这个大小来分配内存
      */
     for (i = 0; i < size; i++) {
-    	/*
-    	 * 对于64系统sizeof(void *)值是8,这里用这个值判断每个桶的结尾,问题是万一有一个桶的大小正好是8,那
-    	 * 岂不是会出错?
-    	 *
-    	 * 其实这里有一个潜规则,我们知道ngx的hash结果存放的是ngx_hash_elt_t结构体对象,由这个结构体的定义:
-    	 * 	typedef struct {
-		 *		void             *value;
-		 *		u_short           len;
-		 *		u_char            name[1];
-		 *	} ngx_hash_elt_t;
-		 * 和NGX_HASH_ELT_SIZE宏的计算方式可以看出,每个桶的大小根本不会小于11个字节,所以这里用上面预留的
-		 * 一个指针大小的判断位就可以判断每个桶的结尾
-		 *
-		 * 所以下面的判断实际上是在过滤掉那些空桶,比如实际上test可能是这样的
-		 * 			test
-		 * 			-----
-		 * 			| * |
-		 * 			-----
-		 * 			  \
-		 * 			  ------------------------
-		 * 			  | 8 | 30 | 45 | 8 | 64 |
-		 * 			  ------------------------
-		 * 数字是8就代表是个空桶
-    	 */
+        /*
+         * 对于64系统sizeof(void *)值是8,这里用这个值判断每个桶的结尾,问题是万一有一个桶的大小正好是8,那
+         * 岂不是会出错?
+         *
+         * 其实这里有一个潜规则,我们知道ngx的hash结果存放的是ngx_hash_elt_t结构体对象,由这个结构体的定义:
+         *   typedef struct {
+         *        void             *value;
+         *        u_short           len;
+         *        u_char            name[1];
+         *   } ngx_hash_elt_t;
+         * 和NGX_HASH_ELT_SIZE宏的计算方式可以看出,每个桶的大小根本不会小于11个字节,所以这里用上面预留的
+         * 一个指针大小的判断位就可以判断每个桶的结尾
+         *
+         * 所以下面的判断实际上是在过滤掉那些空桶,比如实际上test可能是这样的
+         *             test
+         *             -----
+         *             | * |
+         *             -----
+         *               \
+         *               ------------------------
+         *               | 8 | 30 | 45 | 8 | 64 |
+         *               ------------------------
+         * 数字是8就代表是个空桶
+         */
         if (test[i] == sizeof(void *)) {
             continue;
         }
@@ -663,8 +663,8 @@ found:
     }
 
     if (hinit->hash == NULL) {
-    	// 为hash结构分配内存
-    	// size为桶的个数
+        // 为hash结构分配内存
+        // size为桶的个数
         hinit->hash = ngx_pcalloc(hinit->pool, sizeof(ngx_hash_wildcard_t)
                                              + size * sizeof(ngx_hash_elt_t *));
         if (hinit->hash == NULL) {
@@ -679,17 +679,17 @@ found:
                       ((u_char *) hinit->hash + sizeof(ngx_hash_wildcard_t));
 
     } else {
-    	/*
-    	 * 分配size个桶
-    	 *      buckets
-    	 *       -----
-    	 *       | * |
-    	 *       -----
-    	 *         \
-    	 *         -------------
-    	 *         | * | * | size个桶
-    	 *         ---------------
-    	 */
+        /*
+         * 分配size个桶
+         *      buckets
+         *       -----
+         *       | * |
+         *       -----
+         *         \
+         *         -------------
+         *         | * | * | size个桶
+         *         ---------------
+         */
         buckets = ngx_pcalloc(hinit->pool, size * sizeof(ngx_hash_elt_t *));
         if (buckets == NULL) {
             ngx_free(test);
@@ -713,18 +713,18 @@ found:
 
     /*
      * 将每个桶的起始地址,赋值给每个桶的指针变量,下面的代码执行完毕后可能是如下的结构:
-     * 			buckets
-     * 			 -----
-     * 			 | * |
-     * 			 -----
-     * 			   \
-     * 			   -----------------------
-     * 			   | * | * | * | * | * |     size个桶
-     * 			   -----------------------
+     *           buckets
+     *            -----
+     *            | * |
+     *            -----
+     *              \
+     *              -----------------------
+     *              | * | * | * | * | * |     size个桶
+     *              -----------------------
      *              /       /   /      \
      *             ----------------------------------
-     * 	           |       len个字节的elts            |
-     *	           ----------------------------------
+     *             |       len个字节的elts            |
+     *             ----------------------------------
      * 可以看到第二桶没有指向elts这个内存块,所以他是空桶,其它不是空桶
      */
     for (i = 0; i < size; i++) {
@@ -750,9 +750,9 @@ found:
      */
     for (n = 0; n < nelts; n++) {
         if (names[n].key.data == NULL) {
-        	/*
-        	 * 过滤掉空桶
-        	 */
+            /*
+             * 过滤掉空桶
+             */
             continue;
         }
 
@@ -783,7 +783,7 @@ found:
 
         /*
          * 会和下面的代码计算的值不一样吗?
-         * 	  test[i] = (u_short) (ngx_align(test[i], ngx_cacheline_size));
+         *    test[i] = (u_short) (ngx_align(test[i], ngx_cacheline_size));
          * ngx_align()方法是在计算整个桶对齐后的大小,而NGX_HASH_ELT_SIZE是计算桶中每个元素的大小
          *
          * 在第key桶中放入该元素后,第key个桶的实际大小,用test临时存储,作用是为下一个元素赋值
@@ -797,9 +797,9 @@ found:
      */
     for (i = 0; i < size; i++) {
         if (buckets[i] == NULL) {
-        	/*
-        	 * 空桶不做处理
-        	 */
+            /*
+             * 空桶不做处理
+             */
             continue;
         }
 
@@ -866,7 +866,7 @@ found:
  *
  * *hinit: 用于构造hash结构的临时结构体
  * *names: hash机构中要存入的键值对,该入参是个键值对数组
- *		   全是已经去掉通配符的key,如 com.jd.(*.jd.com)、 com.jd(.jd.com)、 www.jd.(www.jd.*)
+ *        全是已经去掉通配符的key,如 com.jd.(*.jd.com)、 com.jd(.jd.com)、 www.jd.(www.jd.*)
  * nelts: 键值对个数,也就是names的个数
  *
  * 举个例子,ngx配置文件有如下两个域名
@@ -895,7 +895,7 @@ found:
  *                            hash: m --> <ngx_http_core_srv_conf_t>
  *
  *                            value: NULL
- *          		       }
+ *                         }
  *
  *            value: ngx_http_core_srv_conf_t
  *         ]
@@ -929,16 +929,16 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 
     /*
      * 假设names为:
-     * 	  com.baidu.
-     * 	  com.jd.
-     * 	  xxxx
+     *       com.baidu.
+     *       com.jd.
+     *       xxxx
      * 这个是已经正常域名转换后的情况,他们实际在配置文件中对应的名字是:
-     * 	  *.baidu.com
-     * 	  *.jd.com
-     * 	  xxxx
+     *       *.baidu.com
+     *       *.jd.com
+     *       xxxx
      */
     for (n = 0; n < nelts; n = i) {
-    	// 这里的n代表第几个元素
+        // 这里的n代表第几个元素
 
 #if 0
         ngx_log_error(NGX_LOG_ALERT, hinit->pool->log, 0,
@@ -964,11 +964,11 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
          * 假设域名是com.baidu.
          *
          * 当前找到的dot代表第一个‘.’那么下面的代码执行完毕后,curr_names的值为:
-         * 	 curr_names:
-         * 	  	com
+         *   curr_names:
+         *      com
          *
-         * 	 name = com
-         * 	 name.value = ngx_http_core_srv_conf_t结构体
+         *   name = com
+         *   name.value = ngx_http_core_srv_conf_t结构体
          *
          *
          */
@@ -997,23 +997,23 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
         dot_len = len + 1;
 
         if (dot) {
-        	/*
-        	 * 这里的逻辑主要是为了计算域名的实际长度
-        	 *
-        	 * len代表当前域名的长度,比如com.baidu.
-        	 * 在计算这个域名长度的过程中,len可以是4(第一个点)或10(第二个点)
-        	 */
+            /*
+             * 这里的逻辑主要是为了计算域名的实际长度
+             *
+             * len代表当前域名的长度,比如com.baidu.
+             * 在计算这个域名长度的过程中,len可以是4(第一个点)或10(第二个点)
+             */
             len++;
         }
 
         next_names.nelts = 0;
 
         if (names[n].key.len != len) {
-        	/*
-        	 * 假设域名是com.baidu.
-        	 *
-        	 * 不相等说明还没有分析完整个域名,这时候names[n].key.len等于10,而len才等于4
-        	 */
+            /*
+             * 假设域名是com.baidu.
+             *
+             * 不相等说明还没有分析完整个域名,这时候names[n].key.len等于10,而len才等于4
+             */
 
             next_name = ngx_array_push(&next_names);
             if (next_name == NULL) {
@@ -1023,7 +1023,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
             /*
              * 因为要分析的域名是com.baidu.并且这个时候len才等于4,所以下面的代码执行完毕后
              *   next_names:
-             * 		baidu.
+             *      baidu.
              *
              *   next_name = baidu.
              *   next_name->value = ngx_http_core_srv_conf_t结构体
@@ -1041,18 +1041,18 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 
         /*
          * 这个循环是用来把当前域名和names中的后续域名做对比,假设names的值如下:
-         * 	 names
-         * 		com.baidu.
-         * 		com.jd.
-         * 		com.jd.aa.
+         *   names
+         *      com.baidu.
+         *      com.jd.
+         *      com.jd.aa.
          * 如果当前域名是com.baidu.那么n就是0,那么这个循环会和剩下的两个域名做比较
          */
         for (i = n + 1; i < nelts; i++) {
             if (ngx_strncmp(names[n].key.data, names[i].key.data, len) != 0) {
-            	/*
-            	 * 比较com.baidu.和com.jd.在前len字符长度中的值是否相同,这个len值一般包括‘.’符号
-            	 * 如果相同就不走这个逻辑
-            	 */
+                /*
+                 * 比较com.baidu.和com.jd.在前len字符长度中的值是否相同,这个len值一般包括‘.’符号
+                 * 如果相同就不走这个逻辑
+                 */
                 break;
             }
 
@@ -1060,22 +1060,22 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
                 && names[i].key.len > len
                 && names[i].key.data[len] != '.')
             {
-            	/*
-            	 * 当要比较的两个域名是下面两种情况的时候会走这段逻辑
-            	 * 		com
-            	 * 		coma.jd
-            	 */
+                /*
+                 * 当要比较的两个域名是下面两种情况的时候会走这段逻辑
+                 *     com
+                 *     coma.jd
+                 */
                 break;
             }
 
             /*
              * 此时next_names数组的值如下:
              *   next_names:
-             * 		baidu.
+             *      baidu.
              * 当走到这里的时候可以明确出com.baidu.和com.jd.这两个域名的前半部分‘com.’是相同的,当下面代码执行完毕后,next_names值如下:
-             * 	 next_names:
-             * 	 	baidu.
-             * 	 	jd.
+             *   next_names:
+             *      baidu.
+             *      jd.
              * 可以看到都去掉了域名的前半部分'com.'
              *
              * 此时next_name = jd.
@@ -1099,8 +1099,8 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 
         /*
          * next_names:
-         * 	  baidu.
-         * 	  jd.
+         *    baidu.
+         *    jd.
          */
         if (next_names.nelts) {
 
@@ -1127,24 +1127,24 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 
             if (names[n].key.len == len) {
 
-            	/*
-            	 * 当ngx配置文件中同时出现如下两个域名时会进入到这个逻辑
-            	 *     *.com
-            	 *     *.jd.com
-            	 * 此时的len等于4,names[n].key是".com",这个逻辑是为了和后面的位掩码"10"打配合的
-            	 * 因为掩码是"10"的时候需要存key".com" 对应的真正的值而不是ngx_hash_wildcard_t结构体
-            	 */
+                /*
+                 * 当ngx配置文件中同时出现如下两个域名时会进入到这个逻辑
+                 *     *.com
+                 *     *.jd.com
+                 * 此时的len等于4,names[n].key是".com",这个逻辑是为了和后面的位掩码"10"打配合的
+                 * 因为掩码是"10"的时候需要存key".com" 对应的真正的值而不是ngx_hash_wildcard_t结构体
+                 */
 
                 wdc->value = names[n].value;
             }
 
             /*
              * 走到这里表示curr_names数组值是:
-             * 		curr_names:
-             * 		    com
+             *     curr_names:
+             *          com
              * 而name的值是:
-             * 		name.key = {len = 3, data = 0x7246fe "com.baidu."}
-             * 		name->value = 指向ngx_hash_wildcard_t结构体
+             *     name.key = {len = 3, data = 0x7246fe "com.baidu."}
+             *     name->value = 指向ngx_hash_wildcard_t结构体
              *
              * 也就是说在最终的hash机构中有这样一个键值对,他的键名字是'com',他的值是指向ngx_hash_wildcard_t结构体的指针
              *
@@ -1172,27 +1172,27 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
             name->value = (void *) ((uintptr_t) wdc | (dot ? 3 : 2));
 
         } else if (dot) {
-        	/*
-        	 * 走到这里说明name是某个域名的最后一部分了(比如"com." 或 "com.jd."的后半部分"jd."),并且这个域名的最后一部分是以'.'结尾的
-        	 * 那么这时就不需要把name->value指向一个ngx_hash_wildcard_t结构体了,当前name已经是域名的最后一部分了.
-        	 * 这个时候把指向ngx_http_core_srv_conf_t这个结构体的指针的最后一位设置为1,后续查找的时候可以从这个指针地址中取出这个值然后做对比
-        	 *
-        	 * 走到这里表明当前域名在配置文件中是带‘*’号的前置通配符,比如
-        	 * 		*.com
-        	 * 		*.jd.com
-        	 *
-        	 * 走到这里可以看到name->value指针地址最后两位只能是01
-        	 *   01: 表示name->value指向一个数据结构体(构造server{}块对应域名时是ngx_http_core_srv_conf_t),直接匹配
-        	 *       并且当前name没有对应的next_names,就是说这是域名的最后一部分
-        	 *       在ngx配置文件中可以是"*.jd.com"或"*.com",他们会被转换成"com.jd.或com.",可以看到转换后的域名最后有一个"."符号
-        	 *       此时name->key只能是"jd"或"com",也就是域名的最后一部分
-        	 *       如果在ngx中配置的域名是"*.jd.com",因为最后一个部分"jd"后面是一个"."符号,所以dot为1,所以name->value后两位是01
-        	 *       这个配置配可以匹配xxx.jd.com域名
-        	 *
-        	 * 一个潜规则,name->value指向的数据的地址对齐方式必须大于等于2,这样才能保证该地址的最后一位始终是0,但是这里有一个问题,如果这里
-        	 * 只保证地址最后一位是0,就无法跟上面的地址后两位是0的方式区分开来,所以为了保证一致,这里也需要保证name->value指向数据的地址必须
-        	 * 以大于等于4的方式对齐,这样后续在取这些标记的时候直接取后两位然后跟对应的数字做对比就可以了.
-        	 */
+            /*
+             * 走到这里说明name是某个域名的最后一部分了(比如"com." 或 "com.jd."的后半部分"jd."),并且这个域名的最后一部分是以'.'结尾的
+             * 那么这时就不需要把name->value指向一个ngx_hash_wildcard_t结构体了,当前name已经是域名的最后一部分了.
+             * 这个时候把指向ngx_http_core_srv_conf_t这个结构体的指针的最后一位设置为1,后续查找的时候可以从这个指针地址中取出这个值然后做对比
+             *
+             * 走到这里表明当前域名在配置文件中是带‘*’号的前置通配符,比如
+             *    *.com
+             *    *.jd.com
+             *
+             * 走到这里可以看到name->value指针地址最后两位只能是01
+             *   01: 表示name->value指向一个数据结构体(构造server{}块对应域名时是ngx_http_core_srv_conf_t),直接匹配
+             *       并且当前name没有对应的next_names,就是说这是域名的最后一部分
+             *       在ngx配置文件中可以是"*.jd.com"或"*.com",他们会被转换成"com.jd.或com.",可以看到转换后的域名最后有一个"."符号
+             *       此时name->key只能是"jd"或"com",也就是域名的最后一部分
+             *       如果在ngx中配置的域名是"*.jd.com",因为最后一个部分"jd"后面是一个"."符号,所以dot为1,所以name->value后两位是01
+             *       这个配置配可以匹配xxx.jd.com域名
+             *
+             * 一个潜规则,name->value指向的数据的地址对齐方式必须大于等于2,这样才能保证该地址的最后一位始终是0,但是这里有一个问题,如果这里
+             * 只保证地址最后一位是0,就无法跟上面的地址后两位是0的方式区分开来,所以为了保证一致,这里也需要保证name->value指向数据的地址必须
+             * 以大于等于4的方式对齐,这样后续在取这些标记的时候直接取后两位然后跟对应的数字做对比就可以了.
+             */
             name->value = (void *) ((uintptr_t) name->value | 1);
         }
 
@@ -1288,7 +1288,7 @@ ngx_hash_strlow(u_char *dst, u_char *src, size_t n)
 ngx_int_t
 ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
 {
-	// 数组初始元素个数
+    // 数组初始元素个数
     ngx_uint_t  asize;
 
     if (type == NGX_HASH_SMALL) {
@@ -1352,11 +1352,11 @@ ngx_hash_keys_array_init(ngx_hash_keys_arrays_t *ha, ngx_uint_t type)
  *
  * *ha: ngx_hash_keys_arrays_t
  * *key: 用户key,比如“www.jd.com”、“.jd.com”、"*.jd.com"、“www.jd.*”
- * 		 如果key是带通配符的,则在添加的时候会把通配符去掉
+ *       如果key是带通配符的,则在添加的时候会把通配符去掉
  * *value: 用户值,比如“198.168.12.32”或一个结构体
  * flags: 一个位掩码
- * 		NGX_HASH_WILDCARD_KEY: 处理通配符
- * 		NGX_HASH_READONLY_KEY: 不把key转换为小写
+ *        NGX_HASH_WILDCARD_KEY: 处理通配符
+ *        NGX_HASH_READONLY_KEY: 不把key转换为小写
  *
  * 不允许存在相同的元素,如果存在返回NGX_BUSY
  *
@@ -1386,44 +1386,44 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
          *
          */
 
-    	/*
-    	 * 是否有通配符,0代表没有
-    	 */
+        /*
+         * 是否有通配符,0代表没有
+         */
         n = 0;
 
         for (i = 0; i < key->len; i++) {
 
             if (key->data[i] == '*') {
                 if (++n > 1) {
-                	/*
-                	 * 只支持一个通配符,如果有多个则返回NGX_DECLINED,比如
-                	 *    **.jd.com
-                	 *    www.jd.**com
-                	 *    *w*.jd.com
-                	 */
+                    /*
+                     * 只支持一个通配符,如果有多个则返回NGX_DECLINED,比如
+                     *    **.jd.com
+                     *    www.jd.**com
+                     *    *w*.jd.com
+                     */
                     return NGX_DECLINED;
                 }
             }
 
             if (key->data[i] == '.' && key->data[i + 1] == '.') {
-            	/*
-            	 * key不能有连续两个符号“.”,比如
-            	 *    www..jd.com
-            	 *    ..jd.com
-            	 *    www.jd.c..
-            	 *
-            	 */
+                /*
+                 * key不能有连续两个符号“.”,比如
+                 *    www..jd.com
+                 *    ..jd.com
+                 *    www.jd.c..
+                 *
+                 */
                 return NGX_DECLINED;
             }
         }
 
         if (key->len > 1 && key->data[0] == '.') {
 
-        	/*
-        	 * 以点开头的域名,如
-        	 * 	  .jd.com
-        	 * 	  .c
-        	 */
+            /*
+             * 以点开头的域名,如
+             *       .jd.com
+             *       .c
+             */
             skip = 1;
             goto wildcard;
         }
@@ -1432,19 +1432,19 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
 
             if (key->data[0] == '*' && key->data[1] == '.') {
 
-            	/*
-            	 * 前置通配符,以 "*." 开头,比如
-            	 *   *.jd.com
-            	 */
+                /*
+                 * 前置通配符,以 "*." 开头,比如
+                 *   *.jd.com
+                 */
                 skip = 2;
                 goto wildcard;
             }
 
             if (key->data[i - 2] == '.' && key->data[i - 1] == '*') {
-            	/*
-            	 * 后置通配符,以".*"结尾,比如
-            	 *     www.jd.*
-            	 */
+                /*
+                 * 后置通配符,以".*"结尾,比如
+                 *     www.jd.*
+                 */
                 skip = 0;
 
                 /*
@@ -1458,9 +1458,9 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
         /*
          * 从上面得出的结论
          * skip = 0,是以".*"结尾,比如
-         * 	  www.jd.*
+         *       www.jd.*
          * skip = 1,以点开头的,比如
-         * 	  .jd.com
+         *       .jd.com
          * skip = 2,以"*."开头,比如
          *    *.jd.com
          */
@@ -1468,8 +1468,8 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
         if (n) {
             /*
              * 有通配符,但是又不符合通配符的规则,比如
-             * 	  w*w.jd.c*m
-             * 	  *.jd.com.*
+             *       w*w.jd.c*m
+             *       *.jd.com.*
              */
             return NGX_DECLINED;
         }
@@ -1485,7 +1485,7 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
 
     for (i = 0; i < last; i++) {
         if (!(flags & NGX_HASH_READONLY_KEY)) {
-        	// 如果未打标NGX_HASH_READONLY_KEY,则key转换成小写
+            // 如果未打标NGX_HASH_READONLY_KEY,则key转换成小写
             key->data[i] = ngx_tolower(key->data[i]);
         }
         k = ngx_hash(k, key->data[i]);
@@ -1505,31 +1505,31 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
      */
     if (name) {
 
-    	/*
-    	 * 检查桶中是否有相同的元素,如果有返回NGX_BUSY
-    	 */
+        /*
+         * 检查桶中是否有相同的元素,如果有返回NGX_BUSY
+         */
         for (i = 0; i < ha->keys_hash[k].nelts; i++) {
             if (last != name[i].len) {
-            	/*
-            	 * 桶中的元素name[i]的长度都和当前要添加的key不一样,那么肯定就不一样,去匹配下一个
-            	 */
+                /*
+                 * 桶中的元素name[i]的长度都和当前要添加的key不一样,那么肯定就不一样,去匹配下一个
+                 */
                 continue;
             }
 
             if (ngx_strncmp(key->data, name[i].data, last) == 0) {
 
-            	/*
-            	 * 存在相同元素,则返回
-            	 */
+                /*
+                 * 存在相同元素,则返回
+                 */
                 return NGX_BUSY;
             }
         }
 
     } else {
-    	/*
-    	 * 用于检查是否有key冲突的桶还不存在,那就创建一个,然后把当前要添加的key放入这个桶中
-    	 * 新创建的桶初始化大小为4个字节
-    	 */
+        /*
+         * 用于检查是否有key冲突的桶还不存在,那就创建一个,然后把当前要添加的key放入这个桶中
+         * 新创建的桶初始化大小为4个字节
+         */
         if (ngx_array_init(&ha->keys_hash[k], ha->temp_pool, 4,
                            sizeof(ngx_str_t))
             != NGX_OK)
@@ -1573,41 +1573,41 @@ wildcard:
 
     /* wildcard hash */
 
-	/*
+    /*
      * skip = 0,表示以.*结尾的域名,如 www.jd.*
      * skip = 1,表示以点开头,如 .jd.com
      * skip = 2,表示以*.开头,如 *.jd.com
      */
 
-	/*
-	 * key转换为小写并计算key的hash值,计算时会去掉通配符,通过skip的值来去掉通配符
-	 * skip = 0意思是不用去掉,因为这种类型的通配符已经在前面的逻辑中给去掉了(last -= 2)
-	 * skip = 1表示去掉前面一个字符(".")
-	 * skip = 2表示去掉前面两个字符("*.")
-	 */
+    /*
+     * key转换为小写并计算key的hash值,计算时会去掉通配符,通过skip的值来去掉通配符
+     * skip = 0意思是不用去掉,因为这种类型的通配符已经在前面的逻辑中给去掉了(last -= 2)
+     * skip = 1表示去掉前面一个字符(".")
+     * skip = 2表示去掉前面两个字符("*.")
+     */
     k = ngx_hash_strlow(&key->data[skip], &key->data[skip], last - skip);
 
     k %= ha->hsize;
 
     if (skip == 1) {
-    	/*
-    	 * 处理以点'.'开头的域名
-    	 */
+        /*
+         * 处理以点'.'开头的域名
+         */
 
         /* check conflicts in exact hash for ".example.com" */
 
-    	/*
-    	 * 检查名字是否冲突,比如jd.com和.jd.com视为相同,因为.jd.com已经包含jd.com拉
-    	 */
+        /*
+         * 检查名字是否冲突,比如jd.com和.jd.com视为相同,因为.jd.com已经包含jd.com拉
+         */
         name = ha->keys_hash[k].elts;
 
         /*
          * 下面这块逻辑和上面检查无通配符冲突的逻辑基本一样,只不过这里的名字是拷贝过来的,并且这个key没有放到ha->keys数组中
          */
         if (name) { // 桶已经存在
-        	// 检查桶中是否有相同的元素
+            // 检查桶中是否有相同的元素
 
-        	// 去掉 .jd.com 中的第一个点的长度
+            // 去掉 .jd.com 中的第一个点的长度
             len = last - skip;
 
             for (i = 0; i < ha->keys_hash[k].nelts; i++) {
@@ -1616,13 +1616,13 @@ wildcard:
                 }
 
                 if (ngx_strncmp(&key->data[1], name[i].data, len) == 0) {
-                	// 存在相同的元素,则直接返回NGX_BUSY
+                    // 存在相同的元素,则直接返回NGX_BUSY
                     return NGX_BUSY;
                 }
             }
 
         } else { // 桶不存在
-        	// 初始化桶,初始大小为4
+            // 初始化桶,初始大小为4
             if (ngx_array_init(&ha->keys_hash[k], ha->temp_pool, 4,
                                sizeof(ngx_str_t))
                 != NGX_OK)
@@ -1661,9 +1661,9 @@ wildcard:
          *      and ".example.com" to "com.example\0"
          */
 
-    	/*
-    	 * 此时last包含了通配符的长度
-    	 */
+        /*
+         * 此时last包含了通配符的长度
+         */
         p = ngx_pnalloc(ha->temp_pool, last);
         if (p == NULL) {
             return NGX_ERROR;
@@ -1692,10 +1692,10 @@ wildcard:
         /*
          * 如果走到这里len是有值的,那么代表此时key是一个".example.com"类型的字符,因为last-1后会去掉一个通配符
          * 所以我们这里需要把最后一个单词example拷贝到p中,结果是
-         * 	  p = com.example
+         *       p = com.example
          *
          * 如果走到这里len的值是零,那么代表此时key是一个"*.example.com"类型的字符,那么最后p的结果是
-         * 	  p = com.example.
+         *       p = com.example.
          */
         if (len) {
             ngx_memcpy(&p[n], &key->data[1], len);
@@ -1729,15 +1729,15 @@ wildcard:
 
     /*
      * 检查带统配符的key是否冲突 比如.jd.com 和 *.jd.com 视为冲突
-     * 		server{
-     * 			listen 80;
-     * 			server_name .jd.com;
-     * 		}
+     *     server{
+     *          listen 80;
+     *          server_name .jd.com;
+     *     }
      *
-     * 		server{
-     * 			listen 80;
-     * 			server_name *.jd.com;
-     * 		}
+     *     server{
+     *          listen 80;
+     *          server_name *.jd.com;
+     *     }
      * 上面两种会忽略一种,目前的逻辑是忽略"*.jd.com"对应的server
      */
     name = keys->elts;

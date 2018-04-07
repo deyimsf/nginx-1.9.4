@@ -4,36 +4,36 @@
  * Copyright (C) Nginx, Inc.
  */
 
-/**
-   四个星号解释 ****conf_ctx
-   根据宏定义ngx_event_get_conf来解释
-   设ctx = conf_ctx
-
-    ctx
-	-----
-	| * |
-	-----
-	|	    	|(ngx_events_module.index)
-	\*(ctx+0)   \*(ctx+index)  设*(ctx+index)为index
-	 ----------------------
-     | * | .. |  *  |这一层内存有main中调用ngx_init_cycle函数创建,共ngx_max_module个。 cycle->conf_ctx[ngx_events_module.index] 等于*(ctx+index)的值。
-	 ----------------------
-	 	 	   |*(index+0)
-	 	 	   \设*(index+0)为index0
-	  	  	    ---------
-	  	  	    |   *   | 这一层指针有具体的核心模块负责创建。  *(cycle->conf_ctx[ngx_events_module.index]) 等于 *( *(ctx+index) + 0 ) 的值。
-	  	  	    ---------
-	  	  	    |*(index0 + 0)				 		   |*(index0 + ctx_index)
-	  	  	    |存放event_core事件模块用的的结构体的地址     |存放epoll事件模块用到的配置结构体的地址
-	  	  	    \设*(index0+0)为index00		 			\设*(index0 + ctx_index)为index0ctx_index
-	   	   	   	 ------------------------------------------------------------
-	   	   	   	 |  		   *             |  				*  			|这一层存放自定义模块的配置结构体地址。(*(cycle->conf_ctx[ngx_events_module.index]))[ngx_epoll_module.ctx_index] 等于 *( (*( *(ctx+index) + 0 )) + ctx_index)的值。
-	   	   	   	 ------------------------------------------------------------
-				 |							  	 |存放ngx_epoll_conf_t结构体的数据
-				 \*(index00 + 0)				 \ *(index0ctx_index + 0)
-		 	 	  ------------------	  		  --------------------
-  	  	 	 	  |ngx_event_conf_t|	  		  | ngx_epoll_conf_t |   等于 *( ( *( ( *( *(ctx+index) + 0 ) ) + ctx_index)) + 0 )的值。
-		 	 	  ------------------	  		  --------------------
+/*
+ * 四个星号解释 ****conf_ctx
+ * 根据宏定义ngx_event_get_conf来解释
+ * 设ctx = conf_ctx
+ *
+ *  ctx
+ *  -----
+ *  | * |
+ *  -----
+ *  |           |(ngx_events_module.index)
+ *  \*(ctx+0)   \*(ctx+index)  设*(ctx+index)为index
+ *   ----------------------
+ *   | * | .. |  *  |这一层内存有main中调用ngx_init_cycle函数创建,共ngx_max_module个。 cycle->conf_ctx[ngx_events_module.index] 等于*(ctx+index)的值。
+ *   ----------------------
+ *             |*(index+0)
+ *             \设*(index+0)为index0
+ *              ---------
+ *              |   *   | 这一层指针有具体的核心模块负责创建。  *(cycle->conf_ctx[ngx_events_module.index]) 等于 *( *(ctx+index) + 0 ) 的值。
+ *              ---------
+ *              |*(index0 + 0)                          |*(index0 + ctx_index)
+ *              |存放event_core事件模块用的的结构体的地址     |存放epoll事件模块用到的配置结构体的地址
+ *              \设*(index0+0)为index00                  \设*(index0 + ctx_index)为index0ctx_index
+ *               ------------------------------------------------------------
+ *               |             *             |                   *          |这一层存放自定义模块的配置结构体地址。(*(cycle->conf_ctx[ngx_events_module.index]))[ngx_epoll_module.ctx_index] 等于 *( (*( *(ctx+index) + 0 )) + ctx_index)的值。
+ *               ------------------------------------------------------------
+ *               |                               |存放ngx_epoll_conf_t结构体的数据
+ *               \*(index00 + 0)                 \ *(index0ctx_index + 0)
+ *                ------------------              --------------------
+ *                |ngx_event_conf_t|              | ngx_epoll_conf_t |   等于 *( ( *( ( *( *(ctx+index) + 0 ) ) + ctx_index)) + 0 )的值。
+ *                ------------------              --------------------
  */
 
 
@@ -71,9 +71,9 @@ struct ngx_shm_zone_s {
 
 
 struct ngx_cycle_s {
-	// 所有模块的配置结构体指针
-	// 在二级指针的第7个位置是http核心模块的配置结构体指针ngx_http_conf_ctx_t
-	// ngx_http_conf_ctx_t中的main_conf的第二级指针存放的是所有http模块的main级别的自定义结构体
+    // 所有模块的配置结构体指针
+    // 在二级指针的第7个位置是http核心模块的配置结构体指针ngx_http_conf_ctx_t
+    // ngx_http_conf_ctx_t中的main_conf的第二级指针存放的是所有http模块的main级别的自定义结构体
     void                  ****conf_ctx;
     ngx_pool_t               *pool;
 
@@ -101,11 +101,11 @@ struct ngx_cycle_s {
      * 会调用ngx_create_paths方法来创建这些目录,这些目录会创建在nginx的安装目录下。
      *
      * 目前有五个模块用到了这个功能,他们的目录如下:
-     * 	ngx_http_core_module模块的client_body_temp目录
-     * 	ngx_http_proxy_module模块的proxy_temp目录
-     *	ngx_http_fastcgi_module模块的fastcgi_temp目录
-     *	ngx_http_uwsgi_module模块的uwsgi_temp目录
-     *	ngx_http_scgi_module模块的scgi_temp目录
+     *  ngx_http_core_module模块的client_body_temp目录
+     *  ngx_http_proxy_module模块的proxy_temp目录
+     *  ngx_http_fastcgi_module模块的fastcgi_temp目录
+     *  ngx_http_uwsgi_module模块的uwsgi_temp目录
+     *  ngx_http_scgi_module模块的scgi_temp目录
      */
     ngx_array_t               paths;
     ngx_array_t               config_dump;
@@ -117,7 +117,7 @@ struct ngx_cycle_s {
      *
      * 目前使用到这个链表的模块有:
      *   /src/core/ngx_log.c/ngx_errlog_module模块的error_log指令
-     * 	 /src/http/modules/ngx_http_log_module.c模块的access_log指令
+     *   /src/http/modules/ngx_http_log_module.c模块的access_log指令
      */
     ngx_list_t                open_files;
 
@@ -126,19 +126,19 @@ struct ngx_cycle_s {
      * 各个模块可以向该链表中添加ngx_shm_zone_t对象,然后在ngx_init_cycle方法中统一创建共享内存。
      *
      * 目前使用到这个链表的模块有:
-     * 		/http/modules/ngx_http_fastcgi_module.c
-     * 		/http/modules/ngx_http_limit_conn_module.c
-     * 		/http/modules/ngx_http_limit_req_module.c
-     * 		/http/modules/ngx_http_proxy_module.c
-     * 		/http/modules/ngx_http_scgi_module.c
-     * 		/http/modules/ngx_http_ssl_module.c
-     * 		/http/modules/ngx_http_upstream_zone_module.c
-     * 		/http/modules/ngx_http_uwsgi_module.c
-     * 		/http/ngx_http_file_cache.c
-     * 		/mail/ngx_mail_ssl_module.c
-     * 		/stream/ngx_stream_limit_conn_module.c
-     * 		/stream/ngx_stream_ssl_module.c
-     * 		/stream/ngx_stream_upstream_zone_module.c
+     *     /http/modules/ngx_http_fastcgi_module.c
+     *     /http/modules/ngx_http_limit_conn_module.c
+     *     /http/modules/ngx_http_limit_req_module.c
+     *     /http/modules/ngx_http_proxy_module.c
+     *     /http/modules/ngx_http_scgi_module.c
+     *     /http/modules/ngx_http_ssl_module.c
+     *     /http/modules/ngx_http_upstream_zone_module.c
+     *     /http/modules/ngx_http_uwsgi_module.c
+     *     /http/ngx_http_file_cache.c
+     *     /mail/ngx_mail_ssl_module.c
+     *     /stream/ngx_stream_limit_conn_module.c
+     *     /stream/ngx_stream_ssl_module.c
+     *     /stream/ngx_stream_upstream_zone_module.c
      */
     ngx_list_t                shared_memory;
 

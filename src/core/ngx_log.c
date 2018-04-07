@@ -6,38 +6,38 @@
 
 /*
  * 日志的打印级别使用error_log指令设置,如:
- * 	  error_log logs/error.log info;
+ *    error_log logs/error.log info;
  *
  * 日志由两种宏定义
- *	 ngx_log_error(level,log,args, ...)
- *	 ngx_log_debugX(level,log,args, ...)
+ *    ngx_log_error(level,log,args, ...)
+ *    ngx_log_debugX(level,log,args, ...)
  *
  * 当log->log_level >= level时ngx_log_error()宏才会生效
  *    if ((log)->log_level >= level) ngx_log_error_core(level, log, args)
  *
  * 当log->log_level & level为true时ngx_log_debugX()宏才会生效
- * 	  if ((log)->log_level & level) ngx_log_error_core(NGX_LOG_DEBUG, log, args)
+ *    if ((log)->log_level & level) ngx_log_error_core(NGX_LOG_DEBUG, log, args)
  *
  *
  * 为什么针对ngx_log_debugX()宏是否生效要用与操作呢?
  * 目前在ngx中有八种类型的debug信息,分别是:
- * 	 NGX_LOG_DEBUG_CORE        0x010    debug_core
- *	 NGX_LOG_DEBUG_ALLOC       0x020    debug_alloc
- *   NGX_LOG_DEBUG_MUTEX       0x040    debug_mutex
- *   NGX_LOG_DEBUG_EVENT       0x080    debug_event
- *   NGX_LOG_DEBUG_HTTP        0x100    debug_http
- *   NGX_LOG_DEBUG_MAIL        0x200    debug_mail
- *   NGX_LOG_DEBUG_MYSQL       0x400    debug_mysql
- *   NGX_LOG_DEBUG_STREAM      0x800    debug_stream
+ *    NGX_LOG_DEBUG_CORE        0x010    debug_core
+ *    NGX_LOG_DEBUG_ALLOC       0x020    debug_alloc
+ *    NGX_LOG_DEBUG_MUTEX       0x040    debug_mutex
+ *    NGX_LOG_DEBUG_EVENT       0x080    debug_event
+ *    NGX_LOG_DEBUG_HTTP        0x100    debug_http
+ *    NGX_LOG_DEBUG_MAIL        0x200    debug_mail
+ *    NGX_LOG_DEBUG_MYSQL       0x400    debug_mysql
+ *    NGX_LOG_DEBUG_STREAM      0x800    debug_stream
  * 调问题的时候可能不需要看所有的debug信息,比如只想看事件模块相关的debug信息,做如下配置
- *		error_log logs/error.log debug_event;
+ *    error_log logs/error.log debug_event;
  * 此时用与操作来生效特定的debug信息
  *
  * 当把error_log指令的日志打印级别设置为debug时会打印所有debug信息,但是这里又有一个问题,ngx中debug对应的宏是
- * 	  NGX_LOG_DEBUG		8
+ *    NGX_LOG_DEBUG    8
  * 很明显,数字8个目前和任何一种特定debug信息做与操作都是假,那为什么这个宏又能起作用呢?
  * 实际上是error_log指令对参数是debug时做了一个特殊处理,处理过程如下:
- * 	  if (log->log_level == NGX_LOG_DEBUG) {
+ *    if (log->log_level == NGX_LOG_DEBUG) {
  *        log->log_level = NGX_LOG_DEBUG_ALL;
  *    }
  * 而NGX_LOG_DEBUG_ALL对应值 0x7ffffff0,他包含了所有特定debug值
@@ -113,7 +113,7 @@ ngx_uint_t              ngx_use_stderr = 1;
 
 /*
  * 日志级别对应的串,比如
- * 	 error_log logs/error.log warn;
+ *      error_log logs/error.log warn;
  */
 static ngx_str_t err_levels[] = {
     ngx_null_string,
@@ -129,9 +129,9 @@ static ngx_str_t err_levels[] = {
 
 /*
  * 同err_levels[],专门为debug准备的日志级别,比如
- * 	  error_log logs/error.log debug_core;
+ *       error_log logs/error.log debug_core;
  * 上面的配置表示只打印dubug_core级别的debug日志,也就是如下级别的debug日志
- * 	  ngx_log_debugX(NGX_LOG_DEBUG_CORE, c->log, ...);
+ *       ngx_log_debugX(NGX_LOG_DEBUG_CORE, c->log, ...);
  * 其它级别的debug日志是不会打印的
  */
 static const char *debug_levels[] = {
@@ -176,16 +176,16 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     /*
      * 把代表当前时间的字符串拷贝到errstr中,然后返回这个时间串在errstr内存中最后一个字符的后面的地址
      * 假设ngx_cached_err_log_time的值是:
-     *		2018/01/14 08:36:47
+     *        2018/01/14 08:36:47
      * 执行完下面的拷贝后errstr的内存结构如下
-     * 		 errstr
-     * 		 -----
-     * 		 | * |
-     * 		 -----
-     *			\			11	    18
-     *			------------------------------
-     *			|2018/01/14 08:36:47 |
-     *			------------------------------
+     *       errstr
+     *       -----
+     *       | * |
+     *       -----
+     *           \          11      18
+     *          ------------------------------
+     *          |2018/01/14 08:36:47 |
+     *          ------------------------------
      * 日期最后一个字符的地址是17,那么p就是18
      *
      */
@@ -194,14 +194,14 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
 
     /*
      * 把错误级别对应的字符串拷贝给errstr中,从p这个位置开始拷贝,拷贝后内存结构如下,假设错误级别是error
-     * 		errstr
-     * 		-----
-     * 		| * |
-     * 		-----
-     * 		   \				   18
-     * 		   ----------------------------------
-     * 		   |2018/01/14 08:36:47 [error]
-     * 		   ----------------------------------
+     *      errstr
+     *      -----
+     *      | * |
+     *      -----
+     *         \                   18
+     *         ----------------------------------
+     *         |2018/01/14 08:36:47 [error]
+     *         ----------------------------------
      *
      */
     p = ngx_slprintf(p, last, " [%V] ", &err_levels[level]);
@@ -209,26 +209,26 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     /*
      * 拷贝进程号和线程好,如果没有用线程则线程号用0代替,拷贝后内存结构如下
      *      errstr
-     * 		-----
-     * 		| * |
-     * 		-----
-     * 		   \				   18
-     * 		   ----------------------------------------
-     * 		   |2018/01/14 08:36:47 [error] 2074#0:
-     * 		   ----------------------------------------
+     *      -----
+     *      | * |
+     *      -----
+     *          \                  18
+     *         ----------------------------------------
+     *         |2018/01/14 08:36:47 [error] 2074#0:
+     *         ----------------------------------------
      *
      */
     p = ngx_slprintf(p, last, "%P#" NGX_TID_T_FMT ": ",
                     ngx_log_pid, ngx_log_tid);
 
     if (log->connection) {
-    	/*
-    	 * 这个号是干嘛滴,拷贝后如下:
-    	 * 		------------------------------------------
-    	 * 		|2018/01/14 08:36:47 [error] 2074#0: *98
-    	 *		------------------------------------------
-    	 *
-    	 */
+        /*
+         * 这个号是干嘛滴,拷贝后如下:
+         *      ------------------------------------------
+         *      |2018/01/14 08:36:47 [error] 2074#0: *98
+         *      ------------------------------------------
+         *
+         */
 
         p = ngx_slprintf(p, last, "*%uA ", log->connection);
     }
@@ -239,13 +239,13 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
 
     /*
      * 下面开始真正处理用户穿过来的格式化字符串,比如:
-     *		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "no live upstreams");
+     *     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "no live upstreams");
      * 那么此时fmt就是"no live upstreams"
      *
      * 可以看到这个字符串并没有一个百分号,所以下面的方法执行完毕后结果如下:
-     *    	-----------------------------------------------------------------
-     *    	|2018/01/14 08:36:47 [error] 2074#0: *98 no live upstreams
-     *    	-----------------------------------------------------------------
+     *     -----------------------------------------------------------------
+     *     |2018/01/14 08:36:47 [error] 2074#0: *98 no live upstreams
+     *     -----------------------------------------------------------------
      *
      *
      */
@@ -265,31 +265,31 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     }
 
     if (level != NGX_LOG_DEBUG && log->handler) {
-    	/*
-    	 * 回调handler方法,对于http模块来说,这个handler就是ngx_http_log_error()方法
-    	 * 该方法的作用是向p这个指针地址中拷贝不大于last-p个字节的字符
-    	 *
-    	 * 比如在ngx_http_log_error()方法中当log->action中有值的时候,会把log中的值拷贝到p中
-    	 * 假设log->action = "connecting to upstream",那么执行过程会把log->action 中的值打印到p中:
-    	 *    -------------------------------------------------------------------------------------------
-    	 *    |2018/01/14 08:36:47 [error] 2074#0: *98 no live upstreams  while connecting to upstream
-    	 *    -------------------------------------------------------------------------------------------
-    	 * 然后还会打印客户端ip和server端ip(ngx本地ip)
-    	 *  , client: 127.0.0.1 , server: localhost,
-    	 *
-    	 * 其它信息等
-    	 * 	, request: "GET /init HTTP/1.1", upstream: "http://tomcat1/init", host: "127.0.0.1"
-    	 *
-    	 * 如果日志级别是DEBUG的时候就不会回调该方法了
-    	 */
+        /*
+         * 回调handler方法,对于http模块来说,这个handler就是ngx_http_log_error()方法
+         * 该方法的作用是向p这个指针地址中拷贝不大于last-p个字节的字符
+         *
+         * 比如在ngx_http_log_error()方法中当log->action中有值的时候,会把log中的值拷贝到p中
+         * 假设log->action = "connecting to upstream",那么执行过程会把log->action 中的值打印到p中:
+         *    -------------------------------------------------------------------------------------------
+         *    |2018/01/14 08:36:47 [error] 2074#0: *98 no live upstreams  while connecting to upstream
+         *    -------------------------------------------------------------------------------------------
+         * 然后还会打印客户端ip和server端ip(ngx本地ip)
+         *  , client: 127.0.0.1 , server: localhost,
+         *
+         * 其它信息等
+         *  , request: "GET /init HTTP/1.1", upstream: "http://tomcat1/init", host: "127.0.0.1"
+         *
+         * 如果日志级别是DEBUG的时候就不会回调该方法了
+         */
 
         p = log->handler(log, p, last - p);
     }
 
     if (p > last - NGX_LINEFEED_SIZE) {
-    	/*
-    	 * 最终要输出的字符串长度不能大于last加一个换行的长度
-    	 */
+        /*
+         * 最终要输出的字符串长度不能大于last加一个换行的长度
+         */
         p = last - NGX_LINEFEED_SIZE;
     }
 
@@ -329,12 +329,12 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
         n = ngx_write_fd(log->file->fd, errstr, p - errstr);
 
         if (n == -1 && ngx_errno == NGX_ENOSPC) {
-        	/*
-        	 * write()函数返回-1表示发生错误
-        	 * errno为ENOSPC表示磁盘满了
-        	 *
-        	 * TODO 一个疑问,如果一次输出不完errstr中的数据怎么办?就不输出了?还是说根本不会发生这种情况?
-        	 */
+            /*
+             * write()函数返回-1表示发生错误
+             * errno为ENOSPC表示磁盘满了
+             *
+             * TODO 一个疑问,如果一次输出不完errstr中的数据怎么办?就不输出了?还是说根本不会发生这种情况?
+             */
             log->disk_full_time = ngx_time();
         }
 
@@ -612,7 +612,7 @@ ngx_log_redirect_stderr(ngx_cycle_t *cycle)
 
     if (fd != ngx_stderr) {
         // 调用dup2方法,将标准错误输出描述符定位到fd这个文件描述符中
-    	if (ngx_set_stderr(fd) == NGX_FILE_ERROR) {
+        if (ngx_set_stderr(fd) == NGX_FILE_ERROR) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           ngx_set_stderr_n " failed");
 

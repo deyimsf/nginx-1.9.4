@@ -17,7 +17,7 @@ static void *ngx_palloc_large(ngx_pool_t *pool, size_t size);
  * 创建一个ngx_pool_t对象
  *
  * size: 初始内存池大小
- * 		 不要小于sizeof(ngx_pool_t),否则会使用未分配的内存 TODO
+ *       不要小于sizeof(ngx_pool_t),否则会使用未分配的内存 TODO
  * log: 日志对象
  */
 ngx_pool_t *
@@ -107,7 +107,7 @@ ngx_destroy_pool(ngx_pool_t *pool)
 
     //循环销毁pool链中的每个pool
     for (p = pool, n = pool->d.next; /* void */; p = n, n = n->d.next) {
-    	//该函数会调用系统函数free()去销毁内存
+        //该函数会调用系统函数free()去销毁内存
         ngx_free(p);
 
         if (n == NULL) {
@@ -164,13 +164,13 @@ ngx_palloc(ngx_pool_t *pool, size_t size)
         p = pool->current;
 
         do {
-        	//对d.last地址对齐,也就是说 m - p->d.last 的结果会大于等于零,因为地址对齐肯定会大于等于原来的地址
+            //对d.last地址对齐,也就是说 m - p->d.last 的结果会大于等于零,因为地址对齐肯定会大于等于原来的地址
             m = ngx_align_ptr(p->d.last, NGX_ALIGNMENT);
 
             //如果地址对齐后,在当前pool_data中剩余的内存大小,大于等于这次要分配的内存size,
             //则从当前pool_data中直接分配出去
             if ((size_t) (p->d.end - m) >= size) {
-            	//最后未分配内存的首地址后移 m+size 个字节
+                //最后未分配内存的首地址后移 m+size 个字节
                 p->d.last = m + size;
 
                 //printf("从pool链中分配; pool地址是:%p; pool->current地址是:%p \n",pool,pool->current);

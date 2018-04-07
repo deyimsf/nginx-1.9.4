@@ -74,8 +74,8 @@ struct ngx_event_s {
     unsigned         timedout:1;
     /*
      * 该事件是否设置了定时器
-     * 	0:没有
-     * 	1:有
+     *     0:没有
+     *     1:有
      */
     unsigned         timer_set:1;
 
@@ -480,13 +480,13 @@ extern ngx_os_io_t  ngx_io;
 /* 该结构体用来保存事件模块的配置信息
  *
  * 如 events {
- * 		worker_connections 1024;
- * 		user epoll;
- * 	  }
+ *         worker_connections 1024;
+ *         user epoll;
+ *    }
  *
  */
 typedef struct {
-	// woker进程支持的连接数,有worker_connections指令指定
+    // woker进程支持的连接数,有worker_connections指令指定
     ngx_uint_t    connections;
     // 使用哪种事件模块(epoll、select等),有use指令指定
     ngx_uint_t    use;
@@ -516,7 +516,7 @@ typedef struct {
  *
  */
 typedef struct {
-	// 事件模块名字
+    // 事件模块名字
     ngx_str_t              *name;
 
     void                 *(*create_conf)(ngx_cycle_t *cycle);

@@ -17,7 +17,7 @@
  *
  *
  * 一般情况下文件的读写,应用程序都只跟page cache打交道,当未命中cache的时候由底层去更新page cache,之后
- *	用户在跟page cache打交道
+ *    用户在跟page cache打交道
  *
  * directio的文件读写形式是,用户直接跟磁盘打交道,cache这一层有用户自己在用户态负责
  *
@@ -81,9 +81,9 @@ static ngx_int_t ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx);
  * 该方法就一直围绕ctx来处理数据
  *
  * ctx->in: 要发送的数据,该方法会遍历该链表,把链表中的数据组装成一个可以直接发送的链表,用局部变量out表示,
- * 	  如果当前ctx->in->buf可以直接发送出去,那么就直接把当前链表项ctx->in追加到out链的尾部;
+ *    如果当前ctx->in->buf可以直接发送出去,那么就直接把当前链表项ctx->in追加到out链的尾部;
  *
- *	  如果当前ctx->in->buf不可以直接发送出去,那么就需要为其创建buf和chain,将数据拷贝到buf中,并将其追加到out链的尾部:
+ *    如果当前ctx->in->buf不可以直接发送出去,那么就需要为其创建buf和chain,将数据拷贝到buf中,并将其追加到out链的尾部:
  *      创建的buf大小和个数由output_buffers指令决定,超过这个大小就让出资源,让别的事件去执行.
  *
  *    每形成一个out链就会执行下一个过滤器试着去发送一次数据,不管有没有完全发送完毕都会把out链表项全部移动到ctx->busy链表
@@ -100,11 +100,11 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
     /*
      * ctx->in == NULL有两种情况
-     * 		一种是第一次进来该方法,此时还没有把入参in把数据追加到ctx->in中
+     *      一种是第一次进来该方法,此时还没有把入参in把数据追加到ctx->in中
      *
-     * 		另一种是进来n次后已经把ctx->in中的链表项已经完全追加到了out(*last_buf)中,对于需要拷贝的数据
-     * 		已经从in中拷贝到了ctx->buf中,并把当时拷贝好的ctx->buf追加到out(*last_buf)中,剩下的就是输
-     * 		出out链中的数据
+     *      另一种是进来n次后已经把ctx->in中的链表项已经完全追加到了out(*last_buf)中,对于需要拷贝的数据
+     *      已经从in中拷贝到了ctx->buf中,并把当时拷贝好的ctx->buf追加到out(*last_buf)中,剩下的就是输
+     *      出out链中的数据
      */
     if (ctx->in == NULL && ctx->busy == NULL
 #if (NGX_HAVE_FILE_AIO || NGX_THREADS)
@@ -120,10 +120,10 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
         if (in == NULL) {
 
-        	/*
-        	 * 这种情况表明已经进来该方法多次,并且已经把ctx->in中的链表项已经完全追加到了out(*last_buf)中,
-        	 * 对于需要拷贝的数据已经从in中拷贝到了ctx->buf中,并把当时拷贝好的ctx->buf追加到out(*last_buf)中
-        	 */
+            /*
+             * 这种情况表明已经进来该方法多次,并且已经把ctx->in中的链表项已经完全追加到了out(*last_buf)中,
+             * 对于需要拷贝的数据已经从in中拷贝到了ctx->buf中,并把当时拷贝好的ctx->buf追加到out(*last_buf)中
+             */
             return ctx->output_filter(ctx->filter_ctx, in);
         }
 
@@ -133,11 +133,11 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 #endif
             && ngx_output_chain_as_is(ctx, in->buf))
         {
-        	/*
-        	 * 这种情况只能是第一次进来,此时还没有把入参in把数据追加到ctx->in中,并且in链表中只有一个链表项,并且
-        	 * 不关in->buf中的数据是否在文件中,都可以直接发送出去(文件的话支持sendfile),所以这里走一个捷径,不
-        	 * 在把入参in加入到ctx->in中去处理,而是直接调用下一个过滤器
-        	 */
+            /*
+             * 这种情况只能是第一次进来,此时还没有把入参in把数据追加到ctx->in中,并且in链表中只有一个链表项,并且
+             * 不关in->buf中的数据是否在文件中,都可以直接发送出去(文件的话支持sendfile),所以这里走一个捷径,不
+             * 在把入参in加入到ctx->in中去处理,而是直接调用下一个过滤器
+             */
             return ctx->output_filter(ctx->filter_ctx, in);
         }
     }
@@ -146,9 +146,9 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
     /* 正常路径,把in中的buf追加到ctx->in中 */
     if (in) {
 
-    	/*
-    	 * 把入参in中的各个buf追加到ctx->in中,注意这里没有使用in中的ngx_chian_t,而是重新创建的ngx_chain_t
-    	 */
+        /*
+         * 把入参in中的各个buf追加到ctx->in中,注意这里没有使用in中的ngx_chian_t,而是重新创建的ngx_chain_t
+         */
         if (ngx_output_chain_add_copy(ctx->pool, &ctx->in, in) == NGX_ERROR) {
             return NGX_ERROR;
         }
@@ -160,14 +160,14 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
      * 了sendfile、aio的特性
      *
      * out和last_out的内存结构如下:
-     * 	 last_out|&out
-     * 		-----
-     * 		| * |
-     * 		-----
-     *		   \out
-     *		   -----
-     *		   | * |
-     *		   -----
+     *   last_out|&out
+     *      -----
+     *      | * |
+     *      -----
+     *        \out
+     *        -----
+     *        | * |
+     *        -----
      *
      */
     out = NULL;
@@ -186,9 +186,9 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 #endif
 
         while (ctx->in) {
-        	/*
-        	 * 遍历ctx->in链表,把每一个链表项中的缓存数据拷贝到ctx->buf中去发送
-        	 */
+            /*
+             * 遍历ctx->in链表,把每一个链表项中的缓存数据拷贝到ctx->buf中去发送
+             */
 
             /*
              * cycle while there are the ctx->in bufs
@@ -221,59 +221,59 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
             if (ngx_output_chain_as_is(ctx, ctx->in->buf)) {
 
-            	/* move the chain link to the output chain */
+                /* move the chain link to the output chain */
 
-            	/*
-            	 * 如果当前ctx->in->buf可以直接发送出去,那么就直接把当前链表项in追加到out链的尾部
-            	 *
-            	 * 可以直接发送有两种情况
-            	 * 		一种是buf在内存中
-            	 * 		另一种是buf在file中,但是支持sendfile方式,并且没有开启directio
-            	 */
+                /*
+                 * 如果当前ctx->in->buf可以直接发送出去,那么就直接把当前链表项in追加到out链的尾部
+                 *
+                 * 可以直接发送有两种情况
+                 *    一种是buf在内存中
+                 *    另一种是buf在file中,但是支持sendfile方式,并且没有开启directio
+                 */
                 cl = ctx->in;
                 // 链表指向下一个链表项
                 ctx->in = cl->next;
 
                 /*
                  * 语句 *last_out = cl 执行完后内存结构如下:
-            	 *    last_out
-				 * 		-----
-				 * 		| * |
-				 * 		-----
-				 *		   \out
-				 *		   -----
-				 *		   | * |
-				 *		   -----
-				 *		   	  \cl
-				 *		   	 -----
-				 *		   	 | * |
-				 *		   	 -----
+                 *    last_out
+                 *      -----
+                 *      | * |
+                 *      -----
+                 *         \out
+                 *         -----
+                 *         | * |
+                 *         -----
+                 *            \cl
+                 *           -----
+                 *           | * |
+                 *           -----
                  */
                 *last_out = cl;
 
                 /*
-				 * 语句 last_out = &cl->next 执行完后内存结构如下:
-				 *		    out
-				 *		   -----
-				 *		   | * |
-				 *		   -----
-				 *		   	  \cl		last_out|&cl->next
-				 *		   	 -----			-----
-				 *		   	 | * |			| * |
-				 *		   	 -----			-----
-				 *			   \			/
-				 *		   	 --------------/-
-				 *		   	 | *buf | *next |
-				 *		   	 ----------------
-				 *		   	 			 \ cl->next
-				 *		   	 			 ---------------
-				 *		   	 			 | ngx_chain_t |
-				 *		   	 			 ---------------
-				 *
-				 * 从这个图就可以看出last_out始终指向的位置,就是out链表尾部链表项的next变量的地址
-				 * 如此反复就可以把在ctx->in中的链表项追加到out中
-				 *
-				 */
+                 * 语句 last_out = &cl->next 执行完后内存结构如下:
+                 *          out
+                 *         -----
+                 *         | * |
+                 *         -----
+                 *            \cl       last_out|&cl->next
+                 *           -----          -----
+                 *           | * |          | * |
+                 *           -----          -----
+                 *              \           /
+                 *           --------------/-
+                 *           | *buf | *next |
+                 *           ----------------
+                 *                        \ cl->next
+                 *                       ---------------
+                 *                       | ngx_chain_t |
+                 *                       ---------------
+                 *
+                 * 从这个图就可以看出last_out始终指向的位置,就是out链表尾部链表项的next变量的地址
+                 * 如此反复就可以把在ctx->in中的链表项追加到out中
+                 *
+                 */
                 last_out = &cl->next;
                 cl->next = NULL;
 
@@ -282,12 +282,12 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
             if (ctx->buf == NULL) {
 
-            	/*
-            	 * 走到这里说明需要进行数据拷贝了,拷贝之前需要先创建一个临时buf,大小以bsize为参考
-            	 *
-            	 * bsize是ctx->in->buf中实际使用的缓存大小
-            	 *
-            	 */
+                /*
+                 * 走到这里说明需要进行数据拷贝了,拷贝之前需要先创建一个临时buf,大小以bsize为参考
+                 *
+                 * bsize是ctx->in->buf中实际使用的缓存大小
+                 *
+                 */
                 rc = ngx_output_chain_align_file_buf(ctx, bsize);
 
                 if (rc == NGX_ERROR) {
@@ -300,12 +300,12 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
                         /* get the free buf */
 
-                    	/*
-                    	 * 从ctx->free中获取一个buf
-                    	 *
-                    	 * ctx->free的作用是重新利用free中的buf,buf对应的chain会被释放到ctx->pool中去
-                    	 * 所以当分配buf不成功的时候会试着从ctx->free中获取
-                    	 */
+                        /*
+                         * 从ctx->free中获取一个buf
+                         *
+                         * ctx->free的作用是重新利用free中的buf,buf对应的chain会被释放到ctx->pool中去
+                         * 所以当分配buf不成功的时候会试着从ctx->free中获取
+                         */
 
                         cl = ctx->free;
                         ctx->buf = cl->buf;
@@ -318,10 +318,10 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
                     } else if (out || ctx->allocated == ctx->bufs.num) {
 
-                    	/*
-                    	 * 如果实际已经创建的buf达到了我们配置的个数(ctx->bufs.num),就不再创建新的buf而是等数据
-                    	 * 输出完毕后使用原来分配的buf(ctx->free)
-                    	 */
+                        /*
+                         * 如果实际已经创建的buf达到了我们配置的个数(ctx->bufs.num),就不再创建新的buf而是等数据
+                         * 输出完毕后使用原来分配的buf(ctx->free)
+                         */
                         break;
 
                         /*
@@ -343,7 +343,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
              * 如果ctx->in->buf中的数据在文件中,并且开启redirectio,则文件中的数据会被拷贝到ctx->buf中
              *
              * 如果ctx->in->buf中的数据在文件中,并且支持sendfile,则不发生实际拷贝,只是把buf中的文件偏移量赋值给ctx->buf
-             * 	(貌似这种情况会被上面的if (ngx_output_chain_as_is(ctx, ctx->in->buf))逻辑给截胡)
+             *  (貌似这种情况会被上面的if (ngx_output_chain_as_is(ctx, ctx->in->buf))逻辑给截胡)
              *
              * 如果ctx->in中的数据大于ctx->buf的承受能力,那么ctx->in中的数据不会被一次拷贝完,需要后续继续拷贝
              *
@@ -366,13 +366,13 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
             if (ngx_buf_size(ctx->in->buf) == 0) {
 
-            	/*
-            	 * 如果ctx->in->buf完全处理完毕后就让ctx->in链表指向下一个链表项
-            	 *
-            	 * 举一个buf不会一次处理完毕的情况:
-            	 *   假设buf中的数据在文件中,并且数据非常大,并且超过了ctx->bufs中指定的大小,那么一个ctx->in->buf
-            	 *   就会被拆分成多个buf而被追加到out链表中
-            	 */
+                /*
+                 * 如果ctx->in->buf完全处理完毕后就让ctx->in链表指向下一个链表项
+                 *
+                 * 举一个buf不会一次处理完毕的情况:
+                 *   假设buf中的数据在文件中,并且数据非常大,并且超过了ctx->bufs中指定的大小,那么一个ctx->in->buf
+                 *   就会被拆分成多个buf而被追加到out链表中
+                 */
                 ctx->in = ctx->in->next;
             }
 
@@ -395,29 +395,29 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
         if (out == NULL && last != NGX_NONE) {
 
-        	/*
-        	 * 如果out不等于NULL的话就先调用后面的
-        	 * 		last = ctx->output_filter(ctx->filter_ctx, out);
-        	 * 把out发送出去
-        	 *
-        	 * 如果out等于NULL那么说明已经调用过下面的代码
-        	 * 		last = ctx->output_filter(ctx->filter_ctx, out);
-        	 * 将out中的数据发送到r->out中了,但是buf中的数据没有发送完毕,所以他对应的chain还没有被释放
-        	 * 而是放到了ctx->busy链中,并且这个时候创建的buf已经达到了ctx->bufs.num个,所以并没可用的
-        	 * buf来组装out链
-        	 * 于此同时当前请求的所有响应数据还没有发送完毕,因为调用完ctx->output_filter()方法后,返回
-        	 * 结果并不等于NGX_DONE(last == NGX_DONE)
-        	 *
-        	 * 此时如果ctx->in中还没有没读完的数据,比如ctx->in是一个2G的文件
-        	 * ctx->buf只有128M,也就是说我们要求每次读128M数据到缓存,那么在读的过程中整个ngx肯定是阻塞的,所以output_buffers的设置很关键
-        	 * 后续肯定还需要继续读,所以这里返回NGX_AGAIN
-        	 *
-        	 * 这里得出一个小结论,ngx使用我们指定的ctx->bufs缓存个数和大小来发送数据,也就是说不关要发送
-        	 * 给客户端的数据有多大,ngx最多一次发送ctx->bufs多个数据,当没有闲置的buf的时候就让给别的事件
-        	 *
-        	 * 只有ctx->bufs被完全耗尽的时候才会进来,所以对于小的响应数据,比如100个字节和小的bufs,比如1个buf,每个buf20个字节
-        	 * 除非网络拥堵的连20个字节都没有发送完毕,否则是不会进来这里的
-        	 */
+            /*
+             * 如果out不等于NULL的话就先调用后面的
+             *    last = ctx->output_filter(ctx->filter_ctx, out);
+             * 把out发送出去
+             *
+             * 如果out等于NULL那么说明已经调用过下面的代码
+             *    last = ctx->output_filter(ctx->filter_ctx, out);
+             * 将out中的数据发送到r->out中了,但是buf中的数据没有发送完毕,所以他对应的chain还没有被释放
+             * 而是放到了ctx->busy链中,并且这个时候创建的buf已经达到了ctx->bufs.num个,所以并没可用的
+             * buf来组装out链
+             * 于此同时当前请求的所有响应数据还没有发送完毕,因为调用完ctx->output_filter()方法后,返回
+             * 结果并不等于NGX_DONE(last == NGX_DONE)
+             *
+             * 此时如果ctx->in中还没有没读完的数据,比如ctx->in是一个2G的文件
+             * ctx->buf只有128M,也就是说我们要求每次读128M数据到缓存,那么在读的过程中整个ngx肯定是阻塞的,所以output_buffers的设置很关键
+             * 后续肯定还需要继续读,所以这里返回NGX_AGAIN
+             *
+             * 这里得出一个小结论,ngx使用我们指定的ctx->bufs缓存个数和大小来发送数据,也就是说不关要发送
+             * 给客户端的数据有多大,ngx最多一次发送ctx->bufs多个数据,当没有闲置的buf的时候就让给别的事件
+             *
+             * 只有ctx->bufs被完全耗尽的时候才会进来,所以对于小的响应数据,比如100个字节和小的bufs,比如1个buf,每个buf20个字节
+             * 除非网络拥堵的连20个字节都没有发送完毕,否则是不会进来这里的
+             */
             if (ctx->in) {
                 return NGX_AGAIN;
             }
@@ -439,11 +439,11 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
         last = ctx->output_filter(ctx->filter_ctx, out);
 
         if (last == NGX_ERROR || last == NGX_DONE) {
-        	/*
-        	 * NGX_DONE代表?
-        	 *
-        	 * TODO 什么情况会进这里
-        	 */
+            /*
+             * NGX_DONE代表?
+             *
+             * TODO 什么情况会进这里
+             */
 
             return last;
         }
@@ -469,12 +469,12 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
  * linux中的aio需要开启directio
  *
  * 返回1表示可以把数据直接发送出去,不需要拷贝该buf数据:
- * 	  如果buf中的数据在内存中则使用ngx_write()方法发送
- * 	  如果buf中的数据在文件中(buf->in_file==1)则使用ngx_linux_sendfile()方法发送出去
+ *    如果buf中的数据在内存中则使用ngx_write()方法发送
+ *    如果buf中的数据在文件中(buf->in_file==1)则使用ngx_linux_sendfile()方法发送出去
  *
  * 返回0则表示数据还在磁盘文件内,需要把磁盘中的数据读取到内存才能发出去:
- * 	  如果file有directio标记则并且开启了aio则使用aio读文件
- * 	  如果没有则就只能用传统的方式把数据读到内存(比如pread方法)
+ *    如果file有directio标记则并且开启了aio则使用aio读文件
+ *    如果没有则就只能用传统的方式把数据读到内存(比如pread方法)
  *
  */
 static ngx_inline ngx_int_t
@@ -500,9 +500,9 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
      *
      */
     if (buf->in_file && buf->file->directio) {
-    	/*
-    	 * buf数据在文件中,并且开启了directio,则需要把文件数据读到内存才能发出去
-    	 */
+        /*
+         * buf数据在文件中,并且开启了directio,则需要把文件数据读到内存才能发出去
+         */
         return 0;
     }
 
@@ -517,22 +517,22 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
 #endif
 
     if (!sendfile) {
-    	/*
-		 * 当前不支持sendfile系统调用,或者没有开启sendfile指令
-		 */
+        /*
+         * 当前不支持sendfile系统调用,或者没有开启sendfile指令
+         */
 
-    	/*
-    	 * #define ngx_buf_in_memory(b)        (b->temporary || b->memory || b->mmap)
-    	 * 检查是否在内存中
-    	 */
+        /*
+         * #define ngx_buf_in_memory(b)        (b->temporary || b->memory || b->mmap)
+         * 检查是否在内存中
+         */
         if (!ngx_buf_in_memory(buf)) {
 
-        	/*
-        	 * 如果当前请求不支持sendfile系统调用,或者没有开启sendfile指令,
-        	 * 并且当前buf缓存的数据不在内存中(那就是buf->in_file==1),并且也没有开启buf->file->directio
-        	 * 那么说明这个buf不能使用sendfile直接发送出去,也不能使用aio的方式将文件读到内存,需要用传统的方式读文件到内存
-        	 * 然后再发
-        	 */
+            /*
+             * 如果当前请求不支持sendfile系统调用,或者没有开启sendfile指令,
+             * 并且当前buf缓存的数据不在内存中(那就是buf->in_file==1),并且也没有开启buf->file->directio
+             * 那么说明这个buf不能使用sendfile直接发送出去,也不能使用aio的方式将文件读到内存,需要用传统的方式读文件到内存
+             * 然后再发
+             */
             return 0;
         }
 
@@ -550,20 +550,20 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
      */
 
     if (ctx->need_in_memory && !ngx_buf_in_memory(buf)) {
-    	/*
-    	 * 走到这里说明当前支持sendfile,并且数据也不在内存中,但是我们期望他在内存中,所以这里
-    	 * 返回0,表示需要把buf中的数据拷贝到内存中去
-    	 *
-    	 * TODO 具体使用这块逻辑的目的后续看
-    	 */
+        /*
+         * 走到这里说明当前支持sendfile,并且数据也不在内存中,但是我们期望他在内存中,所以这里
+         * 返回0,表示需要把buf中的数据拷贝到内存中去
+         *
+         * TODO 具体使用这块逻辑的目的后续看
+         */
         return 0;
     }
 
     if (ctx->need_in_temp && (buf->memory || buf->mmap)) {
 
-    	/*
-    	 * 和ctx->need_in_memory的逻辑相似
-    	 */
+        /*
+         * 和ctx->need_in_memory的逻辑相似
+         */
         return 0;
     }
 
@@ -681,9 +681,9 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
     if (in->file == NULL || !in->file->directio) {
 
-    	/*
-		 * 因为一般情况我们很少开启directio所以大部分情况会走这段逻辑
-		 */
+        /*
+         * 因为一般情况我们很少开启directio所以大部分情况会走这段逻辑
+         */
         return NGX_DECLINED;
     }
 
@@ -692,8 +692,8 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
      *
      * 所以这里对ctx->directio类型的内存分配和,ngx_output_chain_get_buf()方法中对ctx->directio类型
      * 的内存分配的对齐方式是不一样的
-     * 	  一个使用ngx_create_temp_buf(pool, size)方法分配
-     * 	  一个使用ngx_pmemalign(pool,size,ctx->alignment)方法分配
+     *       一个使用ngx_create_temp_buf(pool, size)方法分配
+     *       一个使用ngx_pmemalign(pool,size,ctx->alignment)方法分配
      * 第二种用的是directio方式,linux对这种方式要求对数据时,用于存放磁盘中数据的内存地址要按照pagesize倍数对齐
      */
 
@@ -722,19 +722,19 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
     if (size == 0) {
 
-    	/*
-    	 * 余数等于零说明in->file_pos的值是ctx->alignment的倍数
-    	 */
+        /*
+         * 余数等于零说明in->file_pos的值是ctx->alignment的倍数
+         */
 
         if (bsize >= (off_t) ctx->bufs.size) {
 
-        	/*
-        	 * 只有当本次要读取的文件中的字节数大于等于指定的缓存的时候才会真正开启directio,这时才有可能读取到pagesize
-        	 * 倍数的数据(ctx->bufs.size需要设置为pagesize的倍数,而该值的单位一般是4096字节)
-        	 * (这里不会ctx->unaligned标记为1,因为实际上是对齐的,用指定的buf读取文件数据就可以)
-        	 *
-        	 * 这里直接返回的话,后续的方法会按照ctx->bufs.size的大小来创建缓存或者从ctx->free中获取闲置的buf
-        	 */
+            /*
+             * 只有当本次要读取的文件中的字节数大于等于指定的缓存的时候才会真正开启directio,这时才有可能读取到pagesize
+             * 倍数的数据(ctx->bufs.size需要设置为pagesize的倍数,而该值的单位一般是4096字节)
+             * (这里不会ctx->unaligned标记为1,因为实际上是对齐的,用指定的buf读取文件数据就可以)
+             *
+             * 这里直接返回的话,后续的方法会按照ctx->bufs.size的大小来创建缓存或者从ctx->free中获取闲置的buf
+             */
             return NGX_DECLINED;
         }
 
@@ -748,18 +748,18 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
     } else {
 
-    	/*
-    	 * 余数不等于零说明in->file_pos的值不是ctx->alignment的倍数,也就是没有对齐文件地址
-    	 * 那就计算出还剩多少个字节就对齐了
-    	 */
+        /*
+         * 余数不等于零说明in->file_pos的值不是ctx->alignment的倍数,也就是没有对齐文件地址
+         * 那就计算出还剩多少个字节就对齐了
+         */
         size = (size_t) ctx->alignment - size;
 
         if ((off_t) size > bsize) {
 
-        	/*
-        	 * 如果剩下的对齐个数要大于本次要从文件中读取的字节个数,那么就使用本次实际要读字节个数作为缓存大小
-        	 * (ngx真是一点都不想浪费内存啊)
-        	 */
+            /*
+             * 如果剩下的对齐个数要大于本次要从文件中读取的字节个数,那么就使用本次实际要读字节个数作为缓存大小
+             * (ngx真是一点都不想浪费内存啊)
+             */
             size = (size_t) bsize;
         }
     }
@@ -799,7 +799,7 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
 /*
  * 创建一个ngx_buf_t并为其分配内存,以bsize为参考来分配
- * 		ctx->bufs.size <= bsize <= ctx->bufs.size * 1.25
+ *    ctx->bufs.size <= bsize <= ctx->bufs.size * 1.25
  *
  *
  */
@@ -818,11 +818,11 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     if (in->last_in_chain) {
 
         if (bsize < (off_t) size) {
-        	/*
-			 * 如果缓存in在当前链表中位于最后一个链表项,并且要分配的内存比配置的ctx->bufs.size要小,并且未开启
-			 * directio,那么就是用bsize来为ctx->buf分配内存大小
-			 *
-			 */
+            /*
+             * 如果缓存in在当前链表中位于最后一个链表项,并且要分配的内存比配置的ctx->bufs.size要小,并且未开启
+             * directio,那么就是用bsize来为ctx->buf分配内存大小
+             *
+             */
 
             /*
              * allocate a small temp buf for a small last buf
@@ -836,11 +836,11 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
                    && ctx->bufs.num == 1
                    && (bsize < (off_t) (size + size / 4)))
         {
-        	/*
-        	 * 如果缓存in在当前链表中位于最后一个链表项,并且未开启directio,并且我们配置最多使用一个buf来处理数据,并且
-        	 * 要分配的内存我们设置的buf的大小的1.25倍,那么我们就直接用bsize来分配buf大小,也就是说buf大小可以超25%
-        	 *
-        	 */
+            /*
+             * 如果缓存in在当前链表中位于最后一个链表项,并且未开启directio,并且我们配置最多使用一个buf来处理数据,并且
+             * 要分配的内存我们设置的buf的大小的1.25倍,那么我们就直接用bsize来分配buf大小,也就是说buf大小可以超25%
+             *
+             */
 
             /*
              * allocate a temp buf that equals to a last buf,
@@ -866,10 +866,10 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
          * userland buffer direct usage conjunctly with directio
          */
 
-    	/*
-    	 * 如果开启directio,那么ngx会直接跟磁盘打交道不走page cache,所以这里就要自己考虑内存地址和磁盘
-    	 * 块对齐的行为
-    	 */
+        /*
+         * 如果开启directio,那么ngx会直接跟磁盘打交道不走page cache,所以这里就要自己考虑内存地址和磁盘
+         * 块对齐的行为
+         */
 
         b->start = ngx_pmemalign(ctx->pool, size, (size_t) ctx->alignment);
         if (b->start == NULL) {
@@ -878,9 +878,9 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
     } else {
 
-    	/*
-    	 * 如果没有开启directio则表明ngx不会绕过内存直接跟磁盘打交道,直接使用ngx默认对齐方式
-    	 */
+        /*
+         * 如果没有开启directio则表明ngx不会绕过内存直接跟磁盘打交道,直接使用ngx默认对齐方式
+         */
 
         b->start = ngx_palloc(ctx->pool, size);
         if (b->start == NULL) {
@@ -947,10 +947,10 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
         if (src->in_file) {
 
             if (sendfile) {
-            	/*
-            	 * 如果当前buf(src)数据在文件中,并且ngx支持sendfile方法,那么就把文件的数据偏移量赋值给新的buf(dst)
-            	 *
-            	 */
+                /*
+                 * 如果当前buf(src)数据在文件中,并且ngx支持sendfile方法,那么就把文件的数据偏移量赋值给新的buf(dst)
+                 *
+                 */
 
                 dst->in_file = 1;
                 dst->file = src->file;
@@ -958,11 +958,11 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
                 dst->file_last = src->file_pos + size;
 
             } else {
-            	/*
-            	 * 如果当前buf(src)数据在文件中,但是ngx不支持sendfile方法,那么就把新buf(dst)中的in_file标志设置为0,
-            	 * 并在后面是用ngx_read_file()或ngx_file_aio_read()方法将数据读到新buf(dst)中
-            	 *
-            	 */
+                /*
+                 * 如果当前buf(src)数据在文件中,但是ngx不支持sendfile方法,那么就把新buf(dst)中的in_file标志设置为0,
+                 * 并在后面是用ngx_read_file()或ngx_file_aio_read()方法将数据读到新buf(dst)中
+                 *
+                 */
 
                 dst->in_file = 0;
             }
@@ -984,9 +984,9 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 #if (NGX_HAVE_ALIGNED_DIRECTIO) // Linux有这个标记,Mac没有
 
         if (ctx->unaligned) {
-        	/*
-        	 * 文件开始地址buf->file_pos没有对齐,所以关闭directio模式
-        	 */
+            /*
+             * 文件开始地址buf->file_pos没有对齐,所以关闭directio模式
+             */
             if (ngx_directio_off(src->file->fd) == NGX_FILE_ERROR) {
                 ngx_log_error(NGX_LOG_ALERT, ctx->pool->log, ngx_errno,
                               ngx_directio_off_n " \"%s\" failed",
@@ -998,13 +998,13 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 
 #if (NGX_HAVE_FILE_AIO)
         if (ctx->aio_handler) {
-        	/*
-        	 * aio逻辑
-        	 */
+            /*
+             * aio逻辑
+             */
 
-        	/*
-        	 * 如果支持并开启aio会走该逻辑,但是如果没有打开redirectio,那么最终还是会用ngx_read_file()方法去读数据
-        	 */
+            /*
+             * 如果支持并开启aio会走该逻辑,但是如果没有打开redirectio,那么最终还是会用ngx_read_file()方法去读数据
+             */
             n = ngx_file_aio_read(src->file, dst->pos, (size_t) size,
                                   src->file_pos, ctx->pool);
             if (n == NGX_AGAIN) {
@@ -1016,9 +1016,9 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 #endif
 #if (NGX_THREADS)
         if (src->file->thread_handler) {
-        	/*
-        	 * 非aio逻辑,但支持多线程读取
-        	 */
+            /*
+             * 非aio逻辑,但支持多线程读取
+             */
 
             n = ngx_thread_read(&ctx->thread_task, src->file, dst->pos,
                                 (size_t) size, src->file_pos, ctx->pool);
@@ -1030,17 +1030,17 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
         } else
 #endif
         {
-        	/*
-        	 * 非aio逻辑,不支持多线程读取
-        	 *
-        	 * 将源文件src中的数据拷贝到目标dst中
-        	 *
-        	 * 如果开启redirectio但没有开启aio,则使用这个方法读文件数据
-        	 *
-        	 * 如果开启了aio但是没有开启redirectio,最终还是会使用ngx_read_file()方法去读文件数据
-        	 * 只不过触发ngx_read_file()方法的调用用的是前面的ngx_file_aio_read()方法
-        	 *
-        	 */
+            /*
+             * 非aio逻辑,不支持多线程读取
+             *
+             * 将源文件src中的数据拷贝到目标dst中
+             *
+             * 如果开启redirectio但没有开启aio,则使用这个方法读文件数据
+             *
+             * 如果开启了aio但是没有开启redirectio,最终还是会使用ngx_read_file()方法去读文件数据
+             * 只不过触发ngx_read_file()方法的调用用的是前面的ngx_file_aio_read()方法
+             *
+             */
             n = ngx_read_file(src->file, dst->pos, (size_t) size,
                               src->file_pos);
         }
@@ -1048,10 +1048,10 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 #if (NGX_HAVE_ALIGNED_DIRECTIO) // linux会有这个标志,Mac没有
 
         if (ctx->unaligned) {
-        	 /*
-        	  * 从文件读取完数据后重新开启directio模式,并且ctx->unaligned设置为对齐模式,后续逻辑会调用
-        	  * ngx_output_chain_align_file_buf()方法来确定是否重置ctx->unaligned标记
-			  */
+             /*
+              * 从文件读取完数据后重新开启directio模式,并且ctx->unaligned设置为对齐模式,后续逻辑会调用
+              * ngx_output_chain_align_file_buf()方法来确定是否重置ctx->unaligned标记
+              */
             ngx_err_t  err;
 
             err = ngx_errno;

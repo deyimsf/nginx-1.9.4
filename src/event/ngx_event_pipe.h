@@ -23,7 +23,7 @@ typedef ngx_int_t (*ngx_event_pipe_output_filter_pt)(void *data,
 
 
 struct ngx_event_pipe_s {
-	/* 上游链路,比如tomcat服务器 */
+    /* 上游链路,比如tomcat服务器 */
     ngx_connection_t  *upstream;
     /* 下游链路,比如客户端的浏览器*/
     ngx_connection_t  *downstream;
@@ -38,24 +38,24 @@ struct ngx_event_pipe_s {
     ngx_chain_t       *in;
     /*
      * 如果cl是链表in的最后一个链表项,那么这个字段指向cl->next这个变量的地址
-     *             in	     last_in
+     *             in        last_in
      *          ---------     -----
      *          | *next |     | * |
-     *			---------     -----
-     *				  \cl    /
-     *				  ------/--
-     *				  | *next |
-     *				  ---------
-     *				  	 \
-     *				  	-------
-     *				  	| xxx |
-     *				  	-------
+     *          ---------     -----
+     *                \cl    /
+     *                ------/--
+     *                | *next |
+     *                ---------
+     *                   \
+     *                  -------
+     *                  | xxx |
+     *                  -------
      *
      * 此时last_in中的值就是cl->next这个变量的地址
      * cl->next这个变量的地址加*就代表这个变量指向的内容xxx,如果我们要把xxx该为yyy
      * 那么以下两个操作等价:
-     * 	 cl->next = yyy
-     * 	 *last_in = yyy
+     *    cl->next = yyy
+     *    *last_in = yyy
      *
      */
     ngx_chain_t      **last_in;
@@ -91,7 +91,7 @@ struct ngx_event_pipe_s {
 
     /*
      * 当开启buffering时输出数据使用的方法,目前在ngx_http_upstream_send_response()方法中设置
-     * 	 p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
+     *      p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
      * 通过启动http的过滤器来输出数据
      */
     ngx_event_pipe_output_filter_pt   output_filter;
@@ -136,12 +136,12 @@ struct ngx_event_pipe_s {
     /*
      * 用来存放先前读到的数据链,在upstream中代表的是upstream中的buffer字段,比如在ngx_http_upstream_send_response()
      * 方法中会有如下设置:
-     * 		p->preread_bufs->buf = &u->buffer;
+     *     p->preread_bufs->buf = &u->buffer;
      */
     ngx_chain_t       *preread_bufs;
     /*
      * 数据链preread_bufs的数据大小,比如在ngx_http_upstream_send_response()方法中会有如下设置
-     * 		p->preread_size = u->buffer.last - u->buffer.pos;
+     *     p->preread_size = u->buffer.last - u->buffer.pos;
      */
     size_t             preread_size;
     ngx_buf_t         *buf_to_file;

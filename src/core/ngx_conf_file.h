@@ -75,8 +75,8 @@
 
 /*
  * ngx主框架只关心两种模块类型:
- * 	NGX_CORE_MODULE: 核心模块,有/src/core/ngx_conf_file.c/ngx_init_cycle方法启动
- *  NGX_CONF_MODULE: 解析配置文件的模块,有ngx_conf_parse方法(在ngx_init_cycle方法中被调用)启动
+ *    NGX_CORE_MODULE: 核心模块,有/src/core/ngx_conf_file.c/ngx_init_cycle方法启动
+ *    NGX_CONF_MODULE: 解析配置文件的模块,有ngx_conf_parse方法(在ngx_init_cycle方法中被调用)启动
  */
 #define NGX_CORE_MODULE      0x45524F43  /* "CORE" */
 #define NGX_CONF_MODULE      0x464E4F43  /* "CONF" */
@@ -86,11 +86,15 @@
 
 
 struct ngx_command_s {
-	// 命令名字
+    /*
+     * 命令名字
+     */
     ngx_str_t             name;
 
-    // 命令类型,可以指定当前指令所属的区块(如main、http{}、server{}、upstream{}、server_if{}、location_if{}等)
-    // 还可以指定命令的参数个数(NGX_CONF_NOARGS、NGX_CONF_TAKE1)等
+    /*
+     * 命令类型,可以指定当前指令所属的区块(如main、http{}、server{}、upstream{}、server_if{}、location_if{}等)
+     * 还可以指定命令的参数个数(NGX_CONF_NOARGS、NGX_CONF_TAKE1)等
+     */
     ngx_uint_t            type;
 
     /*
@@ -98,12 +102,12 @@ struct ngx_command_s {
      * *cf: 可以理解为指令配置信息上下文,包含了指令名和指令入参
      * *cmd: 当前指令的定义信息
      * *conf: 当前指令所在模块的配置信息结构体,实际值依赖于下面的conf值如果conf有值,并且值是NGX_HTTP_LOC_CONF_OFFSET,
-     * 		  那么conf就代表该指令所在模块的oc级别的配置结构体信息,比如一个模块的loc级别的结构体如下:
-     * 		  		struct myhttp_loc_conf_s {
-     *					int a;
-     *					int b;
-     * 		  		}
-     *		  那么根据配置,在调用该方法的时候conf就是指向myhttp_loc_conf_s结构体的指针。
+     *       那么conf就代表该指令所在模块的oc级别的配置结构体信息,比如一个模块的loc级别的结构体如下:
+     *            struct myhttp_loc_conf_s {
+     *                int a;
+     *                int b;
+     *            }
+     *       那么根据配置,在调用该方法的时候conf就是指向myhttp_loc_conf_s结构体的指针。
      */
     char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
@@ -121,15 +125,15 @@ struct ngx_command_s {
      * 某个字段在当前模块的配置信息结构体中的偏移量,和上面的conf配合使用,比如conf是NGX_HTTP_LOC_CONF_OFFSET,
      * offset是offsetof(myhttp_loc_conf_s, b),那么我们在该指令的回调方法 set 中就可以利用这个偏移量获取b这
      * 个变量的地址,比如:
-     *		char *
-     *		myhttp_conf_set_p(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
-     *			// 将myhttp_loc_conf_s对象结构体用一个指针表示
-     *			char	*p = conf;
+     *      char *
+     *      myhttp_conf_set_p(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
+     *          // 将myhttp_loc_conf_s对象结构体用一个指针表示
+     *          char   *p = conf;
      *
-     *			int		*b;
-     *			// 利用offset字段就可以取出b这个字段的指针
-     *			b = (int *) (p + cmd->offset);
-     *		}
+     *          int    *b;
+     *          // 利用offset字段就可以取出b这个字段的指针
+     *          b = (int *) (p + cmd->offset);
+     *      }
      */
     ngx_uint_t            offset;
 
@@ -168,21 +172,21 @@ struct ngx_module_s {
      *
      * 比如核心模块是:
      *  typedef struct {
-     *		ngx_str_t          name;
-     *		void               *(*create_conf)(ngx_cycle_t *cycle);
-     *		char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
-	 *	} ngx_core_module_t;
-	 *
-	 * 比如事件模块是:
-	 * 	typedef struct {
-     *		ngx_str_t            *name;
-	 *
-     *		void                 *(*create_conf)(ngx_cycle_t *cycle);
-     *		char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+     *      ngx_str_t          name;
+     *      void               *(*create_conf)(ngx_cycle_t *cycle);
+     *      char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+     *  } ngx_core_module_t;
      *
-     *		// 实现该模块必须定义ngx_event_actions_t中规定的10个抽象方法
-     *		ngx_event_actions_t     actions;
-	 *	} ngx_event_module_t;
+     * 比如事件模块是:
+     *  typedef struct {
+     *      ngx_str_t            *name;
+     *
+     *      void                 *(*create_conf)(ngx_cycle_t *cycle);
+     *      char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+     *
+     *      // 实现该模块必须定义ngx_event_actions_t中规定的10个抽象方法
+     *      ngx_event_actions_t     actions;
+     *  } ngx_event_module_t;
      */
     void                 *ctx;
     ngx_command_t        *commands;
@@ -218,7 +222,7 @@ struct ngx_module_s {
  * 核心模块的上下文定义
  */
 typedef struct {
-	// 核心模块的名字
+    // 核心模块的名字
     ngx_str_t             name;
     void               *(*create_conf)(ngx_cycle_t *cycle);
     // *conf是当前模块配置信息结构体指针(比如ngx_core_conf_t)
@@ -227,7 +231,7 @@ typedef struct {
 
 
 typedef struct {
-	// 表示的文件
+    // 表示的文件
     ngx_file_t            file;
     // 文件内容缓冲区
     ngx_buf_t            *buffer;
@@ -277,17 +281,17 @@ struct ngx_conf_s {
      *
      * 命令类型:
      * NGX_MAIN_CONF:
-     *		代表当前正在main块下解析指令
+     *      代表当前正在main块下解析指令
      * NGX_EVENT_CONF:
-     * 		代表events{}下的指令
+     *      代表events{}下的指令
      * NGX_HTTP_MAIN_CONF:
-     *		代表当前正在http{}块下解析指令
+     *      代表当前正在http{}块下解析指令
      * NGX_HTTP_SRV_CONF:
-     *		代表当前正在server{}块下解析指令
+     *      代表当前正在server{}块下解析指令
      * NGX_HTTP_SIF_CONF:
-     *		代表当前正在server{}块下的if{}中解析指令
+     *      代表当前正在server{}块下的if{}中解析指令
      * NGX_HTTP_LIF_CONF
-     *		代表当前正在loction{}块下的if{}中解析指令
+     *      代表当前正在loction{}块下的if{}中解析指令
      *
      */
     ngx_uint_t            cmd_type;
