@@ -33,6 +33,9 @@ static void ngx_http_script_full_name_code(ngx_http_script_engine_t *e);
 static uintptr_t ngx_http_script_exit_code = (uintptr_t) NULL;
 
 
+/*
+ * 用来flush复杂变量中的变量值,实际上只是设置相应的标记
+ */
 void
 ngx_http_script_flush_complex_value(ngx_http_request_t *r,
     ngx_http_complex_value_t *val)
@@ -45,6 +48,12 @@ ngx_http_script_flush_complex_value(ngx_http_request_t *r,
         while (*index != (ngx_uint_t) -1) {
 
             if (r->variables[*index].no_cacheable) {
+
+            	/*
+            	 * 如果变量不允许cache
+            	 * 就把变量值的相应字段设置为0
+            	 */
+
                 r->variables[*index].valid = 0;
                 r->variables[*index].not_found = 0;
             }
@@ -90,6 +99,10 @@ ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val,
 
     e.ip = val->lengths;
     e.request = r;
+
+    /*
+     * 表示已经flush过了,实际上只是为变量值设置了对应的标记,以便后续在获取变量的时候直接调用其对应的get_hander()方法
+     */
     e.flushed = 1;
 
     len = 0;
@@ -239,11 +252,12 @@ ngx_http_compile_complex_value(ngx_http_compile_complex_value_t *ccv)
      *
      * flushes里面存放了n个元素,每个元素占sizeof(ngx_uint_t)个字节,假设n是3,则相当于存放了3个整数值
      *
-     * flushes
+     * flushes->elts(对应complex_value->flushes)
      * ----------------------------------------------------------------
      * | sizeof(ngx_uint_t) | sizeof(ngx_uint_t) | sizeof(ngx_uint_t) |
      * ----------------------------------------------------------------
      */
+
     if (ngx_array_init(&flushes, ccv->cf->pool, n, sizeof(ngx_uint_t))
         != NGX_OK)
     {
@@ -1322,6 +1336,26 @@ ngx_http_script_copy_var_code(ngx_http_script_engine_t *e)
     e->ip += sizeof(ngx_http_script_var_code_t);
 
     if (!e->skip) {
+
+    	/*
+    	 * if (ngx_strncmp(v[i].name.data, "arg_", 4) == 0) {
+         *   v[i].get_handler = ngx_http_variable_argument;
+         *   v[i].data = (uintptr_t) &v[i].name;
+         *   v[i].flags = NGX_HTTP_VAR_NOCACHEABLE;
+         *
+         *   continue;
+         * }
+         *
+         * 上面的操作在ngx_http_variables_init_vars()方法中进行,如果ngx中有如下指令
+         *    set $arg_name "ooo";
+         * 那么变量
+         *     $arg_name
+         * 就不走上面的if逻辑,也就是说他就不是动态变量了,如果只是如下形式
+         *    set $a "$arg_name";
+         * 则变量
+         *    $arg_name
+         * 就仍然是动态变量,并且对应的flags是不可缓存,那么后续在获取该变量的时候就会使用上这个标记
+    	 */
 
         if (e->flushed) {
             value = ngx_http_get_indexed_variable(e->request, code->index);

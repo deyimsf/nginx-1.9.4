@@ -192,6 +192,13 @@ typedef struct {
     /* the start of the rewritten arguments */
     u_char                     *args;
 
+    /*
+     * TODO ?
+     * 是否已经flush了？
+     *
+     * 在ngx_http_complex_value()方法中有用到
+     *
+     */
     unsigned                    flushed:1;
     unsigned                    skip:1;
     unsigned                    quote:1;
@@ -353,17 +360,31 @@ typedef struct {
      * 		|  *  |
      * 		-------
      *		    \
-     *		    ---------------
-     *			| ngx_array_t |
-     *			---------------
-     *					\ elts
-     *					---------
-     *					| 9 | 3 |
-     *					---------
+     *   		---------
+   	 *			| 9 | 3 |
+     *			---------
      *
      * 在调用ngx_http_script_add_var_code()方法时设置该字段中的值,一旦在复杂值中发现
      * 一个变量就会调用这个方法
      *
+     * ngx_http_script_flush_complex_value()方法会用到,用来刷新变量值,实际上只是为该字段中的变量值
+     * 设置相应的标记,比如
+     *     index = val->flushes;
+     *
+     *     while (*index != (ngx_uint_t) -1) {
+     *
+     *         if (r->variables[*index].no_cacheable) {
+     *
+     *             r->variables[*index].valid = 0;
+     *             r->variables[*index].not_found = 0;
+     *         }
+     *
+     *         index++;
+     *     }
+     * 此后再获取变量值得时候,无论是调用下面哪个方法,都不会用缓存中的数据
+     *     ngx_http_get_indexed_variable(e->request, code->index);
+     *     ngx_http_get_flushed_variable(e->request, code->index);
+     * 他们都会调用变量值对应的get_handler()方法
      */
     ngx_uint_t                 *flushes;
 
