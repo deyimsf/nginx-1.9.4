@@ -50,8 +50,10 @@ ngx_http_script_flush_complex_value(ngx_http_request_t *r,
             if (r->variables[*index].no_cacheable) {
 
             	/*
-            	 * 如果变量不允许cache
-            	 * 就把变量值的相应字段设置为0
+            	 * 如果变量不允许cache就把变量值的相应字段设置为0
+            	 *
+            	 * 另外因为用set指令定义的变量都没有加NGX_HTTP_VAR_NOCACHEABLE标记,所以set定义
+            	 * 的变量不会走这个逻辑
             	 */
 
                 r->variables[*index].valid = 0;
@@ -633,12 +635,24 @@ ngx_http_script_compile(ngx_http_script_compile_t *sc)
                     || (ch >= '0' && ch <= '9')
                     || ch == '_')
                 {
+                	/*
+                	 * 使用变量的有效字符
+                	 *   A-Z
+                	 *   a-z
+                	 *   0-9
+                	 *   _
+                	 */
+
                     continue;
                 }
 
                 /*
                  * 走到这里说明找出了一个不带话括号的变量值,比如
                  *    "$uri"
+                 *
+                 * 或者是一个非法的变量名，比如
+                 *    "$变量"
+                 * 如果是这种情况的话，该循环就只会执行一次，因此name.len值就一直是0
                  */
                 break;
             }

@@ -1301,6 +1301,9 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     /*
      * 将变量名字添加到cmcf->variables_keys数组中
+     *
+     * 方法入参有NGX_HTTP_VAR_CHANGEABLE标记说明用set定义的变量都是可改变的,另外因为
+     * 该方法没有NGX_HTTP_VAR_NOCACHEABLE入参,所以说明用set定义的变量都是可以缓存的
      */
     v = ngx_http_add_variable(cf, &value[1], NGX_HTTP_VAR_CHANGEABLE);
     if (v == NULL) {

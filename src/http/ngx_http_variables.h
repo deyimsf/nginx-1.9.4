@@ -54,7 +54,9 @@ typedef ngx_int_t (*ngx_http_get_variable_pt) (ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
 
 
+/*该变量可重复设置,也就是说该变量值可变*/
 #define NGX_HTTP_VAR_CHANGEABLE   1
+/*该变量不可缓存(每次都调用get_handler())*/
 #define NGX_HTTP_VAR_NOCACHEABLE  2
 #define NGX_HTTP_VAR_INDEXED      4
 #define NGX_HTTP_VAR_NOHASH       8

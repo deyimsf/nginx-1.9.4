@@ -609,7 +609,7 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
 
 /*
  * 创建一个主请求
- * 创建子请求的方法是/src/http/ngx_http_core_module.c/ngx_http_subrequest.c
+ * 创建子请求的方法是/src/http/ngx_http_core_module.c/ngx_http_subrequest()
  *
  * 该方法执行的时候c->data里存放的是ngx_http_connection_t对象
  */

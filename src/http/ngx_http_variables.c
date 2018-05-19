@@ -564,14 +564,16 @@ ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
 
 
 /*
- * ngx_http_get_variable_index()方法会把对应的set|get_handler都设置为NULL
- * ngx_http_add_variable()方法也会把对应的set|get_handler都设置为NULL
+ * 索引一个变量(ngx_http_variable_t)
  *
  * 将变量的名字添加到cmcf->variables数组中,并返回变量在数组中的下标,如果便令名已经存在则返回原下标
  *
  * 与该方法对应的方法时ngx_http_get_indexed_variable(),它会通过数组下标获取变量值,也就是说在开发过程中
- * 如果我们想通过下标的方式来获取变量值,那么在变量解析的时候,我们需要通过ngx_http_get_variable_index()方法
+ * 如果我们想通过下标的方式来获取变量值,那么在变量解析的时候,我们需要先通过ngx_http_get_variable_index()方法
  * 来获取变量下标,并记住这个下标,然后在实际用的时候就可以通过这个下标直接找到变量了,这个方式比hash查找更快、更高效.
+ *
+ * ngx_http_get_variable_index()方法会把对应的set|get_handler都设置为NULL
+ * ngx_http_add_variable()方法也会把对应的set|get_handler都设置为NULL
  */
 ngx_int_t
 ngx_http_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
@@ -694,8 +696,8 @@ ngx_http_get_indexed_variable(ngx_http_request_t *r, ngx_uint_t index)
 
 
 /*
- * 这个方法会flush哪些不可缓存的变量,也就是说如果这个变量值的no_cacheable字段标记为1,那么在
- * 获取变量的时候无论如果不走缓存,会调用变量的get_handler()方法来获得变量值
+ * 这个方法会flush那些不可缓存的变量,也就是说如果这个变量值的no_cacheable字段标记为1,那么在
+ * 获取变量的时候就不走缓存,会调用变量的get_handler()方法来获得变量值
  */
 ngx_http_variable_value_t *
 ngx_http_get_flushed_variable(ngx_http_request_t *r, ngx_uint_t index)
@@ -2818,6 +2820,7 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
 
                 /*
                  * 加上可索引标记,表示该变量是可索引的
+                 * 也就是说说有在cmcf->variables中的有效的变量都是可索引的,都会带上这个标记
                  */
                 av->flags |= NGX_HTTP_VAR_INDEXED;
                 v[i].flags = av->flags;
