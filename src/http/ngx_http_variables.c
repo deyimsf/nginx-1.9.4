@@ -248,8 +248,13 @@ static ngx_int_t ngx_http_variable_hostname(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_variable_pid(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
+
 static ngx_int_t ngx_http_variable_msec(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
+// 自定义返回毫秒时间
+static ngx_int_t ngx_http_variable_mytime(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data);
+
 static ngx_int_t ngx_http_variable_time_iso8601(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_variable_time_local(ngx_http_request_t *r,
@@ -448,6 +453,9 @@ static ngx_http_variable_t  ngx_http_core_variables[] = {
 
     { ngx_string("msec"), NULL, ngx_http_variable_msec,
       0, NGX_HTTP_VAR_NOCACHEABLE, 0 },
+	// 自定义变量
+	{ ngx_string("mytime"), NULL, ngx_http_variable_mytime,
+	        0, NGX_HTTP_VAR_NOCACHEABLE, 0 },
 
     { ngx_string("time_iso8601"), NULL, ngx_http_variable_time_iso8601,
       0, NGX_HTTP_VAR_NOCACHEABLE, 0 },
@@ -2398,6 +2406,37 @@ ngx_http_variable_msec(ngx_http_request_t *r,
     v->no_cacheable = 0;
     v->not_found = 0;
     v->data = p;
+
+    return NGX_OK;
+}
+
+
+/**
+ * 自定义内置变量
+ */
+static ngx_int_t
+ngx_http_variable_mytime(ngx_http_request_t *r,
+    ngx_http_variable_value_t *v, uintptr_t data)
+{
+    u_char      *p; // 用来存放生成的时间数据
+    struct timeval tv; // 一个时间结构体,其中tv.tv_sec表示秒,tv.tv_usec表示微秒
+    time_t           sec;
+    ngx_uint_t       msec;
+
+    p = ngx_pnalloc(r->pool, NGX_TIME_T_LEN + 6); // 分配内存空间
+    if (p == NULL) {
+        return NGX_ERROR;
+    }
+
+    ngx_gettimeofday(&tv); // 调用系统函数获取时间,结果会放到tv中
+    sec = tv.tv_sec * 1000 * 1000; // 秒乘以1000*1000变微秒
+    msec = sec + tv.tv_usec; // 微秒
+
+    v->len = ngx_sprintf(p, "%M", msec) - p; // 获取的时间数据总长度
+    v->valid = 1;
+    v->no_cacheable = 1; // 不允许缓存变量结果
+    v->not_found = 0;
+    v->data = p; // 时间数据
 
     return NGX_OK;
 }
