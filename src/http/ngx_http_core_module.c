@@ -2751,7 +2751,7 @@ ngx_http_gzip_quantity(u_char *p, u_char *last)
  * args: 子请求的查询参数(querystring)
  * psr: 当前ngx_http_subrequest()方法创建好的子请求对象,是一个值-结果参数(value-result parameters)
  *      说明它既是入参就是出参,最终*psr指向的就是创建好的ngx_http_request_t对象(子请求)
- * ps: 一个结构体,子请求处理完毕后需要回到的方法和一些携带的信息会放在这个结构体中
+ * ps: 一个结构体,子请求处理完毕后需要回调的方法和一些携带的信息会放在这个结构体中
  * flags: TODO 一些标记
  *
  */
