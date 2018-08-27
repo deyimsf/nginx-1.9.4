@@ -67,7 +67,7 @@ ngx_http_script_flush_complex_value(ngx_http_request_t *r,
 
 
 /*
- * 计算出变量值
+ * 计算出变量值(复杂值)
  *
  * 通过r和val计算出val代表的表达式的值,并写到value中
  */
@@ -145,6 +145,7 @@ ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val,
      *                       -----------
      *						 |         |
      *						 -----------
+     * TODO
      */
     e.buf = *value;
 
@@ -175,7 +176,9 @@ ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val,
     }
 
     /*
-     * 再拷贝回来,主要是怕上面的脚本引擎执行完毕后,会改变e.buf中的len和data字段值
+     * TODO
+     * 再拷贝回来,主要是怕上面的脚本引擎执行完毕后,会改变e.buf中的len和data字段值？即使改变了又有什么问题吗？
+     * 难道有潜规则，最终都是以e.buf为准？
      */
     *value = e.buf;
 
@@ -870,8 +873,7 @@ ngx_http_script_init_arrays(ngx_http_script_compile_t *sc)
     }
 
     if (*sc->lengths == NULL) {
-        n = sc->variables * (2 * sizeof(ngx_http_script_copy_code_t)
-                             + sizeof(ngx_http_script_var_code_t))
+        n = sc->variables * (2 * sizeof(ngx_http_script_copy_code_t) + sizeof(ngx_http_script_var_code_t))
             + sizeof(uintptr_t);
 
         *sc->lengths = ngx_array_create(sc->cf->pool, n, 1);
@@ -900,6 +902,9 @@ ngx_http_script_init_arrays(ngx_http_script_compile_t *sc)
 }
 
 
+/**
+ * 根据完成标志(sc->complete_lengths、sc->complete_values)来确定是否为脚本增加结束指令
+ */
 static ngx_int_t
 ngx_http_script_done(ngx_http_script_compile_t *sc)
 {
@@ -2175,6 +2180,11 @@ ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
 
     ngx_memzero(&le, sizeof(ngx_http_script_engine_t));
 
+    /*
+     * 先计算整个变量值需要的长度
+     *   set $a "I am $uri";
+     * 变量值是"I am $uri"
+     */
     le.ip = code->lengths->elts;
     le.line = e->line;
     le.request = e->request;
@@ -2191,6 +2201,9 @@ ngx_http_script_complex_value_code(ngx_http_script_engine_t *e)
         lcode = *(ngx_http_script_len_code_pt *) le.ip;
     }
 
+    /*
+     * 为计算好的变量长度分配内存空间
+     */
     e->buf.len = len;
     e->buf.data = ngx_pnalloc(e->request->pool, len);
     if (e->buf.data == NULL) {

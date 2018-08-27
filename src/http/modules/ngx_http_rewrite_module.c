@@ -12,7 +12,7 @@
  * 该模块涉及了三个阶段
  * 	NGX_HTTP_SERVER_REWRITE_PHASE  负责执行脚本引擎
  * 	NGX_HTTP_REWRITE_PHASE 负责执行脚本引擎
- * 	NGX_HTTP_POST_REWRITE_PHASE 负责阶段流转,继续下一个阶段还是重新config阶段
+ * 	NG/My/workspace/git/nginx-1.9.4/src/http/modules/ngx_http_sub_filter_module.cX_HTTP_POST_REWRITE_PHASE 负责阶段流转,继续下一个阶段还是重新config阶段
  *
  *
  * rewrite指令中的第三个参数会终止该模块的脚本引擎执行,所以该模块任何使用脚本引擎执行的指令都会被终止
@@ -72,6 +72,7 @@ typedef struct {
     /*
      * 表示栈大小(ngx_http_script_engine_t->sp)
      * ngx_http_script_engine_t->sp可以看做是栈
+     * 
      */
     ngx_uint_t    stack_size;
 
@@ -1467,7 +1468,10 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     n = ngx_http_script_variables_count(value);
 
     if (n == 0) {
-    	/* 走这个逻辑说明变量值中没有其他变量 */
+    	/*
+    	 * 走这个逻辑说明变量值中没有其他变量
+    	 *   set $a "I am uri";
+    	 * */
 
         val = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                          sizeof(ngx_http_script_value_code_t));
@@ -1517,7 +1521,7 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
      *    "I am $uri"
      */
     sc.source = value;
-    sc.lengths = &complex->lengths;
+    sc.lengths = &complex->lengths; // 这个是用来计算变量值"I am $uri"长度的，也就是ngx_http_script_complex_value_code_t指令的作用
     sc.values = &lcf->codes;
     /*
      * 复杂变量值中,变量个数
@@ -1531,6 +1535,30 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     if (ngx_http_script_compile(&sc) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
+
+    /*
+     * 假设指令如下:
+     *    set $a "I am $uri";
+     *
+     * 编译完成后lcf->codes大概如下:
+     *    ----------------------------------------
+     *    | ngx_http_script_complex_value_code_t |  ---> ngx_http_script_complex_value_code(),该方法会用complex->lengths中的脚本来计算本指令变量值长度(也负责为e.pos分配内存)
+     *    ----------------------------------------
+     *    | ngx_http_script_copy_code_t |"I am " |  ---> ngx_http_script_copy_code()
+     *    ----------------------------------------
+     *    | ngx_http_script_var_code_t           |  ---> ngx_http_script_copy_var_code()
+     *    ----------------------------------------
+     *
+     * 编译完后complex->lengths大概如下:
+     *    -------------------------------
+     *    | ngx_http_script_copy_code_t |  ---> ngx_http_script_copy_len_code(),计算“I am ”的长度
+     *    -------------------------------
+     *    | ngx_http_script_var_code_t  |  ---> ngx_http_script_copy_var_len_code(),计算"$uri"变量最终长度
+     *    -------------------------------
+     *    |           NULL              |  ---> 一个结束标记
+     *    -------------------------------
+     *
+     */
 
     return NGX_CONF_OK;
 }

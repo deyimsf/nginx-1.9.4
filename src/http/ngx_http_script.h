@@ -17,6 +17,10 @@
  *   ngx_http_compile_complex_value()方法把复杂值编译到ngx_http_complex_value_t结构体中,后续通
  *   过脚本引擎去执行这段脚本就可以了
  *
+ *   ngx_http_complex_value_t *cv
+ *   ngx_str_t     val;
+ *   ngx_http_complex_value(r, cv, &val)这个方法可以从编译好的复杂值对象cv中，把最终结果放到val中
+ *
  *
  * -----------------------------------纯文本复杂值在脚本引擎中使用使用的例子-------------------------
  *【设置复杂值脚本code】
@@ -169,11 +173,40 @@ typedef struct {
      * 可以看到脚本在执行时会先把e->ip强转成约定好的方法,然后执行
 	 */
     u_char                     *ip;
+
+    /*
+     * 对于set指令，会通过ngx_http_script_complex_value_code_t指令的ngx_http_script_complex_value_code()方法来为该指针赋值，
+     * 它实际上是先通过这个指令方法计算出变量值长度n，然后再用下面的代码分配空间:
+     *     e->buf.len = len;
+     *     e->buf.data = ngx_pnalloc(e->request->pool, len);
+     * 然后再把该内存空间地址赋值给pos，代码如下:
+     *     e->pos = e->buf.data
+     * 同时还会用下面的代码为当前指令用到的栈分配空间，代码如下
+     *     e->sp->len = e->buf.len;
+     *     e->sp->data = e->buf.data;
+     *     e->sp++;
+     *
+     *
+     * 对于return指令，会通过ngx_http_complex_value()方法来计算长度并分配空间,该方法原型如下：
+     *     ngx_http_complex_value(ngx_http_request_t *r, ngx_http_complex_value_t *val, ngx_str_t *value)
+     * 复杂值的长度脚本放在val->lengths里面，通过这个脚本就可以计算出return中的指令值,然后通过如下方式来分配内存空间:
+     *    value->len = len;
+     *    value->data = ngx_pnalloc(r->pool, len);
+     * 在然后用下面的方式计算整个复杂值:
+     *    e.ip = val->values;
+     *    e.pos = value->data;
+     *    e.buf = *value;
+     *
+     *    执行脚本(val->values)
+     *
+     *    *value = e.buf;
+     * 然后大功告成
+     */
     u_char                     *pos;
 
     /*
      * 引擎执行过程中携带当前变量值
-     * 相当于基于栈的指令中的栈,ngx_http_rewrite_loc_conf_t->stack_size表示栈大小
+     * 相当于基于栈的指令中的栈,ngx_http_rewrite_loc_conf_t->stack_size表示栈大小,默认是10
      *
      * 假设有如下指令
      *   set $a "I am value";
@@ -186,6 +219,9 @@ typedef struct {
      */
     ngx_http_variable_value_t  *sp;
 
+    /*
+     * ？作用不是太明朗？ TODO
+     */
     ngx_str_t                   buf;
     ngx_str_t                   line;
 
@@ -228,7 +264,7 @@ typedef struct {
 
     /*
      * 数组中存放各个变量在cmcf->variables中的下标,比如set $a $bb$cc
-     * 假设 $bb的下标是1, $cc的下标是2
+     * 假设 $bb的下标是9, $cc的下标是3
      * 那么该字段的值如下:
      * 		flushes
      * 		-------
@@ -326,8 +362,11 @@ typedef struct {
     void                       *main;
 
     unsigned                    compile_args:1;
+    /* 是否完成长度的计算,如何是1，则会在最后加一个脚本技术指令 */
     unsigned                    complete_lengths:1;
+    /* 是否完成值的计算 如何是1，则会在最后加一个脚本技术指令 */
     unsigned                    complete_values:1;
+    /* 结尾要不要加结束字符'\0' */
     unsigned                    zero:1;
     unsigned                    conf_prefix:1;
     unsigned                    root_prefix:1;
@@ -361,7 +400,7 @@ typedef struct {
      * 		-------
      *		    \
      *   		---------
-   	 *			| 9 | 3 |
+   	 *			| 3 | 3 |
      *			---------
      *
      * 在调用ngx_http_script_add_var_code()方法时设置该字段中的值,一旦在复杂值中发现
