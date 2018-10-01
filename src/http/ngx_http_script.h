@@ -394,14 +394,14 @@ typedef struct {
      * 上面的复杂值中存在两个变量,都是uri,那么该数组就顺序存储这两个变量值在ngx中的索引值
      *
      * 数组中存放各个变量在cmcf->variables中的下标
-     * 		flushes
-     * 		-------
-     * 		|  *  |
-     * 		-------
-     *		    \
-     *   		---------
-   	 *			| 3 | 3 |
-     *			---------
+     * 	    flushes
+     * 	    -------
+     * 	    |  *  |
+     * 	    -------
+     *          \
+     *          ---------
+   	 *          | 3 | 3 |
+     *          ---------
      *
      * 在调用ngx_http_script_add_var_code()方法时设置该字段中的值,一旦在复杂值中发现
      * 一个变量就会调用这个方法
@@ -786,9 +786,9 @@ typedef struct {
  *   ngx_http_script_value_code_t
  */
 typedef struct {
-	/*
-	 * 用户处理复杂变量值的脚本函数(如:ngx_http_script_complex_value_code)
-	 */
+   /*
+    * 用户处理复杂变量值的脚本函数(如:ngx_http_script_complex_value_code)
+    */
     ngx_http_script_code_pt     code;
 
     /*

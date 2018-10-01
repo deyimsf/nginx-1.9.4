@@ -98,7 +98,7 @@ struct ngx_command_s {
     ngx_uint_t            type;
 
     /*
-     * 解析到该命令后要执行的方法
+     * 解析到该命令后要执行的方法(由src/core/ngx_conf_file.c/ngx_conf_handler()方法执行)
      * *cf: 可以理解为指令配置信息上下文,包含了指令名和指令入参
      * *cmd: 当前指令的定义信息
      * *conf: 当前指令所在模块的配置信息结构体,实际值依赖于下面的conf值如果conf有值,并且值是NGX_HTTP_LOC_CONF_OFFSET,
