@@ -847,16 +847,15 @@ struct ngx_http_core_loc_conf_s {
      * locations队列排完序后的顺序如下:
      * 	0.在/src/http/ngx_http_core_module.c/ngx_http_core_find_config_phase()阶段方法中匹配location
      *
-	 *  1.=
-	 *  	(精确匹配,终止匹配) | 无修饰符(不终止匹配) | ^~ (和无修饰符相同,但终止匹配)
-	 *      按字符倒序排序。在NGX_HTTP_FIND_CONFIG_PHASE阶段执行匹配工作。
+	 *  1.=(精确匹配,终止匹配) | 无修饰符(不终止匹配) | ^~ (和无修饰符相同,但终止匹配)
+	 *     按字符倒序排序。在NGX_HTTP_FIND_CONFIG_PHASE阶段执行匹配工作。
 	 *
 	 *  2.~* | ~
-	 *      按照在配置文件中的位置排序,终止匹配。在NGX_HTTP_FIND_CONFIG_PHASE阶段执行匹配工作。
+	 *     按照在配置文件中的位置排序,终止匹配。在NGX_HTTP_FIND_CONFIG_PHASE阶段执行匹配工作。
 	 *
 	 *  3.@
-	 *  	内部匹配执行,匹配完后就执行,对应/src/http/ngx_http_core_module.c/ngx_http_named_location()方法
-	 *  	不参与NGX_HTTP_FIND_CONFIG_PHASE阶段的匹配工作。
+	 *     内部匹配执行,匹配完后就执行,对应/src/http/ngx_http_core_module.c/ngx_http_named_location()方法
+	 *     不参与NGX_HTTP_FIND_CONFIG_PHASE阶段的匹配工作。
 	 *
 	 *  4.if () {}
 	 *  	rewirte模块的脚本引擎执行,不参与NGX_HTTP_FIND_CONFIG_PHASE阶段的匹配工作

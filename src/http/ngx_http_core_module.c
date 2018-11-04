@@ -1783,6 +1783,9 @@ ngx_http_core_find_location(ngx_http_request_t *r)
 #endif
 
     // 此时拿到的是server{}下的ngx_http_core_loc_conf_t或者location{}块下的
+    /**
+     * 在下面的find_static_location后，r->loc_conf的值会被改变，而get_module_loc_conf()宏会用到loc_conf中的值
+     */
     pclcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
     // 该方法会根据不同的情况,更改r->loc_conf的值
@@ -1851,7 +1854,7 @@ ngx_http_core_find_location(ngx_http_request_t *r)
 
 /*
  * NGX_OK  0     - exact match 精确匹配(=)
- * NGX_DONE  -4    - auto redirect
+ * NGX_DONE  -4    - auto redirect 表示location结尾是“/”符号, 比如“/a/ {}” 但请求是“/a”
  * NGX_AGAIN  -2  - inclusive match 一般匹配(^~|无修饰符)
  * NGX_DECLINED  -5 - no match 没有匹配成功,这里的没有匹配成功表示没有在子级匹配成功
  */
@@ -1900,8 +1903,8 @@ ngx_http_core_find_static_location(ngx_http_request_t *r,
 
         /*
          * 走到这里表示匹配成功,比如:
-         *      uri = /ab
-         *      node->name = /a
+         *      uri = /a
+         *      node->name = /ab
          */
         if (len > (size_t) node->len) {
 
