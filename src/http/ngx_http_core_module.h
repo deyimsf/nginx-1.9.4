@@ -698,6 +698,34 @@ struct ngx_http_core_loc_conf_s {
      */
     unsigned      noregex:1;
 
+    /**
+     * 用来完成自动重定向规则的一个钩子,如果在解析某个location下的指令时，有指令把该字段设置为1，
+     * 那么，当该location后缀有“/”时，如果对应的请求不带“/”，则nginx会用一个301让其补上一个“/”
+     * 后缀后再请求。
+     *
+     * 这种规则只在【无】【^~】【=】这三种修饰符中出现，因为它是在find_static_location()方法中完成的
+     *
+     * 这个机制在ngx_http_core_find_static_location()方法中体现,用下面代码完成:
+     *       if (len + 1 == (size_t) node->len && node->auto_redirect) {
+     *           r->loc_conf = (node->exact) ? node->exact->loc_conf:     // locaiton = /a/ {}
+     *                                         node->inclusive->loc_conf; // location /a/ {}
+     *           rv = NGX_DONE;
+     *       }
+     * 首先，能走到这里，表示uri的名字和node->name的名字是有重合的，要么是uri的名字子
+     * 包含node->name的名字(比如,uri="/abc",node->name="/ab")，要么是node->name的名字
+     * 包含uri的名字(比如,node->name="/abc",uri="/ab").
+     * 然后如果node->auto_redirect被标记为1，那么表示该node->name的最后一个字符肯定是"/"，
+     * 如果uri的名字的长度加一正好是node->name名字的长度，那就说明uri的名字只比node->name
+     * 少一个"/"符号，至此auto_redirect生效，并返回NGX_DONE，
+     * 然后它的最上层方法ngx_http_core_find_config_phase()
+     *   该方法会根据NGX_DONE标记并通过ngx_http_finalize_request(r, NGX_HTTP_MOVED_PERMANENTLY)方法来结束请求。
+     *   而最后Location响应头中的“/”是通过clcf->name加上的，具体有两种情况:
+     *   1.请求"/a"后没有查询参数，则直接赋值
+     *     r->headers_out.location->value = clcf->name;
+     *   2.请求"/a?name=1"后有查询参数，则如下方式赋值:
+     *     r->headers.out.location->value = clcf->name + "?" + "name=1"
+     *
+     */
     unsigned      auto_redirect:1;
 #if (NGX_HTTP_GZIP)
     unsigned      gzip_disable_msie6:2;
@@ -929,6 +957,9 @@ struct ngx_http_location_tree_node_s {
     ngx_http_core_loc_conf_t        *exact;
     ngx_http_core_loc_conf_t        *inclusive;
 
+    /**
+     * 用来完成自动重定向规则的一个钩子,该值来自于ngx_http_core_loc_conf_t结构体中的同名字段
+     */
     u_char                           auto_redirect;
     u_char                           len;
     u_char                           name[1];
