@@ -1800,6 +1800,8 @@ ngx_http_add_location(ngx_conf_t *cf, ngx_queue_t **locations,
  *  4. if () {} 所有终止匹配都不会终止if
  *
  * 所以基本上ngx把locaiton分成了四种,在这四种locaiton中又分成了三个匹配入口,其中:
+ *   1、2是一个入口,先匹配1中的locaiton,不管有没有匹配到都要继续匹配(^~模式除外)2中
+ *      的locaiton,如果2中的location没有匹配到则回溯到1中的匹配
  *   1、2是一个入口,先匹配2中的location,如果没匹配到再匹配1中的location
  *   3是一个入口,是一个内部匹配,外部用户看不到
  *   4是一个入口,在rewrite模块中用脚本变量引擎触发的,和变量的运行方式一致
