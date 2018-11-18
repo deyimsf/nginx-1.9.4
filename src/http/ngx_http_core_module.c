@@ -1009,6 +1009,10 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
 
+    /**
+     * 如果最终当前请求没有被打上internal标志，但是匹配上的是一个打上internal标记的location，那么直接返回404
+     * 应该没有可能走到这里才对呀？
+     */
     if (!r->internal && clcf->internal) {
         // ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "------------404? %d %d", r->internal,clcf->internal);
 
@@ -3119,6 +3123,10 @@ ngx_http_named_location(ngx_http_request_t *r, ngx_str_t *name)
 
             cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
 
+            /**
+             * 匹配上一个@location后，直接从NGX_HTTP_REWRITE_PHASE阶段开始执行，而该阶段在NGX_HTTP_FIND_CONFIG_PHASE
+             * 之后，所以就不会在重新匹配location了
+             */
             r->phase_handler = cmcf->phase_engine.location_rewrite_index;
 
             r->write_event_handler = ngx_http_core_run_phases;

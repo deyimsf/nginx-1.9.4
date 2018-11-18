@@ -1560,9 +1560,10 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
         // 这是一个@ location
         if (clcf->named) {
-            n++;
+            n++; // 记录named的个数
 
             if (named == NULL) {
+                // 记录第一个@location在队列中的位置
                 named = q;
             }
 
