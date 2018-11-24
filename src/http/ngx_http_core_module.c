@@ -1011,7 +1011,7 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
 
     /**
      * 如果最终当前请求没有被打上internal标志，但是匹配上的是一个打上internal标记的location，那么直接返回404
-     * 应该没有可能走到这里才对呀？
+     * internal指令会用到
      */
     if (!r->internal && clcf->internal) {
         // ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "------------404? %d %d", r->internal,clcf->internal);

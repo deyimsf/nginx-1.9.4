@@ -440,7 +440,10 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     // 脚本引擎要执行的方法
     regex->code = ngx_http_script_regex_start_code;
-    //
+    /**
+     * 在ngx_http_script_regex_start_code方法中会用该标记来判断是否要为当前请求的r->internal设置为1
+     * 这样所有用过rewrite指令的请求，就都算内部请求了，就可以访问带internal指令的location了
+     */
     regex->uri = 1;
     regex->name = value[1];
 
