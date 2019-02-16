@@ -867,6 +867,11 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     /*
      * 到这里http模块的基本配置就算完成了,下面这个循环会回调所有http模块的postconfiguration()方法
      * 所以基本上在postconfiguration()方法中可以拿到所有的配置信息
+     *
+     * 基本上,所有模块都是在这个方法中把自己注册到某个阶段的,所以,模块向某个阶段容器的注册顺序跟模块的编译顺序是一样的
+     *
+     * 但并不是所有模块都会实现postconfiguration()方法,比如ngx_http_geo_module.c,它只是在解析到geo指令后向变量
+     * 容器中增加了某个变量而已
      */
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
@@ -1295,6 +1300,11 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
             ph->next = n;
             // 阶段i的下一个ph
             ph++;
+
+            /*
+             * 同一个阶段,后注册的模块先执行(模块的注册顺序同编译顺序,在ngx_modules[]中)
+             *
+             */
         }
     }
 

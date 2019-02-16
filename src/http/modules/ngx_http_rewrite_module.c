@@ -1237,8 +1237,8 @@ ngx_http_rewrite_if_condition(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf)
 
 
 /*
- * 向脚本数组中添加一个脚本code(ngx_http_script_var_code_t),后续该脚本复杂把变量内容放到
- * 引擎栈中
+ * 向脚本数组中添加一个脚本code(ngx_http_script_var_code_t),后续该脚本负责把变量内容放到
+ * 引擎栈中，即压变量入栈
  */
 static char *
 ngx_http_rewrite_variable(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
@@ -1449,6 +1449,8 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
  *     ngx_http_script_complex_value_code_t
  * 如果set指令的变量值不包含变量,则脚本code就是
  *     ngx_http_script_value_code_t
+ *
+ * 该方法最终会把值压入栈中
  */
 static char *
 ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,

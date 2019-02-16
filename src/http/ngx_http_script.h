@@ -632,6 +632,10 @@ typedef struct {
 
     uintptr_t                   test:1;
     uintptr_t                   negative_test:1;
+    /**
+     * 在ngx_http_script_regex_start_code方法中会用该标记来判断是否要为当前请求的r->internal设置为1
+     * 这样所有用过rewrite指令的请求，就都算内部请求了，就可以访问带internal指令的location了
+     */
     uintptr_t                   uri:1;
     uintptr_t                   args:1;
 
