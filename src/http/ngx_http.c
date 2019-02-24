@@ -1291,6 +1291,10 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         // n在这里表示下一个阶段的开始方法坐标
         n += cmcf->phases[i].handlers.nelts;
 
+        /**
+         * 如果某个阶段没有任何模块注册，那就会跳过这个阶段的checker注册，比如NGX_HTTP_POST_READ_PHASE阶段没有注册模块，
+         * 那此时第一个ph对应的checker就是ngx_http_core_rewrite_phase
+         */
         for (j = cmcf->phases[i].handlers.nelts - 1; j >=0; j--) {
         	// 为阶段i的ph设置checker方法
             ph->checker = checker;

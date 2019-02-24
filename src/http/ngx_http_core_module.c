@@ -928,7 +928,12 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
     /* rc == NGX_ERROR || rc == NGX_HTTP_...  */
 
-    /* 发生错误则直接结束请求 */
+    /*
+     * 发生错误则直接结束请求
+     *
+     * 访问过量了，rc == NGX_BUSY
+     * limit_req_module模块，比如超过burst设置的阀值，则后续所有请求都会被拒绝了
+     */
 
     ngx_http_finalize_request(r, rc);
 
@@ -1297,6 +1302,8 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
  * 阶段NGX_HTTP_POST_ACCESS_PHASE会用到该方法
  *
  * 根据上一个阶段(NGX_HTTP_ACCESS_PHASE)设置的r->access_code标记来决定当前请求是否可以继续执行
+ * 实际上并没有直接打r->access_code标记，而是通过注册在access阶段的handler函数返回值来打标的
+ * 因为如果访问不允许被通过通常都会返回NGX_HTTP_FORBIDDEN状态码
  */
 ngx_int_t
 ngx_http_core_post_access_phase(ngx_http_request_t *r,
@@ -1320,7 +1327,7 @@ ngx_http_core_post_access_phase(ngx_http_request_t *r,
                           "access forbidden by rule");
         }
 
-        // TODO 是什么用意?
+        // 访问标记只能用一次
         r->access_code = 0;
         // 结束请求
         ngx_http_finalize_request(r, access_code);
@@ -1630,6 +1637,9 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
 
     /*
      * rc == NGX_DECLINED: 代表本阶段还未执行完毕,需要继续执行本阶段的下一个方法
+     *
+     * 这里加一是为了确保是否还有下一个阶段，如果有才会把r->phase_handler++，否则程序就崩溃了
+     * 这里加一并没有影响任何外部功能
      */
     ph++;
 
