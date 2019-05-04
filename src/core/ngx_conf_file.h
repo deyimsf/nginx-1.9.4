@@ -115,9 +115,19 @@ struct ngx_command_s {
      * 该字段在 /src/core/ngx_conf_file.c/ngx_conf_handler("}else if (cf->ctx) {")方法中使用
      *
      * 如果是http模块,则代表xxx_conf在ngx_http_conf_ctx_t结构体中偏移量
-     *   NGX_HTTP_MAIN_CONF_OFFSET: 代表ngx_http_conf_ctx_t结构体中的main_conf字段
-     *   NGX_HTTP_SRV_CONF_OFFSET: 代表ngx_http_conf_ctx_t结构体中的srv_conf字段
-     *   NGX_HTTP_LOC_CONF_OFFSET: 代表ngx_http_conf_ctx_t结构体中的loc_conf字段
+     *   /http/ngx_http_config.h
+     *   #define NGX_HTTP_MAIN_CONF_OFFSET  offsetof(ngx_http_conf_ctx_t, main_conf)
+     *   #define NGX_HTTP_SRV_CONF_OFFSET   offsetof(ngx_http_conf_ctx_t, srv_conf)
+     *   #define NGX_HTTP_LOC_CONF_OFFSET   offsetof(ngx_http_conf_ctx_t, loc_conf)
+     *
+     * 如果是email模块，则代表xxx_conf在ngx_mail_conf_ctx_t结构体中的偏移量
+     *   /mail/ngx_mail.h
+     *   #define NGX_MAIL_MAIN_CONF_OFFSET  offsetof(ngx_mail_conf_ctx_t, main_conf)
+     *   #define NGX_MAIL_SRV_CONF_OFFSET   offsetof(ngx_mail_conf_ctx_t, srv_conf)
+     *
+     * 如果是stream模块，则代表xxx_conf在ngx_stream_conf_ctx_t结构体中的偏移量
+     *   #define NGX_STREAM_MAIN_CONF_OFFSET  offsetof(ngx_stream_conf_ctx_t, main_conf)
+     *   #define NGX_STREAM_SRV_CONF_OFFSET   offsetof(ngx_stream_conf_ctx_t, srv_conf)
      */
     ngx_uint_t            conf;
 
@@ -292,6 +302,8 @@ struct ngx_conf_s {
      *      代表当前正在server{}块下的if{}中解析指令
      * NGX_HTTP_LIF_CONF
      *      代表当前正在loction{}块下的if{}中解析指令
+     * NGX_STREAM_UPS_CONF:
+     *      代表当前正在upstrem{}块中解析指令
      *
      */
     ngx_uint_t            cmd_type;

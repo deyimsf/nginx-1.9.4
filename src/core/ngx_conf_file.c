@@ -250,7 +250,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
 
     // 开始解析命令
+    /**
+     * 循环解析
+     */
     for ( ;; ) {
+    	// 读下一个token
         rc = ngx_conf_read_token(cf);
 
         /*
@@ -301,7 +305,15 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         /* rc == NGX_OK || rc == NGX_CONF_BLOCK_START */
 
         /*
-         * 用户自定义的解析块类型指令的方法,这种指令对应的块内中的内容都不是指令。
+         * 用cf->handler()方法替代ngx_conf_handler()方法，ngx_conf_handler()方法是ngx自带的方法，会把块中(比如http{})中内容当成指令解析
+         * 如果用户设置了cf->handler()方法，则有用户解析块中内容代表的意思,比如
+         *   aaa {
+         *      {} // 不允许出现这种情况
+         *      abc  dbd;
+         *      xxx  yyy zzz;
+         *   }
+         * 其中，最外层的aaa还是常规指令，但是块中的内容就不是了，ngx每解析出一行数据(比如abc dbd;)就会执行一次cf->handler()方法,具体如何解析
+         * 这行数据则有该方法完成。(默认的ngx_conf_handler方法会把这一行的第一个单词当成指令，然后去所有模块中匹配)
          *
          * 目前是专门为types这种类型的指令指定定义的,因为types块内的内容不是指令,所以不能像解析一般
          * 块内指令那样,对types的解析内的内容解释有ngx_http_core_module模块自己决定,比如ngx_http_core_type方法。
@@ -438,6 +450,20 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             // 在某个模块ngx_modules[i]中发现和当前指令同名的指令
             found = 1;
 
+            /**
+             * 一个特殊的存在，解析其它非核心模块类型(NGX_CORE_MODULE)前需要先指定当前解析的事哪种模块类型，比如
+             * 开始解析http{}块时需要指定:
+             *   cf->module_type = NGX_HTTP_MODULE
+             * 开始解析email{}块时需要指定
+             *   cf->module_type = NGX_EMAIL_MODULE
+             * 开始解析stream{}块时需要指定
+             *   cf->module_type = NGX_STREAM_MODULE
+             * 开始解析events{}块时需要指定
+             *   cf->module_type = NGX_EVENT_MODULE
+             *
+             * 而NGX_CONF_MODULE类型模块是一个特殊的存在，它没有块(类似http{}这种)
+             *
+             */
             if (ngx_modules[i]->type != NGX_CONF_MODULE
                 && ngx_modules[i]->type != cf->module_type)
             {
@@ -605,7 +631,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  *                              |ngx_event_conf_t|    |ngx_epoll_conf_t|
                  *                              ------------------    ------------------
                  *
-                 * 另外,事件模块的cmd->conf都是零,貌似目前只有http模块使用了cmd->conf字段。
+                 * 另外,事件模块的cmd->conf都是零,貌似目前只有http、email、stream模块使用了cmd->conf字段。
                  * 最终conf会指向具体的ngx_xxx_cont_t结构体。
                  *
                  *

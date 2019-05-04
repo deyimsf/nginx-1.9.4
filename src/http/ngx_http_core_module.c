@@ -1627,6 +1627,11 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
      * 如果一次发送完毕则rc == NGX_OK
      * 没有一次发送完毕则返回NGX_AGAIN
      *
+     * 这里也有可能返回其它状态码,比如404,如果是这种配置
+     *    location / {
+     *    }
+     * 当用/abc/请求这个配置时,如果abc目录不不能在，则index模块对应的handler方法就会返回404
+     *
      */
     if (rc != NGX_DECLINED) {
         ngx_http_finalize_request(r, rc);
@@ -3715,16 +3720,19 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 	 *    						-----------------------------------------------------			   -----------------------------------------------------
 	 *		 			 			/				|				  	   |						   |				     |					   	 \
 	 *	         	  	++-----------++	 	 ---------------	 		---------------			 	  ++-----------++	   ---------------	    	---------------
-	 *	 		  		| * | ... | * |		 | * | ... | * |  			| * | ... | * | 		 	  | * | ... | * |	   | * | ... | * |	    	| * | ... | * |都是ngx_http_max_module个
+	 *                  | * | ... | * |	     | * | ... | * |            | * | ... | * | 		 	  | * | ... | * |	   | * | ... | * |	    	| * | ... | * |都是ngx_http_max_module个
 	 *					++-----------++		 ---------------	    	---------------			 	  ++-----------++	   ---------------	    	---------------
-	 *	      			  |					 / ngx_http_core_srv_conf_t   \								|			   		 |						   \
+	 *	      			  |					 / ngx_http_core_srv_conf_t   \								|              	     |                         \
 	 *	 +-------------------------+	  ----------------------------	--------------------------		|	       		 --------------------------	   --------------------------
-	 *	 |ngx_http_core_main_conf_t|	  | * | *ctx |      ...  	 |	|ngx_http_core_loc_conf_t|		|	 			 |ngx_http_core_srv_conf_t|	   |ngx_http_core_loc_conf_t|
+	 *	 |ngx_http_core_main_conf_t|	  | * | *ctx |      ...  	 |	|ngx_http_core_loc_conf_t|      |                |ngx_http_core_srv_conf_t|	   |ngx_http_core_loc_conf_t|
 	 *	 +-------------------------+ 	  ----------------------------	--------------------------		|	 			 --------------------------	   --------------------------
 	 *																									|
 	 *																								 +-------------------------+
 	 *																								 |ngx_http_core_main_conf_t|
-	 *																								 +-------------------------+
+	 *                                                                                               +-------------------------+
+     */
+    /**
+     * 暂存父cf信息，比如此时cf->cmd_type = NGX_HTTP_MAIN_CONF,当解析完某个server{}块后需要复原父cf信息
      */
     pcf = *cf;
     cf->ctx = ctx;
@@ -4214,6 +4222,9 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         return NGX_CONF_ERROR;
     }
 
+    /**
+     * 暂存父cf信息，比如此时cf->cmd_type = NGX_HTTP_SRV_CONF,当解析完某个location{}块后需要复原父cf信息
+     */
     save = *cf;
     // 每个cf->ctx都是一个指向ngx_http_conf_ctx_t的结构体
     cf->ctx = ctx;
@@ -4245,6 +4256,9 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     // 开始解析location{}块中的指令
     rv = ngx_conf_parse(cf, NULL);
 
+    /**
+     * 复原父cf信息
+     */
     *cf = save;
 
     return rv;

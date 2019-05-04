@@ -387,7 +387,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     conf.cycle = cycle;
     conf.pool = pool;
     conf.log = log;
-    // 接下来要解析的模块类型(ngx主框架只关心NGX_CORE_MODULE和NGX_CONF_MODULE两种模块)
+    // 接下来要解析的模块类型(ngx主框架只关心NGX_CORE_MODULE类型模块)
     conf.module_type = NGX_CORE_MODULE;
     // 接下来要解析的命令类型(命令可以出现在哪个区域)
     conf.cmd_type = NGX_MAIN_CONF;

@@ -372,6 +372,8 @@ typedef struct {
      *
      * 总共11个阶段NGX_HTTP_LOG_PHASE在枚举ngx_http_phases中的值是10
      * 这里数组的长度设置为11
+     *
+     * 该字段只是用来收集注册方法
      */
     ngx_http_phase_t           phases[NGX_HTTP_LOG_PHASE + 1];
 } ngx_http_core_main_conf_t;

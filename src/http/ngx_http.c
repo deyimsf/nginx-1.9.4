@@ -1283,7 +1283,9 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         	 * NGX_HTTP_POST_READ_PHASE
         	 * NGX_HTTP_PREACCESS_PHASE
         	 *
-        	 * 以上三个阶段的checker方法固定为ngx_http_core_generic_phase
+        	 * 以上两个阶段的checker方法固定为ngx_http_core_generic_phase
+        	 *
+        	 * NGX_HTTP_LOG_PHASE阶段独立运行
         	 */
             checker = ngx_http_core_generic_phase;
         }

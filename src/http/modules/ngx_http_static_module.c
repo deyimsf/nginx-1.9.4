@@ -75,7 +75,7 @@ ngx_http_static_handler(ngx_http_request_t *r)
 
     /*
      * 检查是否以'/'结尾, 如果是则返回NGX_DECLINED,该返回结果会告诉阶段引擎去执行本阶段的下一个方法
-     * 因为本模块只处理以'/'结尾的uri
+     * 因为本模块只处理非'/'结尾的uri
      */
     if (r->uri.data[r->uri.len - 1] == '/') {
         return NGX_DECLINED;

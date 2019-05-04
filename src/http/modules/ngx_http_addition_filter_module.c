@@ -192,6 +192,9 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
     last = 0;
 
+    /**
+     * 检查是否是请求群中最后一块数据
+     */
     for (cl = in; cl; cl = cl->next) {
         if (cl->buf->last_buf) {
             cl->buf->last_buf = 0;

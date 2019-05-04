@@ -237,6 +237,17 @@ typedef struct {
 #define ngx_http_get_module_loc_conf(r, module)  (r)->loc_conf[module.ctx_index]
 
 
+/**
+ * 每个http模块只有一份关于main_conf的结构体
+ * 都放在http{}块下的ngx_http_conf_ctx_t结构体的main_conf中
+ * 因为每个模块的create_main_conf()方法，只有在解析到http{}后才会调用，并且只调用一次
+ *    if (module->create_main_conf) {
+ *         ctx->main_conf[mi] = module->create_main_conf(cf);
+ *         if (ctx->main_conf[mi] == NULL) {
+ *             return NGX_CONF_ERROR;
+ *         }
+ *    }
+ */
 #define ngx_http_conf_get_module_main_conf(cf, module)                        \
     ((ngx_http_conf_ctx_t *) cf->ctx)->main_conf[module.ctx_index]
 #define ngx_http_conf_get_module_srv_conf(cf, module)                         \

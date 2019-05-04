@@ -8,7 +8,7 @@
  * ngx是一个模块化的软件架构,他将模块抽象化为ngx_moudle_t结构体。
  *
  * ngx主框架只关心两种模块类型:
- * 	 NGX_CORE_MODULE: 核心模块,有/src/core/ngx_conf_file.c/ngx_init_cycle方法启动
+ * 	 NGX_CORE_MODULE: 核心模块,有/src/core/ngx_cycle.c/ngx_init_cycle方法启动
  *   NGX_CONF_MODULE: 解析配置文件的模块,有ngx_conf_parse方法(在ngx_init_cycle方法中被调用)启动
  *
  * 几乎所有的主要功能都是围绕着模块来做的,模块可以定义成不同的类型,
