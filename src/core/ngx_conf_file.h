@@ -113,6 +113,10 @@ struct ngx_command_s {
 
     /*
      * 该字段在 /src/core/ngx_conf_file.c/ngx_conf_handler("}else if (cf->ctx) {")方法中使用
+     * 用来确定指令放到哪个容器中(main、srv、loc)，如果是http模块，并且指令可以出现在http{}、server{}、location{}中，
+     * 那么对应的指令就只能放到location{}块对应的容器中，因为指令的继承机制是在相同结构体的中实现的。
+     * (当然，如果你自己的模块非要打破这种继承机制也是可以的，比如你执意要用loc_conf级别去继承srv_conf级别的，可以这么做，但不推荐)
+     *
      *
      * 如果是http模块,则代表xxx_conf在ngx_http_conf_ctx_t结构体中偏移量
      *   /http/ngx_http_config.h
