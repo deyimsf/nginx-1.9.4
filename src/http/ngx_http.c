@@ -382,11 +382,11 @@ ngx_module_t  ngx_http_module = {
  *   该值是核心http模块在cycle->conf_ctx中第二层指针的位置的地址:
  *   (此时cycle->conf_ctx等于cf->ctx)
  *
- *   cf->ctx      	     conf
- *   -----          	-----
- *	 | * |              | * |
- *	 -----              -----
- *	  \                 /
+ *   cf->ctx      	  conf
+ *   -----           -----
+ *	 | * |           | * |
+ *	 -----           -----
+ *	  \            |/
  *	   ------------------
  *	   | * | * | * | *# |ngx_http_module.index
  *     ------------------
@@ -413,9 +413,24 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * 	  | *# |
      * 	  ------
      *
+     * 此时conf的内存结构如下:
+     *      conf
+     *      -----
+     *      | * |
+     *      -----
+     *         \
+     *     -----------------
+     *      ... | * | ...
+     *     -----------------
+     *            \
+     *            -----------------------
+     *            | ngx_http_conf_ctx_t |
+     *            -----------------------
      *
      * 如果conf存在,则表示已经为核心http模块(ngx_http_module)创建过存储配置信息的结构体,
      * 不应该再次进入到该指令方法,也就是说不应该存在一个以上的http指令
+     *
+     * 从上图的内存结构可以看出，这里必须先转成两个星，然后再取这个指针指向的值(这个值就是ngx_http_conf_ctx_t结构体的地址)
      */
     if (*(ngx_http_conf_ctx_t **) conf) {
         return "is duplicate";
@@ -444,18 +459,22 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * 这里这样赋值,则只用到了cycle->conf_ctx中的两层指针,如下图:
      * (其中cf->ctx 等于 cycle->conf_ctx)
      *
-     *   cf->ctx             conf
-	 *   -----              -----
-	 *	 | * |              | * |
-	 *	 -----              -----
+     *   cf->ctx            conf
+	 *   -----             -----
+	 *	 | * |             | * |
+	 *	 -----             -----
 	 *	  \                 /      				   ctx
-	 *	  -----------------       				  -----
+	 *	  -----------------/       				  -----
 	 *	  | * |  ...  | * |       				  | * |
 	 *    -----------------       				  -----
 	 *    				  \      				  /
 	 *    				   -----------------------
      *				       | ngx_http_conf_ctx_t |
      *				       -----------------------
+     *
+     * 核心http模块(ngx_http_module)并没有在上下文(ngx_http_module_ctx)中实现用来创建配置信息机构体的
+     * 回调方法create_conf(),而是有该模块本身的一个指令来创建的，具体的考虑是什么呢？
+     * TODO 或许以后有时间，可以把这块创建配置信息结构体的逻辑放到create_conf()中试验一下
      *
      */
     *(ngx_http_conf_ctx_t **) conf = ctx;
@@ -491,10 +510,10 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	 *    			     -----------------------------------------
 	 *    			     | **main_conf | **srv_conf | **loc_conf |
 	 *			         -----------------------------------------
-	 *			             \
-	 *			             ---------------
-	 *			             | * | ... | * |  ngx_http_max_module个
-     *						 ---------------
+	 *			           \                                   \
+	 *			          ---------------                       ---------------
+	 *			          | * | ... | * |ngx_http_max_module个  | * | ... | * |ngx_http_max_module个
+     *					  ---------------                       ---------------
      *
      */
     ctx->main_conf = ngx_pcalloc(cf->pool,

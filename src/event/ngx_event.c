@@ -1274,8 +1274,13 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      *    ------
      *
      */
-
     if (*(void **) conf) {
+
+    	/**
+    	 * 为什么是先转换成两星指针，然后再取值？ 看ngx_mail.c中的解释
+    	 *
+    	 */
+
         return "is duplicate";
     }
 
@@ -1297,7 +1302,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      *  -----
      *  | * |
      *  -----
-     *  \
+     *   \
      *   ------
      *   | *# |
      *   ------
@@ -1369,7 +1374,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
              *     --------------------------------------        -----
              *                                       \            /
              *                                       --------------
-             *                                       |     *      |
+             *                                       |     *      |  // 可以把这个看成是和ngx_http_conf_ctx_t一样的结构体，只不过xxx_ctx_t中有三个指针变量，而这个中只有一个
              *                                       --------------
              *                                             \
              *                                          ---------------
