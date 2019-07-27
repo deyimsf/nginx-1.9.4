@@ -370,7 +370,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         }
 
 
-        // 从所有模块中遍历对比解析到的指令,如果匹配则执行
+        /*
+         * 从所有模块中遍历对比解析到的指令,如果匹配则执行
+         *
+         * 如果上面的cf->handler()方法存在，则不走下面的方法
+         */
         rc = ngx_conf_handler(cf, rc);
 
         if (rc == NGX_ERROR) {

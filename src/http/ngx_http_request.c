@@ -21,21 +21,76 @@
  *
  *
  * -------------------------------------------一个http请求的基本流程-----------------------------------------
+ * a)在nginx.c#main()方法开始后会通过如下方法解析配置文件
+ *     cycle = ngx_init_cycle(&init_cycle);
+ *   针对http模块,在解析到'http{}'指令后会调用ngx_http_block()方法,等把listen指令解析到的ip信息收集完毕后,调用如下方法:
+ *     ngx_http_optimize_servers()-->ngx_http_init_listening()-->ngx_http_add_listening()
+ *   在ngx_http_add_listening()方法中,会通过ngx_create_listening()方法把解析到的ip信息放到cycle->listening数组中
+ *     ls = ngx_create_listening(cf, &addr->opt.u.sockaddr, addr->opt.socklen);
+ *   随后为某个监听描述符设置handler方法
+ *     ls->handler = ngx_http_init_connection;
+ *
+ * b)所有前期准备工作都完毕后,在nginx.c#main()方法最后,执行ngx_single_process_cycle()
+ *   或ngx_master_process_cycle()方法来启动worker
+ *
+ * c)不管使用哪种方式启动woker,在执行ngx_process_events_and_timers()方法之前都会先执行如下代码:
+ *   for (i = 0; ngx_modules[i]; i++) {
+ *      if (ngx_modules[i]->init_process) {
+ *          if (ngx_modules[i]->init_process(cycle) == NGX_ERROR) {
+ *               exit(2);
+ *           }
+ *       }
+ *    }
+ *    而事件核心模块src/event/ngx_event.c#ngx_event_core_module正好有一个对应的init_process(),叫ngx_event_process_init()
+ *
+ * d)在ngx_event_process_init()方法中会创建三个集合:
+ *    cycle->connections: 某个woker可以拥有的最大连接对象,由配置指令worker_connections指定
+ *    cycle->read_events: 读事件对象集合,个数同cycle->connections
+ *    cycle->write_events: 写事件对象集合,个数同cycle->connections
+ *    然后会把connections中的连接和读写事件集合中的对象相互关联上
+ *    然后循环cycle->listening,把从a)步骤中收集到的每一个需要监听的描述符同connection对象(从cycle->connections取出的)关联上,
+ *    然后从这个connection对象中取出读事件:
+ *       rev = c->read;
+ *    之后把这个读事件的handler设置为src/event/ngx_event_accept.c#ngx_event_accept()方法
+ *       rev->handler = ngx_event_accept;
+ *    这个方法供后续接收新连接用,也就是后续会调用的accept()方法
+ *
+ * e)当第c)步骤和d)步骤执行完毕后,下面有可以开始执行ngx_process_events_and_timers()方法了
+ *   for(;;){
+ *      ngx_process_events_and_timers(cycle);
+ *   }
+ *
  * 1.ngx_process_events_and_timers方法在循环中执行
  *
  * 2.事件来了之后调用ngx_process_events()宏,该宏在epoll中对应ngx_epoll_process_events()方法
  *
- * 3.从epoll中获取对应请求的事件,这个时候因为要建立连接,对于监听端口来说就是读事件,执行读handler()
- *  rev->handler(rev)回调方法,该方法对于监听连接来说就是ngx_event_accept()方法
+ * 3.从epoll中获取对应请求的读事件(这个时候因为要建立连接,对于监听端口来说就是读事件)
+ *     rev = c->read;
+ *   然后执行对应的handler()方法
+ *     rev->handler(rev);
+ *   该handler对应的具体方法就是上面d)步骤中的ngx_event_accept()方法
  *
- * 4.调用accept4()获取请求对应的连接,然后回调监听handler()方法
+ * 4.然后ngx_event_accept()方法会调用accept4()获取请求对应的连接s
+ *      ngx_socket_t s = accept4(...);
+ *   接着为s关联一个ngx_connection_t
+ *      c = ngx_get_connection(s, ev->log);
+ *   然后回调在监听连接上绑定的handler()方法
  * 	  	ls->handler(c);
- * 	 对于http模块来说该handler()对应ngx_http_init_connection()方法,入参c就是客户端请求的连接
+ * 	 对于http模块来说该handler()对应src/http/ngx_http_request.c#ngx_http_init_connection()方法,入参c就是客户端请求的连接
  *
- * 5.设置请求连接的读事件方法为ngx_http_wait_request_handler()
+ * 5.然后ngx_http_init_connection()方法做的事是为当前客户端连接设置读事件对应的handler()方法
+ *
+ *   先把请求连接的读事件方法为ngx_http_wait_request_handler()
  * 		rev->handler = ngx_http_wait_request_handler;
  *   在ngx_http_wait_request_handler()方法中接收请求数据,创建请求对象(ngx_http_request_t),然后
  *   把读事件设置为ngx_http_process_request_line()方法并调用
+ *
+ *   如果在这一步中开启了ssl,那么就会把读事件方法设置为
+ *      rev->handler = ngx_http_ssl_handshake;
+ *   ngx_http_ssl_handshake()方法用来执行握手协议,握手成功后会再次把读该handler设置为ngx_http_wait_request_handler()方法
+ *
+ *   设置完读事件后会把该事件放入到事件框架中,在linux系统中事件框架就是epoll,
+ *
  *
  * 6.ngx_http_process_request_line()这个方法用来处理请求行,把请求行中的数据解析到请求对象中,比如设置
  *   r->method、r->uri_start、r->args_start等指针

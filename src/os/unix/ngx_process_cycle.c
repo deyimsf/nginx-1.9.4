@@ -152,6 +152,8 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
      * 这个方法用来启动worker进程
      *
      * 启动ccf->worker_processes个worker进程
+     *
+     * ngx_start_worker_processes--> ngx_spawn_process() --> pid = fork() -->ngx_worker_process_cycle()
      */
     ngx_start_worker_processes(cycle, ccf->worker_processes,
                                NGX_PROCESS_RESPAWN);

@@ -223,7 +223,7 @@ typedef struct {
 #define NGX_HTTP_SIF_CONF         0x20000000
 // 出现在 location{}块内的if{}内的配置信息
 #define NGX_HTTP_LIF_CONF         0x40000000
-// TODO
+// 出现在 limit_except{}块内的配置信息
 #define NGX_HTTP_LMT_CONF         0x80000000
 
 

@@ -296,16 +296,26 @@ struct ngx_conf_s {
      * 命令类型:
      * NGX_MAIN_CONF:
      *      代表当前正在main块下解析指令
+     *
      * NGX_EVENT_CONF:
      *      代表events{}下的指令
+     *
+     *
      * NGX_HTTP_MAIN_CONF:
      *      代表当前正在http{}块下解析指令
+     *
      * NGX_HTTP_SRV_CONF:
      *      代表当前正在server{}块下解析指令
+     *
+     * NGX_HTTP_LOC_CONF:
+     *      代表当前正在location{}块下解析指令
+     *
      * NGX_HTTP_SIF_CONF:
      *      代表当前正在server{}块下的if{}中解析指令
+     *
      * NGX_HTTP_LIF_CONF
      *      代表当前正在loction{}块下的if{}中解析指令
+     *
      * NGX_STREAM_UPS_CONF:
      *      代表当前正在upstrem{}块中解析指令
      *
