@@ -43,7 +43,36 @@
  *    }
  *    而事件核心模块src/event/ngx_event.c#ngx_event_core_module正好有一个对应的init_process(),叫ngx_event_process_init()
  *
- * d)在ngx_event_process_init()方法中会创建三个集合:
+ * d)在ngx_event_process_init()方法中会执行具体事件模块的actions.init()方法:
+ *   for (m = 0; ngx_modules[m]; m++) {
+ *       if (ngx_modules[m]->type != NGX_EVENT_MODULE) {
+ *           continue;
+ *       }
+ *
+ *       if (ngx_modules[m]->ctx_index != ecf->use) {
+ *           continue;
+ *       }
+ *
+ *       module = ngx_modules[m]->ctx;
+ *
+ *       if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
+ *           exit(2);
+ *       }
+ *
+ *       break;
+ *   }
+ *
+ *   具体时间模块的选择是通过use指令的对应方法ngx_event_use()设置的:
+ *       ecf->use = ngx_modules[m]->ctx_index;
+ *       ecf->name = module->name->data;
+ *
+ *   epoll事件模块对应的actions.init()方法是ngx_epoll_init(),该方法会把epoll对应的方法变量ngx_event_actions对接
+ *       ngx_event_actions = ngx_epoll_module_ctx.actions;
+ *   而ngx_event_actions变量又是一个被extern修饰的变量(在ngx_event.h中)
+ *       extern ngx_event_actions_t   ngx_event_actions;
+ *   此后就可以直接使用改变量做事件操作了
+ *
+ *   紧接着在ngx_event_process_init()方法中还会创建三个集合:
  *    cycle->connections: 某个woker可以拥有的最大连接对象,由配置指令worker_connections指定
  *    cycle->read_events: 读事件对象集合,个数同cycle->connections
  *    cycle->write_events: 写事件对象集合,个数同cycle->connections
