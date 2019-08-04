@@ -42,6 +42,8 @@
  *    }
  * 而NGX_LOG_DEBUG_ALL对应值 0x7ffffff0,他包含了所有特定debug值
  *
+ *
+ * 日志各种格式看 string.c
  */
 
 #include <ngx_config.h>

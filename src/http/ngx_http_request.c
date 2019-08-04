@@ -24,11 +24,22 @@
  * a)在nginx.c#main()方法开始后会通过如下方法解析配置文件
  *     cycle = ngx_init_cycle(&init_cycle);
  *   针对http模块,在解析到'http{}'指令后会调用ngx_http_block()方法,等把listen指令解析到的ip信息收集完毕后,调用如下方法:
- *     ngx_http_optimize_servers()-->ngx_http_init_listening()-->ngx_http_add_listening()
+ *
+ *                                                              -->ngx_http_add_listening()-->ngx_create_listening()
+ *     ngx_http_optimize_servers()-->ngx_http_init_listening()--|
+ *                 								                -->ngx_clone_listening(cf, ls)
+ *                 								                (如果支持reuseport,会为每个woker单独创建一个ls对象,ls.worker会标记上woker编号)
+ *                 								                (该方法下标从1开始是因为在前面的ngx_http_add_listening()方法中已经添加过一个了)
+ *                                                              (如果只有一个worker那方法中的循环也不会执行,这里是为剩下的worker创建ls)
+ *                                                              (reuseport标记通过listen指令对应的ngx_http_core_listen()方法传递,比较绕<cmcf->ports>))
+ *
  *   在ngx_http_add_listening()方法中,会通过ngx_create_listening()方法把解析到的ip信息放到cycle->listening数组中
  *     ls = ngx_create_listening(cf, &addr->opt.u.sockaddr, addr->opt.socklen);
  *   随后为某个监听描述符设置handler方法
  *     ls->handler = ngx_http_init_connection;
+ *
+ *   在启动woker之前会调用ngx_open_listening_sockets()方法,利用前面为ls设置的信息创建真正的描述符(sock_fd)
+ *
  *
  * b)所有前期准备工作都完毕后,在nginx.c#main()方法最后,执行ngx_single_process_cycle()
  *   或ngx_master_process_cycle()方法来启动worker
@@ -42,6 +53,21 @@
  *       }
  *    }
  *    而事件核心模块src/event/ngx_event.c#ngx_event_core_module正好有一个对应的init_process(),叫ngx_event_process_init()
+ *
+ *    如果当前支持并设置了reuseport标记,那么之前在ngx_clone_listening()方法中为ls设置的 ls[i].worker在ngx_event_process_init()方法中就会被用到
+ *       if (ls[i].reuseport && ls[i].worker != ngx_worker) {
+ *            continue;
+ *       }
+ *    因为此时已经是在某个worker进程里了,所以ngx_worker变量就代表当前worker的编号,如果ls[i]不属于当前woker则过滤掉。
+ *
+ *    然后就会在ngx_event_process_init()方法中会为每一个ls[i].fd分配一个ngx_connection_t对象
+ *        c = ngx_get_connection(ls[i].fd, cycle->log);
+ *
+ *    如果系统支持reuseport并且当前ngx配置启动了reuseport标记,那么此时c关联的ls[i]就是在如下链路中创建的:
+ *        ngx_http_optimize_servers()-->ngx_http_init_listening()-->ngx_clone_listening()
+ *    否则，此时c关联的ls[i]就是在下面的链路中创建的:
+ *         ngx_http_optimize_servers()-->ngx_http_init_listening()-->ngx_http_add_listening()-->ngx_create_listening()
+ *
  *
  * d)在ngx_event_process_init()方法中会执行具体事件模块的actions.init()方法:
  *   for (m = 0; ngx_modules[m]; m++) {

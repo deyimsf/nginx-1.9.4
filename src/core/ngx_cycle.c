@@ -854,6 +854,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
      * 设置非阻塞
      * 调用listen方法开始监听
      * 但是这个时候并没有把监听连接放入到epoll中
+     *
+     * 如果当期系统支持reuseport标记，则下面的方法会为listen_fd描述符打上这个标记
      */
     if (ngx_open_listening_sockets(cycle) != NGX_OK) {
         goto failed;

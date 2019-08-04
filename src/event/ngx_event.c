@@ -286,7 +286,11 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 #endif
     }
 
-    // 处理负载和惊群问题
+    /**
+     * 处理负载和惊群问题
+     *
+     * worker个数必须大于1，并且显示的指定使用锁，这个锁才会开启
+     */
     if (ngx_use_accept_mutex) {
         // 处理负载问题
         if (ngx_accept_disabled > 0) {
@@ -1037,9 +1041,24 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
+        ngx_log_error(NGX_LOG_ERR, cycle->log, 0,"----->pid[%ui] ls[%ui].worker is[%ui] ",getpid(), i, ls[i].worker);
+
+
 #if (NGX_HAVE_REUSEPORT)
         // reuseport(复用端口号?)
+    	/**
+    	 * @see request.c文件中的注释
+    	 *
+    	 * 如果系统支持并且ngx配置启动了reuseport标记,
+    	 * 那就检查一下ls[i]是否是为当前woker创建的,
+    	 * 如果是为当前worker创建的就继续往下走去获取一个ngx_connection_t对象
+    	 * 如果不是为当前worker创建的则该过滤掉此ls[i]
+    	 *
+    	 * ls[i].worker编号在ngx_clone_listening()方法中设置
+    	 *
+    	 */
         if (ls[i].reuseport && ls[i].worker != ngx_worker) {
+
             continue;
         }
 #endif
@@ -1151,12 +1170,14 @@ ngx_event_process_init(ngx_cycle_t *cycle)
             /*
              * 如果使用互斥锁就不会将监听连接的读事件放入到事件驱动器中,
              * 这样可以保证后续worker只有在获取到互斥锁的情况下才能处理新建连接。
+             *
+             * 如果使用了互斥锁并且没有使用reuseport标志才会进到这里
              */
             continue;
         }
 
         /*
-         * 走到这里说明没有使用互斥锁。
+         * 走到这里说明没有使用互斥锁或者使用了reuseport标志
          *
          * 将该监听连接的读事件加入到事件驱动器中
          */

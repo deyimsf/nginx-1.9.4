@@ -91,7 +91,9 @@ ngx_create_listening(ngx_conf_t *cf, void *sockaddr, socklen_t socklen)
 
 
 /*
- * 对reuserport的支持
+ * 对reuseport的支持
+ *
+ * 如果系统支持reuseport并且当前ngx配置开启了这个功能，则为每个worker创建一个监听描述(而不是多个worker共享同一个)
  */
 ngx_int_t
 ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
@@ -114,6 +116,11 @@ ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
     for (n = 1; n < ccf->worker_processes; n++) {
 
         /* create a socket for each worker process */
+
+    	/**
+    	 * 这里从1开始是因为在前面的ngx_http_add_listening()方法中已经添加过一个了,如果只有一个worker那这个循环也不会执行
+    	 * 这里是为剩下的worker创建ls
+    	 */
 
         ls = ngx_array_push(&cf->cycle->listening);
         if (ls == NULL) {

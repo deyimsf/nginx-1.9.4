@@ -2888,6 +2888,11 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
 
         // addr中包含了sockaddr(ip+port)
         ls = ngx_http_add_listening(cf, &addr[i]);
+
+
+        ngx_log_error(NGX_LOG_ERR, cf->cycle->log, 0,"----->ngx_http_add_listening(%ui)", cf->cycle->listening.nelts);
+
+
         if (ls == NULL) {
             return NGX_ERROR;
         }
@@ -2926,6 +2931,8 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
         if (ngx_clone_listening(cf, ls) != NGX_OK) {
             return NGX_ERROR;
         }
+        ngx_log_error(NGX_LOG_ERR, cf->cycle->log, 0,"----->ngx_clone_listening(%ui)", cf->cycle->listening.nelts);
+
 
         addr++;
         last--;
