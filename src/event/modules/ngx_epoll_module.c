@@ -551,7 +551,7 @@ ngx_epoll_done(ngx_cycle_t *cycle)
  *
  * *ev: 要添加的事件对象
  * event: 要添加的事件类型,读(EPOLLIN|EPOLLRDHUP)或写(EPOLLOUT)
- * flags: 事件触发方式,水平触发(NGX_LEVEL_EVENT),边缘触发(NGX_CLEAR_EVENT)
+ * flags: 事件触发方式,水平触发(NGX_LEVEL_EVENT),边沿触发(NGX_CLEAR_EVENT-->EPOLLET)
  *
  */
 static ngx_int_t
@@ -598,9 +598,20 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
      * 如果当前要添加的是读事件,那么e就代表连接的写事件
      * 如果当前要添加的是写事件,那么e就代表连接的读事件
      * e和prev这两个变量是为了记录,连接c在epoll中的旧事件
+     *
+     * 对于epoll来说，为了确保选择正确的op，在要添加读事件(写事件)时，先把当前连接的写事件(读事件)拿出来，
+     * 然后判断其所代表的描述符是否已经存在于epoll中，如果存在，则op选择MOD，如果不存在则op选择ADD
+     *
+     * 不过这里存在一个问题，如果当前描述符中只有读事件存在于epoll中时，再次调用这个方法时会把op设置成ADD，
+     * 这样在实际操作的时候就会报错，所以当前方法ngx_epoll_add_event()是不能重复调用的，ngx事件框架会保
+     * 证不会出现这种情况。
+     *
+     * 比如框架在添加读事件是用的ngx_handle_read_event()方法会提前做校验
      */
     if (e->active) {
-        // 如果连接c在epoll中存在旧事件,则这次的操作就是修改
+    	/**
+    	 * 该事件对应的描述符已经存在于epoll对象中，所以op必须是EPOLL_CTL_MOD;
+    	 */
         op = EPOLL_CTL_MOD;
         events |= prev;
 
@@ -759,7 +770,9 @@ ngx_epoll_add_connection(ngx_connection_t *c)
         return NGX_ERROR;
     }
 
-    // 因为读写事件都放在了epoll中,所以事件的active都标记为1
+    /**
+     * 因为读写事件都放在了epoll中,所以事件的active都标记为1
+     */
     c->read->active = 1;
     c->write->active = 1;
 
@@ -1018,7 +1031,14 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             revents |= EPOLLIN|EPOLLOUT;
         }
 
-        // 是读事件,并且该事件在epoll中; 这里对事件active标记的判断就是用来屏蔽EPOLLERR和EPOLLHUP这两个错误事件的方法
+        /**
+         * 是读事件,并且该事件在epoll中;
+         * 这里对事件active标记的判断就是用来屏蔽EPOLLERR和EPOLLHUP这两个错误事件的方法?(没试验成功)
+         *
+         * 连接正常关闭会触发EPOLLIN和EPOLLRDHUP
+         *
+         * 事件没有放到epoll中(rev->active==0),那为什么还能收到EPOLLIN??????
+         */
         if ((revents & EPOLLIN) && rev->active) {
 
 #if (NGX_HAVE_EPOLLRDHUP)

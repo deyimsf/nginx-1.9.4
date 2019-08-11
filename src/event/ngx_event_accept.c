@@ -419,6 +419,15 @@ ngx_event_accept(ngx_event_t *ev)
 #endif
 
         if (ngx_add_conn && (ngx_event_flags & NGX_USE_EPOLL_EVENT) == 0) {
+        	/**
+        	 * 没有使用epoll的时候才调用
+        	 *
+        	 * ngx把epoll注册新描述符的事放到了监听描述符ls的handler()方法中
+        	 *    ls->handler(c)
+        	 * 如果这个ls对应的是http模块，那handler()方法就是ngx_http_init_connection()
+        	 *   ngx_http_init_connection()--> ngx_handle_read_event() -->ngx_add_event()
+        	 *
+        	 */
             if (ngx_add_conn(c) == NGX_ERROR) {
                 ngx_close_accepted_connection(c);
                 return;

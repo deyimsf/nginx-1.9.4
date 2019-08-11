@@ -50,7 +50,10 @@ struct ngx_event_s {
      * the event was passed or would be passed to a kernel;
      * in aio mode - operation was posted.
      */
-    // 该事件对应的事件类型存在epoll中
+    /**
+     * 对于epoll来说，值是1:表示该事件对应的描述符已经存在于epoll中
+     *
+     */
     unsigned         active:1;
 
     unsigned         disabled:1;
@@ -58,8 +61,10 @@ struct ngx_event_s {
     /*
      * the ready event; in aio mode 0 means that no operation can be posted
      *
-     * 准备好的事件? TODO
      * /src/os/unix/ngx_write_chain.c/ngx_writev_chain()方法有用到
+     *
+     * 如果是读事件，当描述缓冲区中没有数据可读(缓冲区已经读完)，或刚建立的连接，则值为0，否则设置为1
+     * 比如在epoll模块的ngx_epoll_process_events()方法中(该方法中会调用epoll_wait)，当
      */
     unsigned         ready:1;
 
@@ -397,6 +402,9 @@ extern ngx_event_actions_t   ngx_event_actions;
 
 
 #elif (NGX_HAVE_EPOLL)
+/**
+ * 如果支持epoll,则使用下面的定义
+ */
 
 // epoll中的读事件
 #define NGX_READ_EVENT     (EPOLLIN|EPOLLRDHUP)
@@ -439,6 +447,7 @@ extern ngx_event_actions_t   ngx_event_actions;
 
 
 #ifndef NGX_CLEAR_EVENT
+// 如果不存在NGX_CLEAR_EVENT变量则将其设置为零
 #define NGX_CLEAR_EVENT    0    /* dummy declaration */
 #endif
 

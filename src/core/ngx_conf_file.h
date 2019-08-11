@@ -239,7 +239,11 @@ typedef struct {
     // 核心模块的名字
     ngx_str_t             name;
     void               *(*create_conf)(ngx_cycle_t *cycle);
-    // *conf是当前模块配置信息结构体指针(比如ngx_core_conf_t)
+    /**
+     * *conf是当前模块配置信息结构体指针(比如ngx_core_conf_t)
+     * 配置文件解析完毕后才会执行这个方法,执行位置在如下方法中:
+     *    src/core/ngx_cycle.c#ngx_init_cycle()
+     */
     char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
 } ngx_core_module_t;
 

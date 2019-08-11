@@ -404,6 +404,10 @@ ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)
 
         /* kqueue, epoll */
 
+    	/**
+    	 * 在epoll中，只有读事件不在epoll中时才会被允许添加
+    	 * 如果支持epoll，则NGX_CLEAR_EVENT值为EPOLLET
+    	 */
         if (!rev->active && !rev->ready) {
             if (ngx_add_event(rev, NGX_READ_EVENT, NGX_CLEAR_EVENT)
                 == NGX_ERROR)
