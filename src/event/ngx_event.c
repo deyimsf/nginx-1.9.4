@@ -289,7 +289,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     /**
      * 处理负载和惊群问题
      *
-     * worker个数必须大于1，并且显示的指定使用锁，这个锁才会开启
+     * worker个数必须大于1
      */
     if (ngx_use_accept_mutex) {
         // 处理负载问题
@@ -330,7 +330,17 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
                 flags |= NGX_POST_EVENTS;
 
             } else {
-                // 获取锁失败后,后续在调用epoll_wait方法时,会设置超时时间是timer
+            	/**
+            	 * 获取锁失败后,后续在调用epoll_wait方法时,会设置超时时间是timer
+            	 *
+            	 * 如果timer值是NGX_TIMER_INFINITE(-1)或者大于ngx_accept_mutex_delay，则设置其值为ngx_accept_mutex_delay
+            	 *
+            	 * timer的值可以来自于两个地方，一个是来自于定时器中的最小值,根据ngx_event_find_timer()方法获取；
+            	 * 另一个是来自于ngx_accept_mutex_delay，改值由accept_mutex_delay指令指定，默认是500ms
+            	 *
+            	 * 这里的逻辑是获取锁失败，如果获取锁成功，则timer是可以无限大的，方法的开头有解释
+            	 *
+            	 */
                 if (timer == NGX_TIMER_INFINITE
                     || timer > ngx_accept_mutex_delay)
                 {
@@ -355,6 +365,8 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
      * 这样做是为了快速的释放锁,避免其它worker因为获取不到锁而无法执行正常的事件操作。
      *
      * 所以如果不开互斥锁的话,也就不会有处理负载问题,这样每个woker拿到事件后就会立即执行相应的回调方法。
+     *
+     * 如果获取锁成功timer值是可以超越ngx_accept_mutex_delay的
      */
     (void) ngx_process_events(cycle, timer, flags);
 
@@ -817,7 +829,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     /* 检查是否需要打开负载均衡锁
      * master: 是否是master-worker模式,如果不是就没必要使用互斥锁了
      * woker_processes: 如果只有一个worker进程就没必要开启负载了
-     * accept_mutex: 明确指定是否开启互斥锁(是否使用负载均衡,默认不使用)
+     * accept_mutex: 明确指定是否开启互斥锁(是否使用负载均衡,默认开启,对应指令accept_mutex,默认on; 1.11.3之后默认是off)
      */
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
         // 使用互斥锁
@@ -1181,9 +1193,10 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
         /*
-         * 走到这里说明没有使用互斥锁或者使用了reuseport标志
+         * 走到这里说明没有使用互斥锁(ngx_use_accept_mutex)或者使用了reuseport标志
          *
          * 将该监听连接的读事件加入到事件驱动器中
+         * 对于epoll来说,监听链接用的都是LT模式(第三个参数是零)
          */
         if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
             return NGX_ERROR;
@@ -1816,7 +1829,11 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
     ngx_conf_init_uint_value(ecf->connections, DEFAULT_CONNECTIONS);
     cycle->connection_n = ecf->connections;
 
-    // 只有ecf->use为NGX_CONF_UNSET_UINT时该方法才会起作用,也就是说,如果存在use指令,则该方法就不会执行
+    /**
+     * 只有ecf->use为NGX_CONF_UNSET_UINT时该方法才会起作用,也就是说,如果存在use指令,则该方法就不会执行
+     *
+     * 如果没有指定使用哪个模块，则ngx自己选择一个
+     */
     ngx_conf_init_uint_value(ecf->use, module->ctx_index);
 
     event_module = module->ctx;

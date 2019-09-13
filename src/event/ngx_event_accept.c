@@ -476,8 +476,9 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
             return NGX_OK;
         }
 
-
-        // 获取锁之后就把该worker中的所有监听连接都放入到事件驱动器中
+        /**
+         * 获取锁之后就把该worker中的所有监听连接都放入到事件驱动器中
+         */
         if (ngx_enable_accept_events(cycle) == NGX_ERROR) {
             // 添加事件是失败则释放锁
             ngx_shmtx_unlock(&ngx_accept_mutex);
@@ -517,6 +518,7 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
 
 /**
  * 将cycle中的所有监听连接放入到事件驱动器中
+ * 对于epoll来说，这里使用的LT模式
  */
 static ngx_int_t
 ngx_enable_accept_events(ngx_cycle_t *cycle)
@@ -534,6 +536,9 @@ ngx_enable_accept_events(ngx_cycle_t *cycle)
             continue;
         }
 
+        /**
+         * 最后入参flags值为零,表示用模式(对于epoll来说)
+         */
         if (ngx_add_event(c->read, NGX_READ_EVENT, 0) == NGX_ERROR) {
             return NGX_ERROR;
         }

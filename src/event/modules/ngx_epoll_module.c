@@ -606,7 +606,7 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
      * 这样在实际操作的时候就会报错，所以当前方法ngx_epoll_add_event()是不能重复调用的，ngx事件框架会保
      * 证不会出现这种情况。
      *
-     * 比如框架在添加读事件是用的ngx_handle_read_event()方法会提前做校验
+     * 比如框架在添加读事件时用的ngx_handle_read_event()方法会提前做校验
      */
     if (e->active) {
     	/**
@@ -619,16 +619,15 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
         op = EPOLL_CTL_ADD;
     }
 
-    // 注册事件和事件的触发模式(边缘和水平)
+    // 注册事件和事件的触发模式(边沿和水平)
     ee.events = events | (uint32_t) flags;
 
     /* 将连接c放入到epoll_event对象中
      * 因为在ngx中所有的地址都是对齐的,也就是说所有的地址最后一位肯定是0,
-     * 而0和任意数n按位与的结果仍然是n,所以c和instance按位与后,c的最后一位就是instance的值。
+     * 而0和任意数n按位或的结果仍然是n,所以c和instance按位或后,c的最后一位就是instance的值。
      * 所以这一步操作的另外一个意义是,把当前事件中的instance标志位也保存在了epoll_event对象中。
      *
      * 这时候epoll_event.data.ptr就保存了c的地址(使用时最后一位要变成0)和instance标志位两个值。
-     *
      */
     ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 
@@ -971,7 +970,6 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
              * 实际上e5对应的文件描述符早在e1做完事之后就关闭了,e5这个事件应该早就过期了,但是这里且无法区分是否过期。
              *
              */
-
             ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                            "epoll: stale event %p", c);
 
@@ -1060,11 +1058,19 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                 queue = rev->accept ? &ngx_posted_accept_events
                                     : &ngx_posted_events;
 
-                // 把事件添加到相应的延迟队列中
+                /**
+                 * 把事件添加到相应的延迟队列中
+                 *
+                 * 只是收集事件，不处理
+                 */
                 ngx_post_event(rev, queue);
 
             } else {
-                // 调用读事件的回调方法(读事件包括新建立连接事件;ngx_event_accept)
+            	/**
+            	 * 调用读事件的回调方法(读事件包括新建立连接事件;ngx_event_accept)
+            	 *
+            	 * 直接处理事件
+            	 */
                 rev->handler(rev);
             }
         }
