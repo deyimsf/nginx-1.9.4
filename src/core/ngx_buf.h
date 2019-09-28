@@ -160,9 +160,26 @@ typedef void (*ngx_output_chain_aio_pt)(ngx_output_chain_ctx_t *ctx,
 #endif
 
 struct ngx_output_chain_ctx_s {
+	/**
+	 * 一个临时数据搬运工，类似cpu中的缓存， (ctx->bufs.size  output_buffers 2 32k;)
+	 *
+	 * 计算机向外输出数据都需要通过cpu，比如内存有一个100MB的数据要向外输出，此时就需要通过cpu，但是cpu是一点一点输出的
+	 */
     ngx_buf_t                   *buf;
+    /**
+     * 本次请求要输出到客户端的数据，比如它可能代表一个大文件，输出的时候通过上面的buf字段来完成，所有输出的数据都会先拷贝到buf中，然后再输出
+     * 上面的buf可以有好几块(由output_buffers 2 32k决定)，这几块会组成一个out链向外输出
+     *
+     * 本次请求所有要发送的数据都在这里面，如果一次发不出去(比如ctx->buf的数据向对端发送时遇到了写缓冲区满的情况),则等待下次事件循环发送
+     */
     ngx_chain_t                 *in;
+    /**
+     * 空闲链，这里存放的chain都是和buf绑定好的，拿出来后可以直接使用里面的buf
+     */
     ngx_chain_t                 *free;
+    /**
+     * 还没有输出到客户端的数据
+     */
     ngx_chain_t                 *busy;
 
     /*

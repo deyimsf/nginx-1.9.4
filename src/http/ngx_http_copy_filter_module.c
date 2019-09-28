@@ -16,6 +16,89 @@
  *     3.如果数据在内存中,那就直接把对应的chian和buf传递到下一个过滤器发出去就可以了
  * 这个过滤器依赖于ngx_output_chain_ctx_t结构体,作为当前request的上下文来处理上面的逻辑
  *
+ *
+ *
+ * --------------------------------过滤器的基本执行逻辑，以自带的ngx_http_static_module模块举例---------------------
+ *
+ * 1.在阶段执行时，当执行到内容handler时，调用如下方法：
+ *    ngx_http_core_content_phase();
+ *
+ * 2.内容handler会调用static模块的如下方法:
+ *    ngx_http_static_handler(r)
+ *
+ * 3.上面的方法又会调用过滤器方法:
+ *    ngx_http_output_filter(r, &out)
+ *
+ * 4.过滤器方法会调用一系列的过滤器:
+ *   ngx_http_copy_filter_module.c --> ngx_output_chain(ctx, in) --> ngx_http_write_filter_module.c
+ *
+ * 5.其中ngx_output_chain(ctx, in)负责把in中要输出的数据追加到ctx->in中，然后该方法又会试着把ctx->in中的数据
+ *   通过ctx->buf输出到客户端。
+ *
+ *   ctx->buf中的buf，会先组成一个有out牵头的链，然后通过调用ctx->output_filter(ctx->filter_ctx, out)方法把数据输出去
+ *   (ctx->buf块的个数由output_buffers指令决定)
+ *
+ * 6.ctx->output_filter(ctx->filter_ctx, out)最终会调用到最后一个过滤器
+ *      ngx_http_write_filter_module.c
+ *   该过滤器调用的方法是:
+ *      ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
+ *   其中，第一个参数就是ctx->filter_ctx，第二个参数就是out。
+ *   该方法会把in中的buf数据追加到r->out链中(这两个链会共用同一个buf，但是不会共用chain，在追加的过程中会生成新的chain放到r->out中)
+ *   然后调用如下方法发送数据:
+ *      chain = c->send_chain(c, r->out, limit);
+ *   如果数据没能一次发送完毕，则调用如下逻辑:
+ *      r->out = chain;
+ *      if (chain) {
+ *         c->buffered |= NGX_HTTP_WRITE_BUFFERED;
+ *         return NGX_AGAIN;
+ *      }
+ *
+ * 7.最终上面的返回值会传递到第一步的
+ *     ngx_http_core_content_phase()
+ *   这个阶段handler会做如下逻辑判断:
+ *     if (rc != NGX_DECLINED) {
+ *        ngx_http_finalize_request(r, rc);
+ *        return NGX_OK;
+ *     }
+ *   因为此时返回值rc是NGX_AGAIN，所以会走ngx_http_finalize_request()方法
+ *
+ * 8.ngx_http_finalize_request()方法，该方法根据返回值，最终会执行到如下逻辑:
+ *      if (r->buffered || c->buffered || r->postponed || r->blocked) {
+ *         if (ngx_http_set_write_handler(r) != NGX_OK) {
+ *            ngx_http_terminate_request(r, 0);
+ *         }
+ *         return;
+ *      }
+ *    由于在第六步设置了:
+ *       c->buffered |= NGX_HTTP_WRITE_BUFFERED;
+ *    所以此时会执行
+ *       ngx_http_set_write_handler()
+ *    该方法的作用是把当前请求的写事件方法设置成如下:
+ *       r->write_event_handler = ngx_http_writer;
+ *
+ * 9.ngx_http_writer()方法每次都会重新启动过滤器
+ *      ngx_http_output_filter(r, NULL);
+ *   所以它会再次执行第四步的逻辑:
+ *      ngx_http_copy_filter_module.c --> ngx_output_chain(ctx, in) --> ngx_http_write_filter_module.c
+ *   不过这次第二个参数是空，所以就不存在把in向ctx->in中追加数据的操作了，而是走第五步的其它逻辑。
+ *
+ * 10.这次等第六步走完后，不管数据是否发送完毕，下次事件到来后继续执行ngx_http_writer()方法。
+ *    再次执行ngx_http_writer()方法的时候，如果发现数据已经发送完毕，则直接在再次调用结束请求的方法:
+ *       ngx_http_finalize_request(r, rc); // 此时rc不等于NGX_AGAIN
+ *    此时根据该方法内部逻辑处理该请求
+ *
+ *    ngx_http_writer()方法判断数据是否发送完毕使用如下逻辑:
+ *      if (r->buffered || r->postponed || (r == r->main && c->buffered)) {
+ *         // 能进到这里表示数据没有发送完毕
+ *      }
+ *
+ *      // 上面条件不成立，则代表数据发送完毕
+ *      r->write_event_handler = ngx_http_request_empty_handler;
+ *      ngx_http_finalize_request(r, rc);
+ *
+ *
+ *
+ *
  */
 
 #include <ngx_config.h>
@@ -204,6 +287,8 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
      * 过滤器是可以反复执行的,执行的依据是链表in,每个过滤器都会根据当次传入的链表in来做一些判断
      *
      * 这一步才是正真涉及拷贝的方法,说是拷贝实际上是读取数据,文件中的数据读到内存,或者内存中的数据读到内存
+     *
+     * 在这个方法里，in中的所有buf都会被放到ctx->in中，后续本请求都会围绕ctx->in来输出数据
      */
     rc = ngx_output_chain(ctx, in);
 

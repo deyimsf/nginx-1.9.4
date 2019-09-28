@@ -75,7 +75,7 @@ static ngx_int_t ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx);
 /*
  * 利用ctx输出in链表中的数据
  *
- * 如果入参in链表只有一个链表项,并且链表项中的buf可以直接发送出去,那就不使用ctx了,就直接调用下一个过滤器返回了
+ * 如果入参in链表只有一个链表项,并且链表项中的buf可以直接发送出去(不需要进行数据拷贝，比如不需要把数据拷贝到ctx->buf中),那就不使用ctx了,就直接调用下一个过滤器返回了
  *
  * 如果入参in链表中有多个链表项,那么会先将in中所有链表项的buf重新关联到新的链表项,并将其追加到ctx->in中,以后
  * 该方法就一直围绕ctx来处理数据
@@ -88,6 +88,9 @@ static ngx_int_t ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx);
  *
  *    每形成一个out链就会执行下一个过滤器试着去发送一次数据,不管有没有完全发送完毕都会把out链表项全部移动到ctx->busy链表
  *    下,然后out变量置空并继续装新的链表
+ *
+ *    out是每次循环ctx->in后要发送的数据，它的最大值去取决于指令output_buffers的设置(默认output_buffers 2 32k)
+ *    如果ctx->in中有2k数据，而output_buffers指令设置的是:"output_buffers 1 1k",那么至少需要循环两次ctx->in才能把数据发送出去
  *
  *    ctx->busy链表中空闲的链表项会被释放到ctx->free或pool->chian中
  */
@@ -185,6 +188,15 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
         }
 #endif
 
+        /**
+         * 向客户端发送数据
+         *
+         * 其中out变量是每次循环ctx->in后要发送的数据，它的最大值去取决于指令output_buffers的设置(默认output_buffers 2 32k)
+         * 如果ctx->in中有2k数据，而output_buffers指令设置的是:"output_buffers 1 1k",那么至少需要循环两次ctx->in才能把数据发送出去
+         * 因为发送数据时，需要把ctx->in中的数据放到ctx->buf中，而ctx->buf的大小由output_buffers指令决定
+         *
+         * 所有要发送的数据都在ctx->in里面，
+         */
         while (ctx->in) {
             /*
              * 遍历ctx->in链表,把每一个链表项中的缓存数据拷贝到ctx->buf中去发送
@@ -303,7 +315,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                         /*
                          * 从ctx->free中获取一个buf
                          *
-                         * ctx->free的作用是重新利用free中的buf,buf对应的chain会被释放到ctx->pool中去
+                         * ctx->free的作用是重新利用free中的buf, buf对应的chain会被释放到ctx->pool中去
                          * 所以当分配buf不成功的时候会试着从ctx->free中获取
                          */
 
@@ -313,14 +325,19 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
                         /*
                          * 释放掉和cl->buf关联的cl
+                         *
+                         * 这里只需要buf，不需要chain，所以把chain释放走了，这个链被释放到了
+                         *    ctx->pool->chain
+                         * 但是这个chain和借走的buf还存在关联，所以从这里拿可用chain的时候需要人为它没有跟任何buf关联
                          */
                         ngx_free_chain(ctx->pool, cl);
 
                     } else if (out || ctx->allocated == ctx->bufs.num) {
 
                         /*
-                         * 如果实际已经创建的buf达到了我们配置的个数(ctx->bufs.num),就不再创建新的buf而是等数据
-                         * 输出完毕后使用原来分配的buf(ctx->free)
+                         * 如果没有空闲的buf了，并且此时out中已经存在可以向外输出的数据了，那就
+                         *
+                         * 如果实际已经创建的buf达到了我们配置的个数(ctx->bufs.num),就不再创建新的buf,而是等数据输出完毕后使用原来分配的buf(ctx->free)
                          */
                         break;
 
@@ -396,6 +413,9 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
         if (out == NULL && last != NGX_NONE) {
 
             /*
+             * 如果第一次数据没有输出完毕，并且ctx->buf也没有释放出来，就会走这个逻辑
+             *
+             *
              * 如果out不等于NULL的话就先调用后面的
              *    last = ctx->output_filter(ctx->filter_ctx, out);
              * 把out发送出去
@@ -423,7 +443,9 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
             }
 
             /*
-             * 走到这里说明ctx->in中的数据已经发送完毕,本次已经没有数据可发了,所以out肯定等于NULL
+             * 走到这里说明ctx->in中的数据已经发送完毕(最起码都放到r->out中了),本次已经没有数据可发了,所以out肯定等于NULL
+             *
+             * 如果上次没有一次性把out链中的数据发送完毕，那就表示r->out中还存留这个数据，此时last的值也是NGX_AGAIN
              */
             return last;
         }
@@ -435,6 +457,9 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
          * 注意这里的out不一定是全部的数据,比如不支持sendfile,那么文件中的数据不一定可以被完全读完
          *
          * ctx->filter_ctx里面放的是ngx_http_request_t对象
+         *
+         * out是本次要发送出去的数据(out容纳的数据大小由指令output_buffers决定?),如果一个请求返回的数据很大，那么就需要多次执行
+         * 下面的过滤器才能发送出去，每次发送完毕后out中的数据一定会被追加到r->out中，所以后续out本身指向的chain是可以被回收的
          */
         last = ctx->output_filter(ctx->filter_ctx, out);
 
@@ -451,6 +476,8 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
         /*
          * 将ctx->busy和out链表中空闲的链表项释放到ctx->free链表中,前提是这这两个链表中缓存的tag(ctx->busy->buf->tag或out->buf->tag)
          * 和ctx->tag(&ngx_http_copy_filter_module)相同,否则直接释放到ctx->pool->chain链表中
+         *
+         * 如果ctx->busy链中的buf还没有释放完毕，则不会将其放到ctx->free中，如果可以释放，则链中的buf也会被重置
          */
         ngx_chain_update_chains(ctx->pool, &ctx->free, &ctx->busy, &out,
                                 ctx->tag);
@@ -668,7 +695,7 @@ ngx_output_chain_add_copy(ngx_pool_t *pool, ngx_chain_t **chain,
 
 
 /*
- * 获取一个对齐文件的buf
+ * 如果需要的话，获取一个对齐文件的buf
  *
  */
 static ngx_int_t
@@ -940,6 +967,11 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 #endif
 
     if (ngx_buf_in_memory(src)) {
+
+    	/**
+    	 * 如果ctx->in->buf中的数据在内存中，则从内存拷贝到ctx->buf中
+    	 */
+
         ngx_memcpy(dst->pos, src->pos, (size_t) size);
         src->pos += (size_t) size;
         dst->last += (size_t) size;

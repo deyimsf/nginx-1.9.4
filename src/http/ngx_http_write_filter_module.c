@@ -48,6 +48,8 @@ ngx_module_t  ngx_http_write_filter_module = {
  * 这个是所有过滤器最后一个模块,用来把in中的数据发送给客户端
  *
  * 最后一个头过滤器(ngx_http_header_filter_module)也是调用这个方法来真正发送头数据
+ *
+ * 该方法会把in中的buf数据追加到r->out链中，这两个链会共用同一个buf，但是不会共用chain，在追加的过程中会生成新的chain放到r->out中
  */
 ngx_int_t
 ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
@@ -129,6 +131,9 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     /* add the new chain to the existent one */
 
     // 将in中的数据追加到r->out中
+    /**
+     * in和r->out使用不同的链
+     */
     for (ln = in; ln; ln = ln->next) {
         cl = ngx_alloc_chain_link(r->pool);
         if (cl == NULL) {
@@ -337,8 +342,9 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     if (chain) {
 
     	/*
-    	 * 当前连接存在没有发送完的数据,所以将c->buffered增加一个NGX_HTTP_WRITE_BUFFERED标记
+    	 * 本次存在没有发送完的数据,所以将c->buffered增加一个NGX_HTTP_WRITE_BUFFERED标记
     	 * 表示有数据在缓存中
+    	 *
     	 */
         c->buffered |= NGX_HTTP_WRITE_BUFFERED;
         return NGX_AGAIN;

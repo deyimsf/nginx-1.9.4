@@ -38,7 +38,9 @@
  *   随后为某个监听描述符设置handler方法
  *     ls->handler = ngx_http_init_connection;
  *
- *   在启动woker之前会调用ngx_open_listening_sockets()方法,利用前面为ls设置的信息创建真正的描述符(sock_fd)
+ *   在启动woker之前会调用
+ *      ngx_init_cycle() --> ngx_open_listening_sockets()
+ *   方法,利用前面为ls设置的信息创建真正的描述符(sock_fd)
  *
  *
  * b)所有前期准备工作都完毕后,在nginx.c#main()方法最后,执行ngx_single_process_cycle()
@@ -54,7 +56,7 @@
  *    }
  *    而事件核心模块src/event/ngx_event.c#ngx_event_core_module正好有一个对应的init_process(),叫ngx_event_process_init()
  *
- *    如果当前支持并设置了reuseport标记,那么之前在ngx_clone_listening()方法中为ls设置的 ls[i].worker在ngx_event_process_init()方法中就会被用到
+ *    如果当前支持并设置了reuseport标记,那么之前在ngx_clone_listening()方法中为ls设置的ls[i].worker在ngx_event_process_init()方法中就会被用到
  *       if (ls[i].reuseport && ls[i].worker != ngx_worker) {
  *            continue;
  *       }
@@ -110,6 +112,7 @@
  *       rev->handler = ngx_event_accept;
  *    这个方法供后续接收新连接用,也就是后续会调用的accept()方法
  *
+ *
  * e)当第c)步骤和d)步骤执行完毕后,下面有可以开始执行ngx_process_events_and_timers()方法了
  *   for(;;){
  *      ngx_process_events_and_timers(cycle);
@@ -160,6 +163,12 @@
  * 8.读事件方法设置为ngx_http_process_request_headers(),然后执行这个方法.
  *   该方法用来解析所有的请求头,当解析到host请求投后会回调在ngx_http_headers_in[]数组中设置的handler()方法,
  *   对应ngx_http_process_host()方法,这个方法里会调用ngx_http_set_virtual_server()匹配对应的server块
+ *
+ *   匹配的目的是设置：
+ *      r->srv_conf = cscf->ctx->srv_conf;
+ *      r->loc_conf = cscf->ctx->loc_conf;
+ *   srv_conf保存了所有http模块在server{}块中srv_conf容器中存放的配置信息结构体
+ *   loc_conf保存了所有http模块在server{}块中loc_conf容器中存放的配置信息结构体
  *
  * 9.请求头解析完毕后调用ngx_http_process_request()方法,该方法更改后续读写事件到来要要执行的方法
  *
@@ -558,6 +567,9 @@ ngx_http_init_connection(ngx_connection_t *c)
         return;
     }
 
+    /**
+     * 由指令client_header_timeout设置
+     */
     ngx_add_timer(rev, c->listening->post_accept_timeout);
     ngx_reusable_connection(c, 1);
 

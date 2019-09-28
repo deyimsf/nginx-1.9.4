@@ -898,7 +898,7 @@ struct ngx_http_request_s {
 
     /*
      * 解析到的一个HTTP头的开始地址,比如HTTP头"Server"在内存中的开始地址
-     * 一个动态值,没开始解析一个请求头时他都会指向当前解析头的开始地址,
+     * 一个动态值,每开始解析一个请求头时他都会指向当前解析头的开始地址,
      */
     u_char                           *header_name_start;
     /* "Server"这个HTTP头在内存中的结束地址 */

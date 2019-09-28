@@ -350,7 +350,6 @@ ngx_chain_get_free_buf(ngx_pool_t *p, ngx_chain_t **free)
  * 将链表busy和out中的空闲链表项释放到free链表或pool->chain链表中,释放的前提是busy和out中的链表项对应的
  * buf缓存空间为零(pos-last 或者 file_pos-file_last为零)
  *
- *
  * 如果该方法传入的tag值和busy链表中buf的tag值不同,那么该buf对应的链表项不会释放到free链表中,而是
  * 释放到pool->chain链表中
  *
