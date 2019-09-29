@@ -2,6 +2,12 @@
 /*
  * Copyright (C) Igor Sysoev
  * Copyright (C) Nginx, Inc.
+ *
+ *
+ * 限速:
+ *   每次就发limit个字节，发完这limit个字节后，先计算后续应该延迟多长时间delay，让后把对应写事件放入到定期器中，间隔时间就是delay
+ *   如果还又数据没有发送完毕，则返回NGX_AGAIN，这样等过去delay时间后，该写事件会再次出发，然后再次动态计算应该发的limit。
+ *   (只要有delay，就表示本次一定没有把数据都发送出去？)
  */
 
 

@@ -189,7 +189,16 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 #endif
 
         /**
-         * 向客户端发送数据
+         * 向客户端发送数据, 该循环主要作用是组装out链
+         *
+         * 在如下情况下out形成一个链表，假设现在允许有2块buf:
+         *  第一次将ctx->in中数据进行拷贝时会创建一个ctx->buf，然后复制给out并调用过滤器方法，但这次并没有将数据发送完毕，所以这个buf没有被释放。
+         *  第二次将ctx->in中数据进行拷贝时，此时ctx->free还不存在空闲buf，所以继续创建第二个buf,然后复制给out并调用过滤器方法，
+         *       但这次连上次buf的数据没有发送完毕，所以此时第一个buf和第二个buf都没有被释放。
+         *  第三次试图将ctx->in中数据进行拷贝时，没有任何可用的buf块了，所以会直接跳出while循环，随后调用过滤器方法，不过这次out为空，这次的调用
+         *       主要是试图输出之前残留的数据(第一个buf和第二个buf)，如果这一次把所有的buf都输出完毕了，那么ctx->free就会有两个buf可用。
+         *  当第四次试图将ctx->in中数据进行拷贝时，会发现有两个空闲buf，此时这两个空闲的buf就会组装成一个out链表
+         *
          *
          * 其中out变量是每次循环ctx->in后要发送的数据，它的最大值去取决于指令output_buffers的设置(默认output_buffers 2 32k)
          * 如果ctx->in中有2k数据，而output_buffers指令设置的是:"output_buffers 1 1k",那么至少需要循环两次ctx->in才能把数据发送出去
@@ -335,7 +344,9 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                     } else if (out || ctx->allocated == ctx->bufs.num) {
 
                         /*
-                         * 如果没有空闲的buf了，并且此时out中已经存在可以向外输出的数据了，那就
+                         * 如果没有空闲的buf了，并且此时out中已经存在可以向外输出的数据了，那就直接输出
+                         * 也就是说，虽然指令可以指定使用多块buf，但在实际调用发送接口(ctx->output_filter)时是一块一块调用的
+                         * 多块buf只是表示，当网络拥堵时，r->out最多可以缓存几个buf
                          *
                          * 如果实际已经创建的buf达到了我们配置的个数(ctx->bufs.num),就不再创建新的buf,而是等数据输出完毕后使用原来分配的buf(ctx->free)
                          */
@@ -410,11 +421,14 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
             ctx->buf = NULL; // 清空临时buf,供下次拷贝是使用
         }
 
+
+        /**
+         * 走出while循环
+         */
+
         if (out == NULL && last != NGX_NONE) {
 
             /*
-             * 如果第一次数据没有输出完毕，并且ctx->buf也没有释放出来，就会走这个逻辑
-             *
              *
              * 如果out不等于NULL的话就先调用后面的
              *    last = ctx->output_filter(ctx->filter_ctx, out);
