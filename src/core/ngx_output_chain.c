@@ -93,6 +93,26 @@ static ngx_int_t ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx);
  *    如果ctx->in中有2k数据，而output_buffers指令设置的是:"output_buffers 1 1k",那么至少需要循环两次ctx->in才能把数据发送出去
  *
  *    ctx->busy链表中空闲的链表项会被释放到ctx->free或pool->chian中
+ *
+ *
+ * 该方法的out中buf是公用的(但out中的chain不是)，在最后调用ngx_http_write_filte_module过滤器中的如下方法后:
+ *      chain = c->send_chain(c, r->out, limit);
+ * 它会把已发送出去的buf进行重置，重置用的是如下方法:
+ *      in = ngx_chain_update_sent(in, sent);
+ * 该方法会做如下操作:
+ *     in->buf->pos = in->buf->last
+ * 如此，该buf就相当于被初始化了,所以ngx_output_chain()方法后续调用如下方法后
+ *    ngx_chain_update_chains(ctx->pool, &ctx->free, &ctx->busy, &out, ctx->tag);
+ * 就可以把out中的buf和chain进行回收
+ *
+ * 所以自定义过滤器，如果要替换该方法传递下去的buf，记住一定要把传递的buf进行重置(类似buf->pos = buf->last)
+ * gzip过滤器就是用的自己的buf，所以它把传递过来的buf重置了。
+ * 如果不重置就无法回收到ctx->free中，而是被放到ctx->busy中，所以很危险。
+ *
+ *
+ * 自定义过滤器不应该增加或减少out链中的chain,因为会破快指令output_buffers的设置，比如自定义过滤器增加了out链表元素个数，那么该
+ * 方法在最后回收的时候ctx->free就就可能变成多个?  并不会，因为每个buf都会一个tag标记，而ngx_chain_update_chains()方法在回收时也需要一个tag入参
+ *
  */
 ngx_int_t
 ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
@@ -474,6 +494,10 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
          *
          * out是本次要发送出去的数据(out容纳的数据大小由指令output_buffers决定?),如果一个请求返回的数据很大，那么就需要多次执行
          * 下面的过滤器才能发送出去，每次发送完毕后out中的数据一定会被追加到r->out中，所以后续out本身指向的chain是可以被回收的
+         *
+         * 这里的out链和链中的buf都是新的(相对于其他过滤器)，并且会重复利用
+         *
+         * 自定义过滤器不应该增加或减少out链中的chain,因为会破快指令output_buffers的设置
          */
         last = ctx->output_filter(ctx->filter_ctx, out);
 
