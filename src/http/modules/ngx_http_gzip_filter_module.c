@@ -308,7 +308,7 @@ ngx_http_gzip_header_filter(ngx_http_request_t *r)
     r->headers_out.content_encoding = h;
 
     /*
-     * gzip要压缩文件,所有如果数据在文件中,则在copy过滤器中需要把数据读取到内存
+     * gzip要压缩文件,所以如果数据在文件中,则在copy过滤器中需要把数据读取到内存
      *
      * gzip下一个头过滤器是ngx_http_chunked_filter_module过滤器
      */

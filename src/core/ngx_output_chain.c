@@ -619,7 +619,6 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
          * 走到这里说明当前支持sendfile,并且数据也不在内存中,但是我们期望他在内存中,所以这里
          * 返回0,表示需要把buf中的数据拷贝到内存中去
          *
-         * TODO 具体使用这块逻辑的目的后续看
          */
         return 0;
     }
@@ -627,10 +626,23 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
     if (ctx->need_in_temp && (buf->memory || buf->mmap)) {
 
         /*
-         * 和ctx->need_in_memory的逻辑相似
+         * 如果需要内存中有可修改的拷贝，但buf存在于只读的内存中或者mmap中，则返回0，表示需要把数据读到(新)内存中
+         *
+         * 如果b->temporary=1则表示此buf指定的内存可以被修改，所以就不需要再重复拷贝了，返回1就可以
          */
         return 0;
     }
+
+    /**
+     * 以下内容拷贝与网络:
+     *
+     * 上面有两个标记要注意，一个是need_in_memory ，这个主要是用于当使用sendfile的时候，Nginx并不会将请求文件拷贝到内存中，
+     * 而有时需要操作文件的内容，此时就需要设置这个标记。然后后面的body filter就能操作内容了。
+     *
+     * 第二个是need_in_temp，这个主要是用于把本来就存在于内存中的buf复制一份可修改的拷贝出来，这里有用到的模块有charset，
+     * 也就是编解码 filter。
+     *
+     */
 
     return 1;
 }
@@ -968,7 +980,7 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
 
 /*
- * ctx->in->buf中的数据都拷贝到ctx->buf中,正真设计到拷贝和读取的地方
+ * ctx->in->buf中的数据都拷贝到ctx->buf中,正真涉及到拷贝和读取的地方
  *
  * 如果ctx->in->buf中的数据在内存中则直接拷贝到ctx->buf中
  *
@@ -1018,8 +1030,7 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 
             if (sendfile) {
                 /*
-                 * 如果当前buf(src)数据在文件中,并且ngx支持sendfile方法,那么就把文件的数据偏移量赋值给新的buf(dst)
-                 *
+                 * 如果当前buf(src)数据在文件中
                  */
 
                 dst->in_file = 1;

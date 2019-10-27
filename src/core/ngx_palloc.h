@@ -72,7 +72,8 @@ struct ngx_pool_s {
     /*
      * 一个空闲链,这个链里面存放了被释放的链项
      * 当释放掉不需要的链的时候,ngx并没有将其销毁,而是放在了chain字段中,以后再需要分配ngx_chain_t
-     * 结构体的时候可以优先从这个chain中获取。
+     *
+     * 获取chain的时候可以优先从这个chain中获取，但是这个chain里的buf是不能用的，使用的时候要认为这里没有buf
      */
     ngx_chain_t          *chain;
     // 同样是个单链表,当ngx_pool_data_t的最大容量都无法满足时使用

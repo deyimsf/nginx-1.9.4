@@ -53,10 +53,16 @@ struct ngx_buf_s {
     /*
      * the buf's content is in a memory cache or in a read only memory
      * and must not be changed
+     *
+     * 表示数据在内存中，但该数据不可被修改
      */
     unsigned         memory:1;
 
-    /* the buf's content is mmap()ed and must not be changed */
+    /*
+     * the buf's content is mmap()ed and must not be changed
+     *
+     * 表示数据是用mmap方法映射而来，不可以被修改
+     */
     unsigned         mmap:1;
 
     unsigned         recycled:1;
@@ -179,6 +185,7 @@ struct ngx_output_chain_ctx_s {
     ngx_chain_t                 *free;
     /**
      * 还没有输出到客户端的数据
+     * chain中包含的buf没有被用完
      */
     ngx_chain_t                 *busy;
 

@@ -75,7 +75,10 @@ ngx_create_temp_buf(ngx_pool_t *pool, size_t size)
 /*
  * 创建一个缓冲区链项(创建的是一个单独的链项,需要跟其他的链项链在一起才能形成链)
  *
- * 此时buf和chain还没有关联
+ * 此时buf和chain还没有关联,如果该chain来自于空闲链(pool->chain),那这个chain内部实际上存在一个buf,但是我们要无视它,因为他有可能被别的chain
+ * 引用着。
+ *
+ * 凡是从该方法出来的chain,必须视为没有任何buf和其关联
  */
 ngx_chain_t *
 ngx_alloc_chain_link(ngx_pool_t *pool)

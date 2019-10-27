@@ -199,7 +199,7 @@ ngx_http_chunked_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
         b = tl->buf;
 
         b->tag = (ngx_buf_tag_t) &ngx_http_chunked_filter_module;
-        b->temporary = 0;
+        b->temporary = 0; // 不能修改这块缓存，因为长度已经确定了(看上面代码：ngx_sprintf(chunk, "%xO" CRLF, size);)
         b->memory = 1;
         b->last_buf = 1;
         b->pos = (u_char *) CRLF "0" CRLF CRLF;
@@ -222,7 +222,7 @@ ngx_http_chunked_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
         b = tl->buf;
 
         b->tag = (ngx_buf_tag_t) &ngx_http_chunked_filter_module;
-        b->temporary = 0;
+        b->temporary = 0; // 不能修改这块缓存，因为长度已经确定了(看上面代码：ngx_sprintf(chunk, "%xO" CRLF, size);)
         b->memory = 1;
         b->pos = (u_char *) CRLF;
         b->last = b->pos + 2;
