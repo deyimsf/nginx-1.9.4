@@ -846,6 +846,8 @@ struct ngx_http_request_s {
      * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_memory
      * 代表主请求和他的所有子请求的输出数据必须在内存中生产,不能在文件中,对于copy filter来说,这个标记会忽略
      * sendfile功能
+     *
+     * ? 还没明白main_filter_need_in_memory、filter_need_in_memory、filter_need_temporary这三个字段的具体区别
      */
     unsigned                          main_filter_need_in_memory:1;
     /*
@@ -855,6 +857,7 @@ struct ngx_http_request_s {
     unsigned                          filter_need_in_memory:1;
     /*
 	 * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_temp
+	 *
 	 * Flag requesting that the request output be produced in temporary buffers, but not in
 	 * readonly memory buffers or file buffers. This is used by filters which may change
 	 * output directly in the buffers where it's sent.

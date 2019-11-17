@@ -173,6 +173,9 @@ ngx_http_header_filter(ngx_http_request_t *r)
 
     r->header_sent = 1;
 
+    /**
+     * 只有主请求才可以发送请求头
+     */
     if (r != r->main) {
         return NGX_OK;
     }

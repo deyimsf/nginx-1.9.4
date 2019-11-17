@@ -81,7 +81,7 @@ struct ngx_buf_s {
      * 该标记为1表示这个buf是整个请求群的最后一块数据,这个标记主要用来对整个请求群做收尾工作.
      *
      * 比如chunked_filter用它来判断是否应该输出 CRLF "0" CRLF CRLF 字符来结束这次chunk编码,显然
-     * 这个标记是不能出现在子请求中的.
+     * 这个标记是不能出现在子请求中的?.
      *
      * 再比如addtion_filter中的add_after_body指令,他会用last_buf标记来确定是否要发送该指令,只有
      * 存在last_buf才会发送add_after_body指令,也就是说该指令只能在主请求中才能起作用:

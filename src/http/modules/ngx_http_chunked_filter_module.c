@@ -80,6 +80,8 @@ ngx_http_chunked_header_filter(ngx_http_request_t *r)
     	 * 在该过滤器前面的逻辑把headers_out.content_length_n被设置成-1才有可能走chunked编码
     	 *
     	 * 比如gzip模块会调用ngx_http_clear_content_length(r)方法把content_length_n设置为-1
+    	 *
+    	 * 对于range方式的请求是不会走chunked编码的，因为range对应的头过滤器把headers_out.content_length_n设置了请求头中的长度(Range:bytes=start-end)
     	 */
 
         if (r->http_version < NGX_HTTP_VERSION_11) {
