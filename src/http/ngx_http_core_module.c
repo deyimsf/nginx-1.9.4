@@ -2838,7 +2838,9 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     sr->pool = r->pool;
 
-    // 父请求的请求头赋值给子请求
+    /**
+     * 父请求的请求头赋值给子请求，所以子请求会继承父请求的所有请求头
+     */
     sr->headers_in = r->headers_in;
 
     /*

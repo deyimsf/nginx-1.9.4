@@ -642,6 +642,7 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
      * 第二个是need_in_temp，这个主要是用于把本来就存在于内存中的buf复制一份可修改的拷贝出来，这里有用到的模块有charset，
      * 也就是编解码 filter。
      *
+     * 所以这俩到底有啥却别。。。。？
      */
 
     return 1;
@@ -968,7 +969,7 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     b->pos = b->start;
     b->last = b->start;
     b->end = b->last + size;
-    b->temporary = 1; // 临时内存
+    b->temporary = 1; // 临时内存,可以被改变
     b->tag = ctx->tag; // 标记这个buf
     b->recycled = recycled;
 

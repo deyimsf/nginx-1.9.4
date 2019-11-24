@@ -99,6 +99,26 @@ ngx_http_addition_header_filter(ngx_http_request_t *r)
     ngx_http_addition_conf_t  *conf;
 
     if (r->headers_out.status != NGX_HTTP_OK || r != r->main) {
+    	/*
+    	 * 这里表示，如果不是主请求，则不能发起子请求
+    	 * 所以这个过滤器不能做子请求嵌套，比如下面的例子:
+    	 *   location /a.html {
+    	 *      add_after_body /b.html;
+    	 *   }
+    	 *
+    	 *   location /b.html {
+    	 *      add_after_body /c.html;
+    	 *   }
+    	 *
+    	 *   location /c.html {
+    	 *   }
+    	 * 请求 curl http://127.0.0.1/a.html,只能输出
+    	 *  a.html b.html
+    	 * 最后一个是不能输出的，因为请求第二个location的时候，已经不是主请求了，而是
+    	 *   add_after_body /b.html
+    	 * 这一句发起的子请求，所以第二个location中的add_after_body指令已经失效了
+    	 *
+    	 */
         return ngx_http_next_header_filter(r);
     }
 

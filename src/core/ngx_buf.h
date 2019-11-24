@@ -47,7 +47,11 @@ struct ngx_buf_s {
 
 
     /* the buf's content could be changed */
-    // 为1表示该缓存内容可以被改变
+    /**
+     * 为1表示该缓存内容可以被改变
+     *
+     * 每次调用ngx_output_chain_get_buf()方法创建一个新buf结构体时都会设置这个标记为1
+     */
     unsigned         temporary:1;
 
     /*
@@ -287,7 +291,9 @@ typedef struct {
 
 #define NGX_CHAIN_ERROR     (ngx_chain_t *) NGX_ERROR
 
-
+/**
+ * 用mmap映射的都算在内存中吗？
+ */
 #define ngx_buf_in_memory(b)        (b->temporary || b->memory || b->mmap)
 #define ngx_buf_in_memory_only(b)   (ngx_buf_in_memory(b) && !b->in_file)
 
