@@ -108,6 +108,9 @@ typedef ngx_int_t (*ngx_http_upstream_init_peer_pt)(ngx_http_request_t *r,
  *
  * 如果第三方模块需要实现一个负载均衡算法,那么他必须设置这个结构体中的方法和data字段
  *
+ * 实现负载均衡算法的模块必须设置这些方法并管理自己的私有数据。
+ * 如果init_upstream在配置阶段没有初始化，则ngx_http_upstream_init_round_robin被设置为默认方法。
+ *
  */
 typedef struct {
 	/*
@@ -286,10 +289,13 @@ struct ngx_http_upstream_srv_conf_s {
     ngx_uint_t                       line;
 
     /*
-     * upstream配置块没有使用,但是proxy_pass等指令有使用
+     * 显示定义的upstream配置块没有使用,但是proxy_pass等指令(隐式的upstream)有使用
      */
     in_port_t                        port;
     in_port_t                        default_port;
+    /**
+     *显示定义的upstream配置块没有使用
+     */
     ngx_uint_t                       no_port;  /* unsigned no_port:1 */
 
 #if (NGX_HTTP_UPSTREAM_ZONE)
@@ -624,17 +630,19 @@ struct ngx_http_upstream_s {
     ngx_chain_t                     *free_bufs;
 
     ngx_int_t                      (*input_filter_init)(void *data);
+
     /*
+     * 将u->buffer中的数据追加到u->out_bufs链表中,u->buffer中的数据来自上游
+     *
      * 当u->buffering = 0也就是不使用缓存功能时,ngx在读取到上游部分数据后会回调这个方法.所以必须设置
      * 当u->buffering = 1也就是使用多缓存块时,ngx就不会回调这个方法,所以可以不设置
      *
-     * 当接收到上游数据并准备向客户端输出之前会调用这个方法,这个方法的主要作用是把从上游读到的数据追加到
-     * u->out_bufs链表中,因为后续向客户端发送的数据都是从u->out_bufs链表中取的.
+     * 当接收到上游数据并准备向客户端输出之前会调用这个方法,这个方法的主要作用是把从上游读到的数据(在u->buffer中)
+     * 追加到u->out_bufs链表中,因为后续向客户端发送的数据都是从u->out_bufs链表中取的.
      *
      * 比如proxy模块和memcached模块都用到了这个方法,分别是:
      * 	  /src/http/modules/ngx_http_proxy_module.c/ngx_http_proxy_non_buffered_copy_filter()
      * 	  /src/http/modules/ngx_http_memcached_module.c/ngx_http_memcached_filter()
-     *
      *
      * 这里的input有这样一层含义,把外部数据搬运到内部
      * 比如:(ngx_http_proxy_module.c/ngx_http_proxy_handler方法中)

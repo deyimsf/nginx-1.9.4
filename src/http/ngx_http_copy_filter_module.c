@@ -41,8 +41,7 @@
  * 4.过滤器方法会调用一系列的过滤器:
  *   ngx_http_copy_filter_module.c --> ngx_output_chain(ctx, in) --> ngx_http_write_filter_module.c
  *
- * 5.其中ngx_output_chain(ctx, in)负责把in中要输出的数据追加到ctx->in中，然后该方法又会试着把ctx->in中的数据
- *   通过ctx->buf输出到客户端。
+ * 5.其中ngx_output_chain(ctx, in)负责把in中要输出的数据追加到ctx->in中，然后该方法又会试着把ctx->in中的数据输出到客户端。
  *
  *   ctx->buf中的buf，会先组成一个有out牵头的链，然后通过调用ctx->output_filter(ctx->filter_ctx, out)方法把数据输出去
  *   (ctx->buf块的个数由output_buffers指令决定)

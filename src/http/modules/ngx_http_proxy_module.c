@@ -927,10 +927,19 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
     if (u->pipe == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
-    /* 设置pipe的过滤器  */
+    /*
+     * 设置pipe的过滤器
+     *
+     * 如果使用了u->buffering = 1,则通过u->pipe->input_filter(ngx_event_pipe_t *p, ngx_buf_t *buf)方法,把入参
+     * buf中的数据拷贝到p->in的尾部。
+     *
+     */
     u->pipe->input_filter = ngx_http_proxy_copy_filter;
     u->pipe->input_ctx = r;
 
+    /**
+     * 如果使用了u->buffering = 0,则通过u->input_filter(void *data, ssize_t bytes)
+     */
     u->input_filter_init = ngx_http_proxy_input_filter_init;
     u->input_filter = ngx_http_proxy_non_buffered_copy_filter;
     u->input_filter_ctx = r;
@@ -3745,6 +3754,12 @@ ngx_http_proxy_init_headers(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *conf,
 /*
  * 在解析proxy_pass指令的时候就已经选择好了对应的upstream配置信息(upstream配置块或者直接指定的url)
  *   plcf->upstream.upstream = ngx_http_upstream_add(cf, &u, 0);
+ *
+ * 也就是说，对应的upstream匹配(ngx_http_upstream_srv_conf_t)是在ngx_http_upstream_add()方法中完成的
+ *
+ * proxy_pass指令在解析的时候，会通过ngx_http_upstream_add()方法，去ngx_http_upstream_main_conf_t->upstreams[]数组中
+ * 查找ngx_http_upstream_srv_conf_t(对应一个upstream配置)，查找完毕后会把该配置存放到ngx_http_proxy_loc_conf_t结构体中，
+ * ngx_http_proxy_loc_conf_t结构体是proxy模块location级别的配置信息。
  */
 static char *
 ngx_http_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)

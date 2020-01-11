@@ -616,6 +616,7 @@ struct ngx_http_request_s {
      * which are created to perform a specific subtask within the main request.
      *
      * 指向一个http主请求对象,而不是用来完成子任务的子请求对象
+     * 如果当期请求是主对象，则指向自己
      */
     ngx_http_request_t               *main;
 
@@ -627,11 +628,11 @@ struct ngx_http_request_s {
     ngx_http_request_t               *parent;
 
     /*
-     * 一个当前请求要输出的数据和当前请求的子请求的列表,别表内部按照数据的发送和子请求的创建顺序排序.
+     * 一个当前请求要输出的数据和当前请求的子请求的列表,列表内部按照数据的发送和子请求的创建顺序排序.
      * 这里列表由postpone过滤器来保证请求的输出顺序
      * 例如:
      * 		----------
-     * 		| parent |
+     * 		|   r    |
      * 		----------
      * 			\
      * 		   --------      --------      --------
@@ -742,7 +743,7 @@ struct ngx_http_request_s {
      *  大,就有可能在请求体还没有读完的时候主请求已经独立完成了,如果这个时候去释放主请求的资源,那
      *  读请求体的操作就会不知所错了。
      * 为了避免出现上面的情况,ngx设计了一个主请求引用计数器,这个计数器用来记录某个主请求在执行时与
-     * 它并行的动作的个数,每个动作再完成后都会主动将计数器减一,主请求也会根据这个技术器的值来确定是
+     * 它并行的动作的个数,每个动作完成后都会主动将计数器减一,主请求也会根据这个技术器的值来确定是
      * 否可以关闭并释放器对应的资源。
      */
     unsigned                          count:8;
@@ -840,6 +841,24 @@ struct ngx_http_request_s {
     unsigned                          done:1;
     unsigned                          logged:1;
 
+    /**
+     * 一些模块缓存了当前请求的输出。
+     * 比如copy_filter过滤器，在ngx_http_copy_filter()方法中，会一直检查ctx->in中是否还存在未传递给后续过滤器的数据，
+     * 如果还有，则用如下代码设置好自己的缓冲标记:
+     *    r->buffered |= NGX_HTTP_COPY_BUFFERED;
+     * 如果没有,则用如下代码释放自己的缓冲标记:
+     *    r->buffered &= ~NGX_HTTP_COPY_BUFFERED;
+     *
+     * 每个模块或过滤器都有直接的缓存标记:
+     *  #define NGX_HTTP_SSI_BUFFERED              0x01
+     *  #define NGX_HTTP_SUB_BUFFERED              0x02
+     *  #define NGX_HTTP_COPY_BUFFERED             0x04
+     *
+     * 一个疑问:?
+     *   它跟ngx_connection_t中的8位buffered字段有啥区别？下面这两个标记为啥都打在了connection的bufferd字段上
+     *     NGX_HTTP_WRITE_BUFFERED            0x10
+     *     NGX_HTTP_GZIP_BUFFERED             0x20
+     */
     unsigned                          buffered:4;
 
     /*
@@ -847,12 +866,23 @@ struct ngx_http_request_s {
      * 代表主请求和他的所有子请求的输出数据必须在内存中生产,不能在文件中,对于copy filter来说,这个标记会忽略
      * sendfile功能
      *
-     * ? 还没明白main_filter_need_in_memory、filter_need_in_memory、filter_need_temporary这三个字段的具体区别
+     * 以下内容来自官网翻译:
+     *   main_filter_need_in_memory和filter_need_in_memory
+     *   用于表示输出应该产生自内存，而非文件。这个被copy_filter用来从文件buffer读数据(即使开了sendfile)。
+     *   两者的匹别在设置它们的ngx_modules[]数组中的位置(ngx_modules.c)。
+     *   在postpone_filter调用之前的filters，设置了filter_need_in_memory,表明当前请求的输出应该来自memory buffer。
+     *   在postpone_filter之后调用的filter,设置main_filter_need_in_memory,表明主请求和子请求在发送输出时都要从读文件到内存里。
+     *
+     * ?不过我仍然没明白postpone_filter之前和之后的意义何在
+     *
      */
     unsigned                          main_filter_need_in_memory:1;
     /*
 	 * 看/src/http/ngx_http_copy_filter_module.c/ngx_http_copy_filter():ctx->need_in_memory
 	 * 和main_filter_need_in_memory标记一样,该标记值标记当前这个请求
+	 *
+	 * 表示请求输出应该产生自temporary buffer,而且不能是只读的memory buffer或file buffer。
+	 * 这个用于那些可能直接改变要发送buffer输出的filter。
 	 */
     unsigned                          filter_need_in_memory:1;
     /*

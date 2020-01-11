@@ -40,6 +40,7 @@ struct ngx_peer_connection_s {
 
     /*
      * Address of the upstream server to connect to; this is the output parameter of a load-balancing method.
+     * 待连接的上游服务器的地址;这是一个负载均衡算法的输出参数。
      *
      * 下面这三个参数用来描述一个上游服务器的sockaddr地址和名字,比如:
      *      127.0.0.1:8080
@@ -62,7 +63,7 @@ struct ngx_peer_connection_s {
      * name fields of ngx_peer_connection_t structure.
      *
      * 当一个请求准备向上游发起请求时,需要获取一个上游的地址,这个方法就是用来根据负载算法选择一个上游地址的,选择好后
-     * 会把代表上游地址的sockaddr、socklen、name信息填充到该结构体对应的字段中
+     * 会把代表上游地址(ngx_peer_connection_s结构体)的sockaddr、socklen、name信息填充到该结构体对应的字段中
      *
      * 根据负载均衡规则获取一个上游服务器信息
      *
@@ -90,9 +91,17 @@ struct ngx_peer_connection_s {
      *    NGX_PEER_KEEPALIVE — Currently unused
      * This method also decrements the tries counter.
      *
+     * 当upstream模块同某个upstream服务器通信结束后，调用此方法。state参数指示了upstream连接的完成状态，是一个bitmask，可以被设置成这些值:
+     *    NGX_PEER_FAILED
+     *    NGX_PEER_NEXT
+     *    NGX_PEER_KEEPALIVE
+     * 这个方法也会递减tries的个数
+     *
      * 当结束一个上游服务调用后调用该方法
      *
      * 这个方法需要对tries字段做递减操作
+     *
+     * 该方法接收的前两个参数和get一样
      */
     ngx_event_free_peer_pt           free;
 

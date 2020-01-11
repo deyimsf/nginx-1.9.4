@@ -128,6 +128,15 @@ ngx_http_addition_header_filter(ngx_http_request_t *r)
         return ngx_http_next_header_filter(r);
     }
 
+    /**
+     * 默认在下面的配置不起作用:
+     *   location / {
+     *      add_before_body /bb.html;
+     *      return 200 "aaaa";
+     *   }
+     * 是因为这里要匹配下响应头Content-Type类型，默认只有text/html才能通过
+     * 改变这里的规则可以用addition_types指令设置
+     */
     if (ngx_http_test_content_type(r, &conf->types) == NULL) {
         return ngx_http_next_header_filter(r);
     }

@@ -787,6 +787,8 @@ ngx_str_t  ngx_http_core_get_method = { 3, (u_char *) "GET " };
  * 子请求刚创建完毕后会把对应的写事件方法设置为这个方法
  *
  * 这个方法最终把请求对应的写事件方法设置为ngx_http_core_run_phases()方法,然后开始执行
+ *
+ * 所有打标为内部(internal)的请求,都会跳过第一个阶段NGX_HTTP_POST_READ_PHASE，从第二个阶段NGX_HTTP_SERVER_REWRITE_PHASE开始执行
  */
 void
 ngx_http_handler(ngx_http_request_t *r)
@@ -817,6 +819,9 @@ ngx_http_handler(ngx_http_request_t *r)
         r->phase_handler = 0;
 
     } else {
+    	/**
+    	 * 当前请求被标记为内部请求，所以直接从NGX_HTTP_SERVER_REWRITE_PHASE阶段开始执行
+    	 */
         cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
         r->phase_handler = cmcf->phase_engine.server_rewrite_index;
     }
@@ -890,7 +895,7 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
     /*
      * 阶段引擎:
-     *     ph = cmcf->phase_engine.handlers;
+     *    ph = cmcf->phase_engine.handlers;
      *    while (ph[r->phase_handler].checker) {
      *       rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
      *
@@ -1195,8 +1200,7 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     if (r != r->main) {
 
         /*
-         * 处理子请求的逻辑
-         * 也就是说子请求不处理该阶段的方法
+         * 子请求不处理该阶段的方法
          */
         r->phase_handler = ph->next;
         return NGX_AGAIN;
@@ -2919,6 +2923,11 @@ ngx_http_subrequest(ngx_http_request_t *r,
      * 这一步用来确定子请求sr是否可以成为向客户端输出数据的请求
      */
     if (c->data == r && r->postponed == NULL) {
+    	/**
+    	 * 一个活跃请求的第一个子请求在被创建之后立刻变为活跃的
+    	 * c->data == r 表示当前请求是活跃的
+    	 * r->postponed = NULL 表示当前请求还不存在任何子请求(但并不表示当前请求没有产生过输出数据)
+    	 */
 
         /*
          * 我们假设一个父请求的作用就是直接发起三个子请求,发起的顺序是sub1、sub2、sub3,那么在向外界输出输出的时候肯定必须是先输出sub1
@@ -2966,7 +2975,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
          *    并且因为是第一次发送子请求,所以r->postponed肯定也是空的,那么后续ngx是如何决定
          *    先把父请求的数据输出,然后再输出子请求数据的?
          * 这种情况是不允许出现的,如果当前请求r有数据输出,那么必须等这些数据完全输出完毕或者已经完全存放到了r->out中
-         * 后才能再次发起子请求,不然的话数据的输出顺序是不可控的
+         * 后才能再次发起子请求,不然的话数据的输出顺序是不可控的?
          */
 
         // 指定下次可以向客户端输出数据的子请求
@@ -2977,6 +2986,9 @@ ngx_http_subrequest(ngx_http_request_t *r,
 
     sr->log_handler = r->log_handler;
 
+    /**
+     * 每个子请求都要至少创建一个这个对象，表示本请求、本请求下的子请求或数据节点？
+     */
     pr = ngx_palloc(r->pool, sizeof(ngx_http_postponed_request_t));
     if (pr == NULL) {
         return NGX_ERROR;
@@ -2986,7 +2998,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
     pr->out = NULL;
     pr->next = NULL;
 
-    // 将该子请求放入到父请求的postponed链表尾部
+    // 将该子请求放入到父请求(不一定是主请求)的postponed链表尾部
     if (r->postponed) {
         for (p = r->postponed; p->next; p = p->next) { /* void */ }
         p->next = pr;
@@ -2995,6 +3007,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
         r->postponed = pr;
     }
 
+    // 内部请求
     sr->internal = 1;
 
     sr->discard_body = r->discard_body;
@@ -3015,7 +3028,7 @@ ngx_http_subrequest(ngx_http_request_t *r,
     /*
      * 将该子请求放入到原始请求的post_requests链表尾部
      *
-     * 此时当前请求r关联的读写事件是ngx_http_request_handler()方法这个方法在最后会执行
+     * 此时当前请求r关联的读写事件是ngx_http_request_handler()方法，这个方法在最后会执行
      * ngx_http_run_posted_request方法来激活在r->main->posted_requests上的子请求
      */
     return ngx_http_post_request(sr, NULL);

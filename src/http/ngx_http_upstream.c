@@ -71,19 +71,27 @@
  *   需要实现这个方法并更改u->buffer->pos的指针
  *
  * 6.处理完响应头后因为r->subrequest_in_memory=0所以直接走ngx_http_upstream_send_response()方法.
- *
  *   这个方法会先调用ngx_http_send_header()方法发送响应头
  *
  * 7.u->input_filter()这个回调方法如果没有设置的话会设置一个默认值
  *     u->input_filter_init = ngx_http_upstream_non_buffered_filter_init;
  *     u->input_filter = ngx_http_upstream_non_buffered_filter;
  *
+ *   该方法作用是,把r->upstream->buffer中的数据追加到u->out_bufs中,在这个过程中可以做一些事，比如发起子请求等。
+ *   后续逻辑会调用过滤器方法ngx_http_output_filter(r, u->out_bufs)将数据输出到r
+ *
  * 8.走到这里后续要做的事基本就是从上游读数据,让后把从上游读到的数据发送给客户端,做这件事可以有下面两个事件触发,
  *   一个是上游的可读事件,另一个是下游的可写事件.
  *   因为不需要缓存,所以当上游有数据的时候我们应该立即读上游数据,并把数据发送给客户端
  * 		u->read_event_handler = ngx_http_upstream_process_non_buffered_upstream;
+ * 	 该方法的功能就是:
+ * 	    1.从上游读数据到r->upstream->buffer中。
+ * 	    2.调用u->input_filter()方法，把r->upstream->buffer中的数据追加到u->out_bufs中。
+ * 	    3.调用过滤器方法ngx_http_output_filter(r, u->out_bufs)将数据输出到r。
+ *
  *   因为不需要缓存,所以当下游链路可写时我们应该立即从上游读数据,并把数据发送给客户端
  * 		r->write_event_handler = ngx_http_upstream_process_non_buffered_downstream;
+ * 	 该方法的功能同上
  *
  * *9.在发送数据之前先回调【*】u->input_filter_init()方法,第三方模块需要在这个方法中做一些潜规则动作吗? TODO
  *
@@ -1438,7 +1446,7 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
                    "http upstream check client, write event:%d, \"%V\"",
                    ev->write, &r->uri);
 
-    /* r是客户端请求, c是客户端连接 */
+    /* r是客户端请求(或子请求), c是客户端连接 */
     c = r->connection;
     u = r->upstream;
 
@@ -1653,6 +1661,8 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
      * 根据负载均衡规则连接上游服务器,所有数据准备好之后调用系统函数
      * 	 rc = connect(s, pc->sockaddr, pc->socklen);
      * 来和上游真正建立连接
+     *
+     * 这里才会真正选择具体上游
      */
     rc = ngx_event_connect_peer(&u->peer);
 
@@ -2470,6 +2480,9 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
      */
     for ( ;; ) {
 
+    	/**
+    	 * u->buffer.last是起始地址
+    	 */
         n = c->recv(c, u->buffer.last, u->buffer.end - u->buffer.last);
 
         if (n == NGX_AGAIN) {
@@ -2561,6 +2574,9 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
             return;
         }
 
+        /**
+         * error_page指令逻辑?
+         */
         if (ngx_http_upstream_intercept_errors(r, u) == NGX_OK) {
             return;
         }
@@ -3334,7 +3350,7 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     p = u->pipe;
 
-    p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
+    p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter; // 输出还是使用通用过滤器
     p->output_ctx = r;
     p->tag = u->output.tag;
     p->bufs = u->conf->bufs;
@@ -3758,12 +3774,23 @@ ngx_http_upstream_process_non_buffered_downstream(ngx_http_request_t *r)
         return;
     }
 
+    /**
+	 *  基本步骤是:
+	 *   1.从上游读数据到r->upstream->buffer中
+	 *   2.调用u->input_filter()方法，把r->upstream->buffer中的数据追加到u->out_bufs中
+	 *   3.调用过滤器方法ngx_http_output_filter(r, u->out_bufs)将数据输出到r
+	 */
     ngx_http_upstream_process_non_buffered_request(r, 1);
 }
 
 
 /*
  * 这个方法由上游触发,r是客户端请求对象
+ *
+ * 基本步骤是:
+ *  1.从上游读数据到r->upstream->buffer中
+ *  2.调用u->input_filter()方法，把r->upstream->buffer中的数据追加到u->out_bufs中
+ *  3.调用过滤器方法ngx_http_output_filter(r, u->out_bufs)将数据输出到r
  */
 static void
 ngx_http_upstream_process_non_buffered_upstream(ngx_http_request_t *r,
@@ -3784,12 +3811,23 @@ ngx_http_upstream_process_non_buffered_upstream(ngx_http_request_t *r,
         return;
     }
 
+    /**
+     *  基本步骤是:
+     *   1.从上游读数据到r->upstream->buffer中
+     *   2.调用u->input_filter()方法，把r->upstream->buffer中的数据追加到u->out_bufs中
+     *   3.调用过滤器方法ngx_http_output_filter(r, u->out_bufs)将数据输出到r
+     */
     ngx_http_upstream_process_non_buffered_request(r, 0);
 }
 
 
 /*
  * 从上游读数据并向下游写数据
+ *
+ * 基本步骤是:
+ *   1.从上游读数据到r->upstream->buffer中
+ *   2.调用u->input_filter()方法，把r->upstream->buffer中的数据追加到u->out_bufs中
+ *   3.调用过滤器方法ngx_http_output_filter(r, u->out_bufs)将数据输出到r
  */
 static void
 ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
@@ -3817,6 +3855,8 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
 
             if (u->out_bufs || u->busy_bufs) {
             	/*
+            	 * 调用body过滤器来处理响应体,唯一启动body过滤器的方法
+            	 *
             	 * 对于没有发送完的数据会使用r->out链接起来
             	 */
                 rc = ngx_http_output_filter(r, u->out_bufs);

@@ -18,6 +18,26 @@
  * 在/src/http/ngx_http_core_module.c/ngx_http_subrequest()中会把子请求放入到r->main->posted_requests链表中
  * 在/src/http/ngx_http_postponed_filter_module.c过滤器中会把为发送完数据的子请求再次放入到r->main->posted_requests链表中
  *
+ * 所有子请求都会打上
+ *   r->internal = 1;
+ * 而所有打上这个表的请求，都会绕过第一个阶段(NGX_HTTP_POST_READ_PHASE)，而从第二个阶段(NGX_HTTP_SERVER_REWRITE_PHASE)开始执行
+ * 这段逻辑在如下方法中:
+ *   ngx_http_core_module.c#ngx_http_handler() // 该方法会开始阶段执行
+ * 上面的方法在解析完所有请求头后，通过调动ngx_http_process_request()方法来触发
+ *
+ *
+ * -------------------------------------------子请求流程---------------------------------------------------
+ *  s
+ *
+ *  1.从ngx_http_addition_filter_module开始
+ *
+ *
+ *
+ *
+ *
+ *
+ *
+ *
  *
  *
  * -------------------------------------------一个http请求的基本流程-----------------------------------------
@@ -172,7 +192,7 @@
  *
  * 9.请求头解析完毕后调用ngx_http_process_request()方法,该方法更改后续读写事件到来要要执行的方法
  *
- * 10.调用ngx_http_handler()方法被请求的写事件设置成ngx_http_core_run_phases()方法,该方法就是阶段执行的启动方法
+ * 10.调用ngx_http_handler()方法把请求的写事件设置成ngx_http_core_run_phases()方法,该方法就是阶段执行的启动方法
  *
  *
  *
@@ -2571,7 +2591,8 @@ ngx_http_request_handler(ngx_event_t *ev)
 
 
 /*
- * 执行主请求posted_requests链表中的所有子请求
+ * 每次读写事件到来后都会执行该方法
+ * 执行主请求posted_requests链表中的所有子请求,执行完毕后列表就空了
  *
  * 该方法会遍历r->main->posted_requests链表,然后调用其中的写事件方法
  * 当遍历完毕后r->main->posted_requests就变成空了
@@ -2579,6 +2600,8 @@ ngx_http_request_handler(ngx_event_t *ev)
  * ngx使用ngx_http_post_request()方法向r->main->posted_requests链表中增加元素
  * 比如在/src/http/ngx_http_postpone_filter_module.c过滤器中,会把当前请求中postponed链表
  * 中的子请求全部通过ngx_http_post_request()方法放入到r->main->posted_requests链表中
+ *
+ * 创建一个子请求后，也会调用ngx_http_post_request()方法，把创建好的子请求放入到r->main->posted_requests链表中
  *
  *
  * 对于一个普通请求来说有两个地方触发该方法
@@ -2875,10 +2898,19 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             // 标记这个子请求已经完全执行完毕
             r->done = 1;
 
-            /*
-             * 当前这个子请求输出完毕了,此时需要决定下次可以输出数据的请求
-             */
+
+             /* 当前这个子请求输出完毕了,此时需要决定下次可以输出数据的请求 */
+
             if (pr->postponed && pr->postponed->request == r) {
+
+            	/**
+            	 * 如果当前请求的父请求还存在子请求列表，并且父请求的子请求列表的第一个请求节点就是当前请求，
+            	 * 则该节点可以丢弃了(数据已经输出完毕了)
+            	 *
+            	 * 先将这个已经输出完毕的节点丢弃，然后把父请求设置为活跃请求
+            	 *
+            	 * 感觉这里没有不进来的情况吧？
+            	 */
 
             	/*
             	 * 如果走这里,说明当前子请求r是上图1中的sub1,既然sub1已经完全执行完毕了,那么就应该把sub1从链表中踢出去
@@ -2966,7 +2998,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
          * 把父请求pr放入到r->main->posted_requests链表中,这样等整个ngx_http_finalize_request()方法
          * 返回后后续就会执行pr对应的写事件方法,这样才能把代码的执行权交给父请求pr
          *
-         * 此时pr是当前请求的父请求(r->request),把控制权又叫给了父请求,当如请求触发后会在postponed_filter过滤
+         * 此时pr是当前请求的父请求(r->request),把控制权又交给了父请求,当如请求触发后会在postponed_filter过滤
          * 器中将可以输出数据的请求设置为他postponed链中第一个非数据节点
          */
         if (ngx_http_post_request(pr, NULL) != NGX_OK) {
@@ -3196,6 +3228,8 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
 
     /*
      * TODO 这里调用这个方法的目的是啥?
+     *
+     * 将写事件wev放入到事件框架中
      */
     if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
         ngx_http_close_request(r, 0);
@@ -3306,6 +3340,9 @@ ngx_http_writer(ngx_http_request_t *r)
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, wev->log, 0,
                    "http writer done: \"%V?%V\"", &r->uri, &r->args);
 
+    /**
+     * 如果请求是
+     */
     r->write_event_handler = ngx_http_request_empty_handler;
 
     ngx_http_finalize_request(r, rc);

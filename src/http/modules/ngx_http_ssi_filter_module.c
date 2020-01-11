@@ -802,11 +802,17 @@ ngx_http_ssi_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
                     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                                    "ssi flush");
 
+                    /**
+                     * 1.调用过滤器输出可以输出的内容
+                     */
                     if (ngx_http_ssi_output(r, ctx) == NGX_ERROR) {
                         return NGX_ERROR;
                     }
                 }
 
+                /**
+                 * 2.发送一个子请求
+                 */
                 rc = cmd->handler(r, ctx, params);
 
                 if (rc == NGX_OK) {

@@ -192,6 +192,10 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
         	 * 如果r是图1中的sub2,会把in中的buf数据移动到sub2的下面
         	 *
         	 * 如果r是图1中的sub3,会把in中的buf数据移动到sub3的下面
+        	 *
+        	 *
+        	 * 当前请求并不是活跃请求，所以不能直接将数据输出到客户端，只能讲数据暂存起来
+        	 * 该方法会把本次要向外输出的数据in追加到r->postponed列表末尾
         	 */
             ngx_http_postpone_filter_add(r, in);
 
@@ -271,7 +275,7 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     	 */
         if (in || c->buffered) {
         	/*
-        	 * 如果还有数据没有输出,则再次调用后续的过滤器,将本子请求产生的数据输出到主请求的客户端中
+        	 * 如果还有数据没有输出,则再次调用后续的过滤器,将本子请求产生的数据输出到主请求(r->main)的客户端中
              *
         	 * 就像图2中展示的那样,如果有数据就直接输出到r->main中就行了
         	 *
@@ -294,6 +298,9 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     /*
      * 走到这里说明r->postponed != NULL,也就是说虽然该当前请求r输出数据了,但是r下面还存在子请求,比如图3或图4
      * 所以应该先将该请求的数据暂存起来,然后再找出事实上可以输出数据的子请求,当然如果in为空则继续向下走
+     *
+     * 1.当前是活跃请求，并且当前请求有数据要输出
+     * 2.但当前请求还存在子请求列表，说明这个数据是在这个请求列表之后产生的，所以，需要把要输出的数据追加到r->postponed列表最后
      */
     if (in) {
         ngx_http_postpone_filter_add(r, in);
@@ -338,6 +345,9 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
     do {
         pr = r->postponed;
 
+        /**
+         * 这是一个请求节点
+         */
         if (pr->request) {
 
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
@@ -423,6 +433,10 @@ ngx_http_postpone_filter(ngx_http_request_t *r, ngx_chain_t *in)
                           "http postpone filter NULL output");
 
         } else {
+        	/**
+        	 * 这是一个数据节点
+        	 */
+
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                            "http postpone filter output \"%V?%V\"",
                            &r->uri, &r->args);
@@ -486,18 +500,20 @@ ngx_http_postpone_filter_add(ngx_http_request_t *r, ngx_chain_t *in)
 
     if (r->postponed) {
 
+    	// 1.找出当前请求列表中的最后一个节点
         for (pr = r->postponed; pr->next; pr = pr->next) { /* void */ }
 
+        // 2.如果最后一个节点不是子请求，则认为这是一个数据节点
         if (pr->request == NULL) {
         	// 发现数据节点
             goto found;
         }
 
-        // 最后一个不是数据节点
+        // 最后一个不是数据节点，则后续逻辑会创建一个数据节点
         ppr = &pr->next;
 
     } else {
-    	// 不存在数据节点
+    	// 不存在数据节点或子请求,则后续逻辑会创建一个数据节点
         ppr = &r->postponed;
     }
 
