@@ -3056,6 +3056,11 @@ ngx_http_upstream_process_body_in_memory(ngx_http_request_t *r,
 
     for ( ;; ) {
 
+    	/**
+    	 * 看这个逻辑意思是，打上了subrequest_in_memory标记=1，则最多接收u->buffer大的数据
+    	 * 接收完毕后把u->buffer中的数据输出
+    	 */
+
         size = b->end - b->last;
 
         if (size == 0) {

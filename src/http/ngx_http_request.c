@@ -2704,6 +2704,14 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
                    "http finalize request: %d, \"%V?%V\" a:%d, c:%d",
                    rc, &r->uri, &r->args, r == c->data, r->main->count);
 
+    /**
+     * 通常表示当前请求的处理已经结束，如果r->main->count==1,则会直接结束当前主请求，并释放资源和关闭客户端连接
+     * 如果如果r->main->count != 1(通常是大于1),则不会释放资源，也会不关闭和客户端的链接。
+     *
+     * 比如proxy_pass,主请求发起的时候r->main->count==1,启动upstream后r->main->count==2,但该指令的handler
+     * 方法直接返回NGX_DONE,这时候如果走到这里把主请求关闭了，那就白启动upstream了，而upstream把main->count加1后
+     * 就不会被关闭了，只有upstream结束后才会关闭主请求。
+     */
     if (rc == NGX_DONE) {
         ngx_http_finalize_connection(r);
         return;

@@ -977,6 +977,8 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
      *   		return;
      *  	}
      * 返回NGX_DONE会走一个捷径去尝试结束请求,其实这里返回200以下的码都可以(如NGX_OK),只不结束的链路会长一点.
+     *
+     *
      */
     return NGX_DONE;
 }
